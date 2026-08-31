@@ -17,6 +17,8 @@ async function boot() {
     item.addEventListener('click', () => showView(item.dataset.view));
   }
 
+  fuelleAlleFilter();
+  wireDashboard();
   wireKatalog();
   wireLeser();
   wireAusleihe();
@@ -28,8 +30,8 @@ async function boot() {
 
   api.on('menu:action', onMenuAction);
   api.on('settings:updated', (s) => { state.settings = s; applyChrome({ ...data, settings: s }); });
+  api.on('cover:progress', aktualisiereCoverFortschritt);
 
-  await refreshKennzahlen();
   showView('dashboard');
 }
 
@@ -64,9 +66,10 @@ function showView(name) {
   else if (name === 'rueckgabe') loadRueckgabe();
   else if (name === 'mahnungen') loadMahnungen();
   else if (name === 'einstellungen') loadEinstellungen();
-  else if (name === 'dashboard') refreshKennzahlen();
+  else if (name === 'dashboard') loadDashboard();
 }
 
+/** Aktualisiert Kennzahlen und Zähler in Kopfleiste/Sidebar; liefert die Liste aller überfälligen Ausleihen zurück. */
 async function refreshKennzahlen() {
   const k = await api.kennzahlen();
   document.getElementById('stat-titel').textContent = k.titel;
@@ -74,8 +77,75 @@ async function refreshKennzahlen() {
   document.getElementById('stat-leser').textContent = k.leser;
   document.getElementById('stat-offen').textContent = k.offen;
   document.getElementById('count-offen').textContent = k.offen ? String(k.offen) : '';
-  const ueberfaellig = await api.mahnung.ueberfaellige();
-  document.getElementById('count-mahn').textContent = ueberfaellig.length ? String(ueberfaellig.length) : '';
+
+  const [ueberfaelligAlle, mahnfaellig] = await Promise.all([api.ausleihe.ueberfaelligeAlle(), api.mahnung.ueberfaellige()]);
+  document.getElementById('stat-ueberfaellig').textContent = ueberfaelligAlle.length;
+  document.getElementById('count-mahn').textContent = mahnfaellig.length ? String(mahnfaellig.length) : '';
+  return ueberfaelligAlle;
+}
+
+/* ---------------------------------------------------------------- Dashboard */
+
+function wireDashboard() {
+  for (const btn of document.querySelectorAll('#view-dashboard [data-view]')) {
+    btn.addEventListener('click', () => showView(btn.dataset.view));
+  }
+  for (const btn of document.querySelectorAll('#view-dashboard [data-action]')) {
+    btn.addEventListener('click', () => onMenuAction(btn.dataset.action));
+  }
+}
+
+async function loadDashboard() {
+  const [ueberfaellig, top10] = await Promise.all([refreshKennzahlen(), api.katalog.topAusgeliehen(10)]);
+  renderVergesseneRueckgaben(ueberfaellig);
+  renderTopAusgeliehen(top10);
+}
+
+function renderVergesseneRueckgaben(ueberfaellig) {
+  const box = document.getElementById('dash-vergessen');
+  box.replaceChildren();
+  if (!ueberfaellig.length) {
+    box.appendChild(el('div', { class: 'empty small' }, [el('div', { class: 'icon' }, ['🎉']), 'Keine vergessenen Rückgaben – alles pünktlich zurück.']));
+    return;
+  }
+  for (const row of ueberfaellig.slice(0, 8)) {
+    box.appendChild(
+      el('div', { class: 'list-row', onclick: async () => openLeserSheet(await api.leser.get(row.LeserNi)) }, [
+        el('div', { class: 'list-row-main' }, [
+          el('div', { class: 'list-row-title' }, [`${row.Nachname}, ${row.Vorname}`]),
+          el('div', { class: 'list-row-sub' }, [row.Titel]),
+        ]),
+        el('span', { class: 'badge danger' }, [`${row.tageUeberfaellig} ${row.tageUeberfaellig === 1 ? 'Tag' : 'Tage'}`]),
+      ])
+    );
+  }
+  if (ueberfaellig.length > 8) {
+    box.appendChild(el('div', { class: 'list-more' }, [`+ ${ueberfaellig.length - 8} weitere in den Mahnungen`]));
+  }
+}
+
+function renderTopAusgeliehen(top10) {
+  const box = document.getElementById('dash-top10');
+  box.replaceChildren();
+  if (!top10.length) {
+    box.appendChild(el('div', { class: 'empty small' }, [el('div', { class: 'icon' }, ['📚']), 'Noch keine Ausleihen erfasst.']));
+    return;
+  }
+  top10.forEach((row, i) => {
+    const cover = el('div', { class: 'rank-cover' }, [el('span', {}, ['📕'])]);
+    box.appendChild(
+      el('div', { class: 'list-row', onclick: async () => openKatalogSheet(await api.katalog.get(row.KatalogNi)) }, [
+        el('div', { class: 'rank' }, [String(i + 1)]),
+        cover,
+        el('div', { class: 'list-row-main' }, [
+          el('div', { class: 'list-row-title' }, [row.Titel]),
+          el('div', { class: 'list-row-sub' }, [row.Autor || '']),
+        ]),
+        el('span', { class: 'badge' }, [`${row.anzahl}×`]),
+      ])
+    );
+    api.cover.get(row.KatalogNi).then((dataUrl) => { if (dataUrl) cover.replaceChildren(el('img', { src: dataUrl, alt: '' })); });
+  });
 }
 
 /* ---------------------------------------------------------------- Sheet */
@@ -103,11 +173,19 @@ function wireSheet() {
   });
 }
 
-function openSheet({ title, fields, values, onSave, onDelete, extra }) {
+/**
+ * `before` (z. B. das Cover-Panel eines Buchs) erscheint vor den Feldern,
+ * `wide` schaltet das Sheet auf ein zweispaltiges, breiteres Layout um.
+ */
+function openSheet({ title, fields, values, onSave, onDelete, extra, before, wide }) {
   sheetState = { fields, onSave, onDelete };
   document.getElementById('sheet-title').textContent = title;
+  document.getElementById('sheet-panel').classList.toggle('wide', Boolean(wide));
   const body = document.getElementById('sheet-body');
   body.replaceChildren();
+  if (before) body.appendChild(before);
+
+  const fieldsWrap = el('div', { class: 'sheet-fields' });
   for (const f of fields) {
     const value = values?.[f.name] ?? '';
     let input;
@@ -121,9 +199,11 @@ function openSheet({ title, fields, values, onSave, onDelete, extra }) {
     } else {
       input = el('input', { id: `f-${f.name}`, type: f.type || 'text', value });
     }
-    body.appendChild(el('div', { class: 'field' }, [el('label', {}, [f.label]), input]));
+    fieldsWrap.appendChild(el('div', { class: 'field' }, [el('label', {}, [f.label]), input]));
   }
-  if (extra) body.appendChild(extra);
+  body.appendChild(fieldsWrap);
+
+  if (extra) body.appendChild(el('div', { class: 'sheet-extra-full' }, [extra]));
   document.getElementById('sheet-delete').hidden = !onDelete;
   document.getElementById('sheet-backdrop').hidden = false;
 }
@@ -156,33 +236,94 @@ function zweigOptions() {
 function leserGruppOptions() {
   return (state.stammdaten.LeserGrupp || []).map((g) => ({ value: g.LeserGruNi, label: g.LeserGruBz }));
 }
+function medArtLabel(kb) {
+  const treffer = (state.stammdaten.MedArt || []).find((m) => m.MedArtKb === kb);
+  return treffer ? treffer.MedArtBz : kb || '–';
+}
+
+/** Füllt die Filter-Dropdowns in Katalog und Nutzer – beim Start und nach jedem Import. */
+function fuelleAlleFilter() {
+  const medArt = document.getElementById('katalog-filter-medienart');
+  medArt.replaceChildren(el('option', { value: '' }, ['Alle Medienarten']), ...medArtOptions().map((o) => el('option', { value: o.value }, [o.label])));
+  const gruppe = document.getElementById('leser-filter-gruppe');
+  gruppe.replaceChildren(el('option', { value: '' }, ['Alle Gruppen']), ...leserGruppOptions().map((o) => el('option', { value: o.value }, [o.label])));
+  const zweig = document.getElementById('leser-filter-zweig');
+  zweig.replaceChildren(el('option', { value: '' }, ['Alle Zweige']), ...zweigOptions().map((o) => el('option', { value: o.value }, [o.label])));
+}
 
 function wireKatalog() {
   document.getElementById('katalog-suche').addEventListener('input', debounce(loadKatalog, 200));
+  document.getElementById('katalog-filter-medienart').addEventListener('change', loadKatalog);
+  document.getElementById('katalog-filter-verfuegbar').addEventListener('change', loadKatalog);
   document.getElementById('katalog-neu').addEventListener('click', () => openKatalogSheet(null));
 }
 
 async function loadKatalog() {
   const query = document.getElementById('katalog-suche').value.trim();
-  const rows = await api.katalog.search(query);
+  const medArtKb = document.getElementById('katalog-filter-medienart').value;
+  const verfuegbarkeit = document.getElementById('katalog-filter-verfuegbar').value;
+  const rows = await api.katalog.search({ query, medArtKb, verfuegbarkeit });
   const tbody = document.getElementById('katalog-tbody');
   tbody.replaceChildren();
   if (!rows.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['📖']), 'Keine Titel gefunden.'])])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['📖']), 'Keine Titel gefunden.'])])]));
     return;
   }
   for (const row of rows) {
-    const exemplare = await api.katalog.exemplare(row.KatalogNi);
+    const belegt = row.exemplareGesamt > 0 && row.exemplareVerfuegbar === 0;
     tbody.appendChild(
       el('tr', { onclick: () => openKatalogSheet(row) }, [
         el('td', {}, [row.Titel || '']),
         el('td', {}, [row.Autor || '']),
+        el('td', {}, [medArtLabel(row.MedArtKb)]),
         el('td', {}, [row.ISBN || row.EAN || '']),
         el('td', {}, [row.ErschJahr || '']),
-        el('td', { class: 'num' }, [String(exemplare.length)]),
+        el('td', { class: 'num' }, [el('span', { class: `badge ${belegt ? 'danger' : row.exemplareVerfuegbar > 0 ? 'ok' : ''}` }, [`${row.exemplareVerfuegbar}/${row.exemplareGesamt}`])]),
       ])
     );
   }
+}
+
+/** Cover-Panel für die Buchdetailseite: Vorschau, Herunterladen (per ISBN), Hochladen, Entfernen. */
+function buildCoverPanel(row) {
+  const frame = el('div', { class: 'cover-frame' }, [el('span', { class: 'cover-placeholder' }, ['📕'])]);
+  const panel = el('div', { class: 'cover-panel' }, [frame]);
+
+  if (!row?.KatalogNi) {
+    panel.appendChild(el('p', { class: 'hint' }, ['Erst speichern, dann lässt sich ein Cover laden.']));
+    return panel;
+  }
+
+  const downloadBtn = el('button', { class: 'button small' }, ['Herunterladen']);
+  const uploadBtn = el('button', { class: 'button small' }, ['Hochladen …']);
+  const removeBtn = el('button', { class: 'button small', hidden: true }, ['Entfernen']);
+
+  async function refreshFrame() {
+    const dataUrl = await api.cover.get(row.KatalogNi);
+    frame.replaceChildren(dataUrl ? el('img', { src: dataUrl, alt: '' }) : el('span', { class: 'cover-placeholder' }, ['📕']));
+    removeBtn.hidden = !dataUrl;
+  }
+
+  downloadBtn.addEventListener('click', async () => {
+    downloadBtn.disabled = true;
+    const result = await api.cover.fetchOne(row.KatalogNi);
+    downloadBtn.disabled = false;
+    if (result.ok) { toast('Cover geladen.'); await refreshFrame(); }
+    else toast(`Kein Cover gefunden (${result.grund || 'unbekannt'}).`, 'error');
+  });
+  uploadBtn.addEventListener('click', async () => {
+    const result = await api.cover.upload(row.KatalogNi);
+    if (result.ok) { toast('Cover hochgeladen.'); await refreshFrame(); }
+  });
+  removeBtn.addEventListener('click', async () => {
+    await api.cover.delete(row.KatalogNi);
+    toast('Cover entfernt.');
+    await refreshFrame();
+  });
+
+  panel.appendChild(el('div', { class: 'cover-actions' }, [downloadBtn, uploadBtn, removeBtn]));
+  refreshFrame();
+  return panel;
 }
 
 async function openKatalogSheet(row) {
@@ -199,16 +340,23 @@ async function openKatalogSheet(row) {
     { name: 'Schlagwort', label: 'Schlagworte' },
   ];
 
-  let exemplareBox = null;
+  let extraBox = null;
   if (row?.KatalogNi) {
-    const exemplare = await api.katalog.exemplare(row.KatalogNi);
-    exemplareBox = el('div', {}, [
+    const [exemplare, statistik] = await Promise.all([
+      api.katalog.exemplare(row.KatalogNi),
+      api.katalog.ausleihStatistik(row.KatalogNi),
+    ]);
+    const status = await Promise.all(exemplare.map((m) => api.medium.status(m.MedienNi)));
+    extraBox = el('div', {}, [
       el('div', { class: 'section-title' }, ['Exemplare']),
-      ...exemplare.map((m) =>
-        el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
-          el('span', { class: 'badge' }, [m.MedienEtik || `#${m.MedienNi}`]),
-        ])
-      ),
+      exemplare.length
+        ? el('div', {}, exemplare.map((m, i) =>
+            el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
+              el('span', { class: 'badge' }, [m.MedienEtik || `#${m.MedienNi}`]),
+              el('span', { class: `badge ${status[i].verliehen ? 'warn' : 'ok'}` }, [status[i].verliehen ? 'verliehen' : 'verfügbar']),
+            ])
+          ))
+        : el('p', { class: 'hint' }, ['Noch keine Exemplare.']),
       el('div', { class: 'row-inline', style: { marginTop: '8px' } }, [
         el('input', { id: 'neues-etikett', type: 'text', placeholder: 'Neues Etikett / Barcode' }),
         el('button', {
@@ -221,6 +369,7 @@ async function openKatalogSheet(row) {
           },
         }, ['+ Exemplar']),
       ]),
+      el('p', { class: 'hint', style: { marginTop: '14px' } }, [`Insgesamt ${statistik.gesamt}× ausgeliehen.`]),
     ]);
   }
 
@@ -228,7 +377,9 @@ async function openKatalogSheet(row) {
     title: row ? row.Titel || 'Titel bearbeiten' : 'Neuer Titel',
     fields,
     values: row || {},
-    extra: exemplareBox,
+    before: buildCoverPanel(row),
+    wide: true,
+    extra: extraBox,
     onSave: async (values) => {
       const payload = row ? { ...values, KatalogNi: row.KatalogNi } : values;
       await api.katalog.save(payload);
@@ -251,27 +402,39 @@ async function openKatalogSheet(row) {
 
 function wireLeser() {
   document.getElementById('leser-suche').addEventListener('input', debounce(loadLeser, 200));
+  document.getElementById('leser-filter-gruppe').addEventListener('change', loadLeser);
+  document.getElementById('leser-filter-zweig').addEventListener('change', loadLeser);
+  document.getElementById('leser-filter-status').addEventListener('change', loadLeser);
   document.getElementById('leser-neu').addEventListener('click', () => openLeserSheet(null));
 }
 
 async function loadLeser() {
   const query = document.getElementById('leser-suche').value.trim();
-  const rows = await api.leser.search(query);
+  const leserGruNi = document.getElementById('leser-filter-gruppe').value;
+  const zweigId = document.getElementById('leser-filter-zweig').value;
+  const status = document.getElementById('leser-filter-status').value;
+
+  const [rows, ueberfaellig] = await Promise.all([
+    api.leser.search({ query, leserGruNi, zweigId, gesperrt: status === 'gesperrt' || status === 'aktiv' ? status : undefined }),
+    api.ausleihe.ueberfaelligeAlle(),
+  ]);
+  const ueberfaelligSet = new Set(ueberfaellig.map((r) => r.LeserNi));
+  const gefiltert = status === 'rueckstand' ? rows.filter((r) => ueberfaelligSet.has(r.LeserNi)) : rows;
+
   const tbody = document.getElementById('leser-tbody');
   tbody.replaceChildren();
-  if (!rows.length) {
+  if (!gefiltert.length) {
     tbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['🧑‍🎓']), 'Keine Nutzer gefunden.'])])]));
     return;
   }
-  for (const row of rows) {
-    const offen = await api.leser.offeneAusleihen(row.LeserNi);
+  for (const row of gefiltert) {
     tbody.appendChild(
-      el('tr', { onclick: () => openLeserSheet(row) }, [
+      el('tr', { class: ueberfaelligSet.has(row.LeserNi) ? 'row-overdue' : '', onclick: () => openLeserSheet(row) }, [
         el('td', {}, [`${row.Nachname || ''}, ${row.Vorname || ''}`]),
         el('td', {}, [row.Kuerzel || '']),
         el('td', {}, [row.Jahrgang || '']),
         el('td', {}, [row.emailPriv || '']),
-        el('td', { class: 'num' }, [String(offen.length)]),
+        el('td', { class: 'num' }, [String(row.offeneAusleihen || 0)]),
       ])
     );
   }
@@ -293,15 +456,23 @@ async function openLeserSheet(row) {
 
   let historyBox = null;
   if (row?.LeserNi) {
-    const historie = await api.leser.mahnhistorie(row.LeserNi);
-    if (historie.length) {
-      historyBox = el('div', {}, [
-        el('div', { class: 'section-title' }, ['Mahnhistorie']),
-        ...historie.slice(0, 8).map((h) =>
-          el('div', { class: 'hint', style: { marginBottom: '4px' } }, [`${fmtDatum(h.Mahndatum)} – ${h.Titel} (${fmtGeld(h.MaGebuehr)})`])
-        ),
-      ]);
-    }
+    const [offen, historie] = await Promise.all([api.leser.offeneAusleihen(row.LeserNi), api.leser.mahnhistorie(row.LeserNi)]);
+    historyBox = el('div', {}, [
+      offen.length
+        ? el('div', {}, [
+            el('div', { class: 'section-title' }, ['Offene Ausleihen']),
+            ...offen.map((o) => el('div', { class: 'hint', style: { marginBottom: '4px' } }, [`${o.Titel} – seit ${fmtDatum(o.AuslDatum)}`])),
+          ])
+        : null,
+      historie.length
+        ? el('div', {}, [
+            el('div', { class: 'section-title', style: { marginTop: '18px' } }, ['Mahnhistorie']),
+            ...historie.slice(0, 8).map((h) =>
+              el('div', { class: 'hint', style: { marginBottom: '4px' } }, [`${fmtDatum(h.Mahndatum)} – ${h.Titel} (${fmtGeld(h.MaGebuehr)})`])
+            ),
+          ])
+        : null,
+    ]);
   }
 
   openSheet({
@@ -330,7 +501,7 @@ async function openLeserSheet(row) {
 /* -------------------------------------------------------------- Ausleihe */
 
 async function findLeserByKennung(text) {
-  const rows = await api.leser.search(text);
+  const rows = await api.leser.search({ query: text });
   return rows.find((r) => r.AusweisId === text || r.Kuerzel === text) || rows[0] || null;
 }
 
@@ -378,22 +549,34 @@ function wireRueckgabe() {
     await loadRueckgabe();
     await refreshKennzahlen();
   });
+  document.getElementById('rueckgabe-suche').addEventListener('input', debounce(loadRueckgabe, 200));
+  document.getElementById('rueckgabe-nur-ueberfaellig').addEventListener('change', loadRueckgabe);
 }
 
 async function loadRueckgabe() {
-  const rows = await api.ausleihe.alleOffen();
+  const [rows, ueberfaellig] = await Promise.all([api.ausleihe.alleOffen(), api.ausleihe.ueberfaelligeAlle()]);
+  const ueberfMap = new Map(ueberfaellig.map((r) => [r.id, r]));
+  const suche = document.getElementById('rueckgabe-suche').value.trim().toLowerCase();
+  const nurUeberfaellig = document.getElementById('rueckgabe-nur-ueberfaellig').checked;
+
+  let gefiltert = rows;
+  if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
+  if (nurUeberfaellig) gefiltert = gefiltert.filter((r) => ueberfMap.has(r.id));
+
   const tbody = document.getElementById('rueckgabe-tbody');
   tbody.replaceChildren();
-  if (!rows.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✅']), 'Keine offenen Ausleihen.'])])]));
+  if (!gefiltert.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✅']), 'Keine offenen Ausleihen.'])])]));
     return;
   }
-  for (const row of rows) {
+  for (const row of gefiltert) {
+    const ueb = ueberfMap.get(row.id);
     tbody.appendChild(
-      el('tr', {}, [
+      el('tr', { class: ueb ? 'row-overdue' : '' }, [
         el('td', {}, [`${row.Titel} – ${row.MedienEtik || ''}`]),
         el('td', {}, [`${row.Nachname}, ${row.Vorname}`]),
         el('td', {}, [fmtDatum(row.AuslDatum)]),
+        el('td', {}, [ueb ? el('span', { class: 'badge danger' }, [`${ueb.tageUeberfaellig} Tage überfällig`]) : el('span', { class: 'badge ok' }, ['pünktlich'])]),
         el('td', {}, [String(row.AnzVerl || 0)]),
         el('td', { class: 'actions' }, [
           el('button', { class: 'button small', onclick: async () => { await api.ausleihe.verlaengern(row.id); await loadRueckgabe(); toast('Verlängert.'); } }, ['Verlängern']),
@@ -411,6 +594,8 @@ function wireMahnungen() {
   document.getElementById('mahn-alle').addEventListener('change', (e) => {
     for (const cb of document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
   });
+  document.getElementById('mahnungen-suche').addEventListener('input', debounce(loadMahnungen, 200));
+  document.getElementById('mahnungen-filter-stufe').addEventListener('change', loadMahnungen);
   document.getElementById('mahnungen-drucken').addEventListener('click', async () => {
     const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]:checked')];
     if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
@@ -429,25 +614,44 @@ function stufeBadgeClass(stufe, mahnstufen) {
   return '';
 }
 
+function fuelleMahnstufenFilter() {
+  const sel = document.getElementById('mahnungen-filter-stufe');
+  const bisher = sel.value;
+  sel.replaceChildren(el('option', { value: '' }, ['Alle Stufen']), ...state.settings.mahnstufen.map((s, i) => el('option', { value: String(i) }, [s.text])));
+  sel.value = bisher;
+}
+
 async function loadMahnungen() {
+  fuelleMahnstufenFilter();
   const rows = await api.mahnung.ueberfaellige();
+  const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
+  const stufeFilter = document.getElementById('mahnungen-filter-stufe').value;
+  const mahnstufen = state.settings.mahnstufen;
+
+  let gefiltert = rows;
+  if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
+  if (stufeFilter !== '' && mahnstufen[Number(stufeFilter)]) {
+    const gesuchteStufe = mahnstufen[Number(stufeFilter)];
+    gefiltert = gefiltert.filter((r) => r.stufe.text === gesuchteStufe.text);
+  }
+
   const tbody = document.getElementById('mahnungen-tbody');
   tbody.replaceChildren();
   document.getElementById('mahn-alle').checked = false;
-  if (!rows.length) {
+  if (!gefiltert.length) {
     tbody.appendChild(el('tr', {}, [el('td', { colSpan: 7 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✉️']), 'Keine überfälligen Ausleihen.'])])]));
     return;
   }
-  const mahnstufen = state.settings.mahnstufen;
-  for (const row of rows) {
+  for (const row of gefiltert) {
+    const badgeClass = stufeBadgeClass(row.stufe, mahnstufen);
     tbody.appendChild(
-      el('tr', {}, [
+      el('tr', { class: badgeClass === 'danger' ? 'row-overdue' : '' }, [
         el('td', {}, [el('input', { type: 'checkbox', 'data-payload': JSON.stringify(row) })]),
         el('td', {}, [row.Titel]),
         el('td', {}, [`${row.Nachname}, ${row.Vorname}`]),
         el('td', {}, [fmtDatum(row.faelligAm)]),
         el('td', {}, [String(row.tageUeberfaellig)]),
-        el('td', {}, [el('span', { class: `badge ${stufeBadgeClass(row.stufe, mahnstufen)}` }, [row.stufe.text])]),
+        el('td', {}, [el('span', { class: `badge ${badgeClass}` }, [row.stufe.text])]),
         el('td', { class: 'num' }, [fmtGeld(row.stufe.gebuehr)]),
       ])
     );
@@ -456,12 +660,22 @@ async function loadMahnungen() {
 
 /* --------------------------------------------------------------- Bestand */
 
+function aktualisiereCoverFortschritt(p) {
+  const fill = document.getElementById('cover-progress-fill');
+  const statusEl = document.getElementById('cover-download-status');
+  if (!fill || !statusEl) return;
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  fill.style.width = `${pct}%`;
+  statusEl.textContent = `${p.done}/${p.total} geprüft – ${p.gefunden} Cover gefunden, ${p.fehler} ohne Treffer.`;
+}
+
 function wireBestand() {
   document.getElementById('bestand-import').addEventListener('click', async () => {
     const result = await api.bestand.importieren();
     if (!result) return;
     toast(`Import abgeschlossen: ${result.kennzahlen.titel} Titel, ${result.kennzahlen.leser} Nutzer.`);
     state.stammdaten = await api.stammdaten.get();
+    fuelleAlleFilter();
     await refreshKennzahlen();
   });
   document.getElementById('bestand-export').addEventListener('click', async () => {
@@ -469,6 +683,27 @@ function wireBestand() {
     if (!path) return;
     toast(`Exportiert nach ${path}`);
   });
+
+  const startBtn = document.getElementById('cover-download-start');
+  const cancelBtn = document.getElementById('cover-download-abbrechen');
+  const statusEl = document.getElementById('cover-download-status');
+  const track = document.getElementById('cover-progress-track');
+  const fill = document.getElementById('cover-progress-fill');
+
+  startBtn.addEventListener('click', async () => {
+    const nurFehlende = !document.getElementById('cover-alle-neu').checked;
+    startBtn.disabled = true;
+    cancelBtn.hidden = false;
+    track.hidden = false;
+    fill.style.width = '0%';
+    statusEl.textContent = 'Starte Download …';
+    const result = await api.cover.fetchAll({ nurFehlende });
+    startBtn.disabled = false;
+    cancelBtn.hidden = true;
+    statusEl.textContent = `Fertig: ${result.gefunden} Cover geladen, ${result.fehler} ohne Treffer, von ${result.total} geprüften Titeln${result.abgebrochen ? ' (abgebrochen)' : ''}.`;
+    toast(`${result.gefunden} Cover heruntergeladen.`);
+  });
+  cancelBtn.addEventListener('click', () => api.cover.fetchAllCancel());
 }
 
 /* ---------------------------------------------------------- Einstellungen */
@@ -477,26 +712,102 @@ function wireEinstellungen() {
   for (const id of ['set-uiStyle', 'set-theme']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-leihfristTage', 'set-maxVerlaengerung', 'set-absenderName', 'set-absenderAdresse']) {
+  for (const id of [
+    'set-leihfristTage', 'set-maxVerlaengerung', 'set-leihfristOffsetTage',
+    'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
+    'set-mahnBetreffVorlage', 'set-mahnSchluss',
+  ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
+
   document.getElementById('mahnstufe-hinzufuegen').addEventListener('click', () => {
-    state.settings.mahnstufen.push({ tageUeberfaellig: 7, gebuehr: 0.5, text: 'Mahnung' });
+    state.settings.mahnstufen.push({
+      tageUeberfaellig: 7,
+      gebuehr: 0.5,
+      text: 'Mahnung',
+      briefText: 'Liebe/r {Vorname} {Nachname},\n\ndas Medium ist seit {Tage} Tagen überfällig. Bitte gib es so bald wie möglich zurück.',
+    });
     renderMahnstufen();
     speichereEinstellungenFormular();
   });
+
+  document.getElementById('fristverschiebung-anwenden').addEventListener('click', async () => {
+    const tage = Number(document.getElementById('fristverschiebung-tage').value) || 0;
+    if (!tage) { toast('Bitte eine Anzahl Tage ungleich 0 angeben.', 'error'); return; }
+    if (!confirm(`Wirklich das Ausleihdatum aller offenen Ausleihen um ${tage} Tage verschieben? Das lässt sich nicht rückgängig machen.`)) return;
+    const result = await api.ausleihe.verschiebenAlle(tage);
+    toast(`${result.anzahl} offene Ausleihe(n) verschoben.`);
+    await refreshKennzahlen();
+  });
+
+  document.getElementById('mahn-logo-hochladen').addEventListener('click', async () => {
+    const result = await api.mahnung.logoAuswaehlen();
+    if (!result) return;
+    if (result.error) { toast(result.error, 'error'); return; }
+    state.settings.mahnLogoDataUrl = result.dataUrl;
+    zeigeLogoVorschau(result.dataUrl);
+    speichereEinstellungenFormular();
+  });
+  document.getElementById('mahn-logo-entfernen').addEventListener('click', () => {
+    state.settings.mahnLogoDataUrl = '';
+    zeigeLogoVorschau('');
+    speichereEinstellungenFormular();
+  });
+}
+
+function zeigeLogoVorschau(dataUrl) {
+  const img = document.getElementById('mahn-logo-preview');
+  const removeBtn = document.getElementById('mahn-logo-entfernen');
+  if (dataUrl) { img.src = dataUrl; img.hidden = false; removeBtn.hidden = false; }
+  else { img.hidden = true; removeBtn.hidden = true; }
+}
+
+/** Setzt {Platzhalter} für die Live-Vorschau einer Mahnstufe mit Beispieldaten. */
+function fuelleVorschauVorlage(vorlage, stufe) {
+  const werte = {
+    Vorname: 'Anna', Nachname: 'Muster', Titel: 'Beispielbuch',
+    Tage: String(stufe.tageUeberfaellig || 0), Gebuehr: fmtGeld(stufe.gebuehr),
+    Datum: fmtDatum(new Date().toISOString()), Faellig: fmtDatum(new Date().toISOString()), Stufe: stufe.text,
+  };
+  return String(vorlage || '').replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(werte, k) ? werte[k] : m));
 }
 
 function renderMahnstufen() {
   const box = document.getElementById('mahnstufen-liste');
   box.replaceChildren();
-  state.settings.mahnstufen.forEach((stufe, i) => {
+  const arr = state.settings.mahnstufen;
+
+  arr.forEach((stufe, i) => {
+    const previewBox = el('div', { class: 'mahnstufe-preview', hidden: true }, [fuelleVorschauVorlage(stufe.briefText, stufe)]);
+    const previewToggle = el('button', {
+      class: 'button small ghost',
+      onclick: () => {
+        previewBox.hidden = !previewBox.hidden;
+        previewToggle.textContent = previewBox.hidden ? 'Vorschau' : 'Vorschau ausblenden';
+      },
+    }, ['Vorschau']);
+    const aktualisierePreview = () => { previewBox.textContent = fuelleVorschauVorlage(stufe.briefText, stufe); };
+
     box.appendChild(
-      el('div', { class: 'mahnstufe-row' }, [
-        el('input', { type: 'number', value: stufe.tageUeberfaellig, title: 'Tage überfällig', onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); speichereEinstellungenFormular(); } }),
-        el('input', { type: 'number', step: '0.1', value: stufe.gebuehr, title: 'Gebühr €', onchange: (e) => { stufe.gebuehr = Number(e.target.value); speichereEinstellungenFormular(); } }),
-        el('input', { type: 'text', value: stufe.text, title: 'Bezeichnung', onchange: (e) => { stufe.text = e.target.value; speichereEinstellungenFormular(); } }),
-        el('button', { class: 'icon-button', onclick: () => { state.settings.mahnstufen.splice(i, 1); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['✕']),
+      el('div', { class: 'mahnstufe-card' }, [
+        el('div', { class: 'mahnstufe-head' }, [
+          el('span', { class: `badge ${stufeBadgeClass(stufe, arr)}` }, [`Stufe ${i + 1}`]),
+          el('input', { type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text', onchange: (e) => { stufe.text = e.target.value; aktualisierePreview(); speichereEinstellungenFormular(); } }),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'icon-button', title: 'Nach oben', disabled: i === 0, onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['↑']),
+          el('button', { class: 'icon-button', title: 'Nach unten', disabled: i === arr.length - 1, onclick: () => { arr.splice(i + 1, 0, arr.splice(i, 1)[0]); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['↓']),
+          el('button', { class: 'icon-button', title: 'Stufe löschen', onclick: () => { arr.splice(i, 1); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['✕']),
+        ]),
+        el('div', { class: 'field-row' }, [
+          el('div', { class: 'field' }, [el('label', {}, ['Tage überfällig']), el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
+          el('div', { class: 'field' }, [el('label', {}, ['Gebühr €']), el('input', { type: 'number', step: '0.1', value: stufe.gebuehr, onchange: (e) => { stufe.gebuehr = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
+        ]),
+        el('div', { class: 'field' }, [
+          el('label', {}, ['Brieftext']),
+          el('textarea', { rows: 4, value: stufe.briefText || '', oninput: (e) => { stufe.briefText = e.target.value; aktualisierePreview(); }, onchange: () => speichereEinstellungenFormular() }),
+        ]),
+        previewToggle,
+        previewBox,
       ])
     );
   });
@@ -508,8 +819,14 @@ async function loadEinstellungen() {
   document.getElementById('set-theme').value = s.theme;
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
+  document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
   document.getElementById('set-absenderName').value = s.absenderName || '';
   document.getElementById('set-absenderAdresse').value = s.absenderAdresse || '';
+  document.getElementById('set-absenderEmail').value = s.absenderEmail || '';
+  document.getElementById('set-absenderTelefon').value = s.absenderTelefon || '';
+  document.getElementById('set-mahnBetreffVorlage').value = s.mahnBetreffVorlage || '';
+  document.getElementById('set-mahnSchluss').value = s.mahnSchluss || '';
+  zeigeLogoVorschau(s.mahnLogoDataUrl || '');
   renderMahnstufen();
 }
 
@@ -519,8 +836,14 @@ const speichereEinstellungenFormular = debounce(async () => {
     theme: document.getElementById('set-theme').value,
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 28,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
+    leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
     absenderName: document.getElementById('set-absenderName').value,
     absenderAdresse: document.getElementById('set-absenderAdresse').value,
+    absenderEmail: document.getElementById('set-absenderEmail').value,
+    absenderTelefon: document.getElementById('set-absenderTelefon').value,
+    mahnBetreffVorlage: document.getElementById('set-mahnBetreffVorlage').value,
+    mahnSchluss: document.getElementById('set-mahnSchluss').value,
+    mahnLogoDataUrl: state.settings.mahnLogoDataUrl || '',
     mahnstufen: state.settings.mahnstufen,
   };
   state.settings = await api.settings.save(patch);

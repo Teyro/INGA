@@ -18,7 +18,9 @@ let printWindow = null;
 let splashWindow = null;
 let store = null;
 let db = null;
+let coversDir = null;
 let activeStyle = platform.nativeStyle();
+let coverBulkAbgebrochen = false;
 
 function settings() {
   return store.get('settings', defaultSettingsFor(platform.nativeStyle(), platform.STYLE_ACCENTS[platform.nativeStyle()]));
@@ -116,8 +118,13 @@ function createMainWindow() {
   harden(mainWindow);
   mainWindow.loadFile(path.join(RENDERER, 'index.html'));
   mainWindow.once('ready-to-show', () => {
-    closeSplashWindow();
-    mainWindow.show();
+    // Künstliche Verzögerung, damit der Splashscreen tatsächlich sichtbar ist –
+    // auf schnellen Rechnern wäre er sonst kaum wahrnehmbar, da das Hauptfenster
+    // oft schon nach wenigen hundert Millisekunden bereit ist.
+    setTimeout(() => {
+      closeSplashWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    }, 1000 + Math.floor(Math.random() * 2000)); // 1–3 s
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -200,6 +207,48 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/* ---------------------------------------------------------------- Cover */
+
+const COVER_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+
+async function coverDataUrl(katalogNi) {
+  const info = repo.coverInfo(db, katalogNi);
+  if (!info) return null;
+  try {
+    const buf = await fs.readFile(path.join(coversDir, info.dateiname));
+    const ext = info.dateiname.split('.').pop().toLowerCase();
+    return `data:${COVER_MIME[ext] || 'image/jpeg'};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Lädt das Cover eines Titels per ISBN/EAN von Open Library (frei, ohne API-Key). */
+async function downloadCoverForKatalog(katalogNi) {
+  const katalog = repo.getKatalog(db, katalogNi);
+  const isbn = String(katalog?.ISBN || katalog?.EAN || '').replace(/[^0-9Xx]/g, '');
+  if (!isbn) return { ok: false, grund: 'keine ISBN/EAN hinterlegt' };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, { signal: controller.signal });
+    if (!res.ok) return { ok: false, grund: 'kein Cover gefunden' };
+    const buf = Buffer.from(await res.arrayBuffer());
+    // Open Library liefert bei unbekannter ISBN gelegentlich ein winziges
+    // Platzhalterbild statt eines Fehlers – daran erkennen wir „nicht gefunden“.
+    if (buf.byteLength < 900) return { ok: false, grund: 'kein Cover gefunden' };
+    const dateiname = `${katalogNi}.jpg`;
+    await fs.writeFile(path.join(coversDir, dateiname), buf);
+    repo.setCover(db, katalogNi, dateiname, 'openlibrary');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, grund: err.name === 'AbortError' ? 'Zeitüberschreitung' : err.message };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /* ------------------------------------------------------ Mahnungen drucken */
 
 async function openMahnungPrintWindow(briefe) {
@@ -257,18 +306,20 @@ function registerIpc() {
   });
   ipcMain.handle('settings:read', () => settings());
 
-  ipcMain.handle('katalog:search', (_e, query) => repo.searchKatalog(db, query));
+  ipcMain.handle('katalog:search', (_e, filter) => repo.searchKatalog(db, filter));
   ipcMain.handle('katalog:get', (_e, katalogNi) => repo.getKatalog(db, katalogNi));
   ipcMain.handle('katalog:save', (_e, row) => repo.saveKatalog(db, row));
   ipcMain.handle('katalog:delete', (_e, katalogNi) => repo.deleteKatalog(db, katalogNi));
   ipcMain.handle('katalog:exemplare', (_e, katalogNi) => repo.exemplareFuer(db, katalogNi));
+  ipcMain.handle('katalog:top-ausgeliehen', (_e, limit) => repo.topAusgelieheneBuecher(db, limit || 10));
+  ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
 
   ipcMain.handle('medium:save', (_e, row) => repo.saveMedium(db, row));
   ipcMain.handle('medium:delete', (_e, medienNi) => repo.deleteMedium(db, medienNi));
   ipcMain.handle('medium:status', (_e, medienNi) => repo.exemplarStatus(db, medienNi));
   ipcMain.handle('medium:find-etikett', (_e, etikett) => repo.findExemplarByEtikett(db, etikett));
 
-  ipcMain.handle('leser:search', (_e, query) => repo.searchLeser(db, query));
+  ipcMain.handle('leser:search', (_e, filter) => repo.searchLeser(db, filter));
   ipcMain.handle('leser:get', (_e, leserNi) => repo.getLeser(db, leserNi));
   ipcMain.handle('leser:save', (_e, row) => repo.saveLeser(db, row));
   ipcMain.handle('leser:delete', (_e, leserNi) => repo.deleteLeser(db, leserNi));
@@ -276,9 +327,13 @@ function registerIpc() {
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
 
   ipcMain.handle('ausleihe:alle-offen', () => repo.alleOffenenAusleihen(db));
+  ipcMain.handle('ausleihe:ueberfaellige-alle', () =>
+    repo.ueberfaelligeAusleihen(db, { leihfristTageVorgabe: settings().leihfristTage, leihfristOffsetTage: settings().leihfristOffsetTage })
+  );
   ipcMain.handle('ausleihe:ausleihen', (_e, payload) => {
     try {
-      return { ok: true, ...repo.ausleihen(db, { ...payload, leihfristTageVorgabe: settings().leihfristTage }) };
+      const s = settings();
+      return { ok: true, ...repo.ausleihen(db, { ...payload, leihfristTageVorgabe: s.leihfristTage, leihfristOffsetTage: s.leihfristOffsetTage }) };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -292,9 +347,17 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
+  ipcMain.handle('ausleihe:verschieben-alle', (_e, tage) => {
+    const anzahl = repo.verschiebeOffeneAusleihen(db, tage);
+    return { anzahl };
+  });
 
   ipcMain.handle('mahnung:ueberfaellige', () =>
-    repo.ueberfaelligeMitStufe(db, { mahnstufen: settings().mahnstufen, leihfristTageVorgabe: settings().leihfristTage })
+    repo.ueberfaelligeMitStufe(db, {
+      mahnstufen: settings().mahnstufen,
+      leihfristTageVorgabe: settings().leihfristTage,
+      leihfristOffsetTage: settings().leihfristOffsetTage,
+    })
   );
   ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, positionen) => {
     const s = settings();
@@ -310,11 +373,76 @@ function registerIpc() {
       summe: posten.reduce((sum, p) => sum + Number(p.stufe.gebuehr || 0), 0),
       absenderName: s.absenderName,
       absenderAdresse: s.absenderAdresse,
+      absenderEmail: s.absenderEmail,
+      absenderTelefon: s.absenderTelefon,
+      mahnBetreffVorlage: s.mahnBetreffVorlage,
+      mahnSchluss: s.mahnSchluss,
+      mahnLogoDataUrl: s.mahnLogoDataUrl,
       datum: new Date().toLocaleDateString('de-DE'),
     }));
     await openMahnungPrintWindow(briefe);
     return { anzahl: briefe.length };
   });
+
+  ipcMain.handle('mahnung:logo-auswaehlen', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Logo auswählen',
+      properties: ['openFile'],
+      filters: [{ name: 'Bilder', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const ext = (filePath.split('.').pop() || 'png').toLowerCase();
+    const buf = await fs.readFile(filePath);
+    if (buf.byteLength > 1_500_000) return { error: 'Datei zu groß (max. 1,5 MB).' };
+    return { dataUrl: `data:${COVER_MIME[ext] || 'image/png'};base64,${buf.toString('base64')}` };
+  });
+
+  ipcMain.handle('cover:get', (_e, katalogNi) => coverDataUrl(katalogNi));
+  ipcMain.handle('cover:fetch-one', async (_e, katalogNi) => downloadCoverForKatalog(katalogNi));
+  ipcMain.handle('cover:upload', async (_e, katalogNi) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Cover auswählen',
+      properties: ['openFile'],
+      filters: [{ name: 'Bilder', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false };
+    const quelle = result.filePaths[0];
+    const ext = (quelle.split('.').pop() || 'jpg').toLowerCase();
+    const dateiname = `${katalogNi}.${ext}`;
+    await fs.copyFile(quelle, path.join(coversDir, dateiname));
+    // altes Cover mit ggf. anderer Endung entfernen, damit nicht zwei Dateien liegen bleiben
+    const bisher = repo.coverInfo(db, katalogNi);
+    if (bisher && bisher.dateiname !== dateiname) {
+      await fs.unlink(path.join(coversDir, bisher.dateiname)).catch(() => {});
+    }
+    repo.setCover(db, katalogNi, dateiname, 'upload');
+    return { ok: true };
+  });
+  ipcMain.handle('cover:delete', async (_e, katalogNi) => {
+    const info = repo.coverInfo(db, katalogNi);
+    if (info) await fs.unlink(path.join(coversDir, info.dateiname)).catch(() => {});
+    repo.removeCover(db, katalogNi);
+    return { ok: true };
+  });
+  ipcMain.handle('cover:fetch-all', async (event, { nurFehlende = true } = {}) => {
+    coverBulkAbgebrochen = false;
+    const alle = db.prepare(`SELECT "KatalogNi" FROM "Katalog"`).all();
+    let done = 0, gefunden = 0, fehler = 0;
+    for (const { KatalogNi } of alle) {
+      if (coverBulkAbgebrochen) break;
+      done += 1;
+      if (nurFehlende && repo.coverInfo(db, KatalogNi)) {
+        event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler, uebersprungen: true });
+        continue;
+      }
+      const result = await downloadCoverForKatalog(KatalogNi);
+      if (result.ok) gefunden += 1; else fehler += 1;
+      event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler });
+    }
+    return { done, total: alle.length, gefunden, fehler, abgebrochen: coverBulkAbgebrochen };
+  });
+  ipcMain.handle('cover:fetch-all-cancel', () => { coverBulkAbgebrochen = true; });
 
   ipcMain.handle('stammdaten:get', () => repo.stammdaten(db));
   ipcMain.handle('kennzahlen:get', () => repo.kennzahlen(db));
@@ -389,9 +517,11 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     store = new Store(path.join(app.getPath('userData'), 'config'));
     db = openDatabase(app.getPath('userData'));
+    coversDir = path.join(app.getPath('userData'), 'covers');
+    await fs.mkdir(coversDir, { recursive: true }).catch(() => {});
     registerIpc();
     buildMenu();
     createSplashWindow();

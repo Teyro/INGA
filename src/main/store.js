@@ -87,6 +87,18 @@ class Store {
   }
 }
 
+// Platzhalter, die beim Drucken ersetzt werden: {Vorname} {Nachname} {Titel}
+// {Tage} {Gebuehr} {Datum} {Faellig} {Stufe}
+const DEFAULT_BRIEFTEXT =
+  'Liebe/r {Vorname} {Nachname},\n\n' +
+  'die unten aufgeführten Medien sind seit {Tage} Tagen überfällig (fällig war am {Faellig}). ' +
+  'Bitte gib sie so bald wie möglich in der Bibliothek zurück.';
+const DEFAULT_BRIEFTEXT_LETZTE =
+  'Liebe/r {Vorname} {Nachname},\n\n' +
+  'trotz vorheriger Mahnung(en) sind die unten aufgeführten Medien weiterhin nicht zurückgegeben – ' +
+  'sie sind nun seit {Tage} Tagen überfällig. Bitte gib sie umgehend zurück, ' +
+  'andernfalls kontaktieren wir die Erziehungsberechtigten.';
+
 const DEFAULT_SETTINGS = {
   uiStyle: 'auto', // auto | mac | win | kde | gnome
   theme: 'auto', // auto | light | dark
@@ -101,15 +113,24 @@ const DEFAULT_SETTINGS = {
   // Ausleihe
   leihfristTage: 28,
   maxVerlaengerung: 2,
+  // Wirkt zusätzlich zur Leihfrist (Standard oder Medienart) auf JEDE
+  // berechnete Fälligkeit – z. B. +14 für eine Ferienschließzeit. Betrifft
+  // offene und künftige Ausleihen sofort, ohne AuslDatum zu verändern.
+  leihfristOffsetTage: 0,
 
   // Mahnwesen
   mahnstufen: [
-    { tageUeberfaellig: 7, gebuehr: 0.5, text: '1. Mahnung' },
-    { tageUeberfaellig: 21, gebuehr: 1.5, text: '2. Mahnung' },
-    { tageUeberfaellig: 42, gebuehr: 3.0, text: 'Letzte Mahnung' },
+    { tageUeberfaellig: 7, gebuehr: 0.5, text: '1. Mahnung', briefText: DEFAULT_BRIEFTEXT },
+    { tageUeberfaellig: 21, gebuehr: 1.5, text: '2. Mahnung', briefText: DEFAULT_BRIEFTEXT },
+    { tageUeberfaellig: 42, gebuehr: 3.0, text: 'Letzte Mahnung', briefText: DEFAULT_BRIEFTEXT_LETZTE },
   ],
   absenderName: '',
   absenderAdresse: '',
+  absenderEmail: '',
+  absenderTelefon: '',
+  mahnBetreffVorlage: '{Stufe} – bitte Medien zurückgeben',
+  mahnSchluss: 'Vielen Dank für die Rückgabe.\n\nMit freundlichen Grüßen\nDie Schulbibliothek',
+  mahnLogoDataUrl: '',
 
   // Drucken
   printPaper: 'A4',
@@ -151,6 +172,7 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
               tageUeberfaellig: clamp(Math.round(Number(stufe?.tageUeberfaellig) || 0), 0, 365),
               gebuehr: clamp(Number(stufe?.gebuehr) || 0, 0, 1000),
               text: typeof stufe?.text === 'string' ? stufe.text.slice(0, 80) : 'Mahnung',
+              briefText: typeof stufe?.briefText === 'string' ? stufe.briefText.slice(0, 4000) : DEFAULT_BRIEFTEXT,
             }))
             .slice(0, 10)
         : previous;
@@ -158,6 +180,19 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
     }
     if (key === 'accent') {
       clean[key] = /^#[0-9a-f]{6}$/i.test(value) ? value : previous;
+      continue;
+    }
+    // Logo als data:-URL: nicht wie andere Freitexte auf 200 Zeichen kappen
+    // (würde die Base64-Daten zerstören) – nur Format prüfen, Größe begrenzen.
+    if (key === 'mahnLogoDataUrl') {
+      if (value === '') { clean[key] = ''; continue; }
+      clean[key] = typeof value === 'string' && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(value) && value.length <= 2_000_000
+        ? value
+        : previous;
+      continue;
+    }
+    if (key === 'mahnSchluss' || key === 'absenderAdresse') {
+      clean[key] = typeof value === 'string' ? value.slice(0, 2000) : previous;
       continue;
     }
     if (typeof fallback === 'boolean') {

@@ -27,15 +27,19 @@ html, body { margin: 0; height: 100%; background: var(--window); }
   box-sizing: border-box;
 }
 
-.brief .absender { font-size: 8.5pt; color: #555; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 22px; width: fit-content; }
+.brief .briefkopf { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 22px; }
+.brief .logo { max-height: 44px; max-width: 160px; object-fit: contain; }
+.brief .absender { font-size: 8.5pt; color: #555; width: fit-content; }
+.brief .absender .kontakt { color: #777; }
 .brief .empfaenger { margin-bottom: 30px; }
 .brief .datum { text-align: right; margin-bottom: 24px; }
 .brief h1 { font-size: 13pt; margin: 0 0 16px; }
+.brief p { margin: 0 0 10px; white-space: pre-wrap; }
 .brief table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; }
 .brief th, .brief td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 10pt; }
 .brief td.num, .brief th.num { text-align: right; }
 .brief .summe { text-align: right; font-weight: 700; margin-top: 4px; }
-.brief .schluss { margin-top: 30px; }
+.brief .schluss { margin: 0 0 4px; }
 
 @media print {
   .print-bar { display: none; }

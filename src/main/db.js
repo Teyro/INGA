@@ -98,6 +98,16 @@ function createSchema(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_legacy_table ON legacy_rows (table_name)`);
 
   db.exec(`CREATE TABLE IF NOT EXISTS inga_meta (key TEXT PRIMARY KEY, value TEXT)`);
+
+  // Buchcover: rein INGA-intern (kein Perpustakaan-Feld), deshalb außerhalb von
+  // TABLES/NATIVE_TABLES geführt und nicht Teil von Import/Export. Die
+  // eigentliche Bilddatei liegt im userData-Ordner, hier steht nur der Verweis.
+  db.exec(`CREATE TABLE IF NOT EXISTS inga_covers (
+    "KatalogNi" INTEGER PRIMARY KEY,
+    "dateiname" TEXT NOT NULL,
+    "quelle" TEXT,
+    "aktualisiert" TEXT
+  )`);
 }
 
 function openDatabase(userDataDir) {

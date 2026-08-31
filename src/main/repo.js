@@ -9,18 +9,35 @@ const nowStamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ') +
 
 /* ------------------------------------------------------------- Katalog */
 
-function searchKatalog(db, query, limit = 200) {
-  if (!query) {
-    return db.prepare(`SELECT * FROM "Katalog" ORDER BY "Titel" LIMIT ?`).all(limit);
+/**
+ * Katalogsuche mit Filtern (Medienart, Verfügbarkeit). Liefert je Titel gleich
+ * die Exemplarzahlen mit, damit die Liste nicht mehr pro Zeile einzeln
+ * nachfragen muss.
+ */
+function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, limit = 300) {
+  let sql = `
+    SELECT k.*,
+      (SELECT COUNT(*) FROM "Medien" m WHERE m."KatalogNi" = k."KatalogNi") AS exemplareGesamt,
+      (SELECT COUNT(*) FROM "Medien" m
+        WHERE m."KatalogNi" = k."KatalogNi"
+          AND NOT EXISTS (SELECT 1 FROM "Ausleihe" a WHERE a."MedienNi" = m."MedienNi" AND a."Rueckgabe" IS NULL)
+      ) AS exemplareVerfuegbar
+    FROM "Katalog" k WHERE 1=1`;
+  const params = [];
+  if (query) {
+    sql += ` AND (k."Titel" LIKE ? OR k."Autor" LIKE ? OR k."ISBN" LIKE ? OR k."EAN" LIKE ? OR k."Schlagwort" LIKE ?)`;
+    const like = `%${query}%`;
+    params.push(like, like, like, like, like);
   }
-  const like = `%${query}%`;
-  return db
-    .prepare(
-      `SELECT * FROM "Katalog"
-       WHERE "Titel" LIKE ? OR "Autor" LIKE ? OR "ISBN" LIKE ? OR "EAN" LIKE ? OR "Schlagwort" LIKE ?
-       ORDER BY "Titel" LIMIT ?`
-    )
-    .all(like, like, like, like, like, limit);
+  if (medArtKb) { sql += ` AND k."MedArtKb" = ?`; params.push(medArtKb); }
+  if (systemId) { sql += ` AND k."SystemId" = ?`; params.push(systemId); }
+  sql += ` ORDER BY k."Titel" LIMIT ?`;
+  params.push(limit);
+
+  let rows = db.prepare(sql).all(...params);
+  if (verfuegbarkeit === 'verfuegbar') rows = rows.filter((r) => r.exemplareVerfuegbar > 0);
+  else if (verfuegbarkeit === 'verliehen') rows = rows.filter((r) => r.exemplareGesamt > 0 && r.exemplareVerfuegbar === 0);
+  return rows;
 }
 
 function getKatalog(db, katalogNi) {
@@ -70,18 +87,31 @@ function exemplarStatus(db, medienNi) {
 
 /* --------------------------------------------------------------- Leser */
 
-function searchLeser(db, query, limit = 200) {
-  if (!query) {
-    return db.prepare(`SELECT * FROM "Leser" ORDER BY "Nachname", "Vorname" LIMIT ?`).all(limit);
+/**
+ * Nutzersuche mit Filtern (Gruppe, Zweig, gesperrt). Liefert die Anzahl
+ * offener Ausleihen gleich mit, statt dass die Liste sie pro Zeile einzeln
+ * nachfragen muss.
+ */
+function searchLeser(db, { query, leserGruNi, zweigId, gesperrt } = {}, limit = 300) {
+  let sql = `
+    SELECT l.*,
+      (SELECT COUNT(*) FROM "Ausleihe" a WHERE a."LeserNi" = l."LeserNi" AND a."Rueckgabe" IS NULL) AS offeneAusleihen
+    FROM "Leser" l WHERE 1=1`;
+  const params = [];
+  if (query) {
+    sql += ` AND (l."Nachname" LIKE ? OR l."Vorname" LIKE ? OR l."AusweisId" LIKE ? OR l."Kuerzel" LIKE ?)`;
+    const like = `%${query}%`;
+    params.push(like, like, like, like);
   }
-  const like = `%${query}%`;
-  return db
-    .prepare(
-      `SELECT * FROM "Leser"
-       WHERE "Nachname" LIKE ? OR "Vorname" LIKE ? OR "AusweisId" LIKE ? OR "Kuerzel" LIKE ?
-       ORDER BY "Nachname", "Vorname" LIMIT ?`
-    )
-    .all(like, like, like, like, limit);
+  if (leserGruNi) { sql += ` AND l."LeserGruNi" = ?`; params.push(leserGruNi); }
+  if (zweigId) { sql += ` AND l."ZweigId" = ?`; params.push(zweigId); }
+  sql += ` ORDER BY l."Nachname", l."Vorname" LIMIT ?`;
+  params.push(limit);
+
+  let rows = db.prepare(sql).all(...params);
+  if (gesperrt === 'gesperrt') rows = rows.filter((r) => leserGesperrt(db, r.LeserNi).gesperrt);
+  else if (gesperrt === 'aktiv') rows = rows.filter((r) => !leserGesperrt(db, r.LeserNi).gesperrt);
+  return rows;
 }
 
 function getLeser(db, leserNi) {
@@ -131,7 +161,7 @@ function offeneAusleihenVonLeser(db, leserNi) {
 function alleOffenenAusleihen(db) {
   return db
     .prepare(
-      `SELECT a.*, m."MedienEtik", k."Titel", k."Autor", l."Nachname", l."Vorname"
+      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor", l."Nachname", l."Vorname"
        FROM "Ausleihe" a
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
@@ -141,14 +171,19 @@ function alleOffenenAusleihen(db) {
     .all();
 }
 
-/** Leihfrist in Tagen: zuerst die Medienart, sonst die Vorgabe aus den Einstellungen. */
-function leihfristTage(db, katalogNi, fallbackTage) {
-  const katalog = getKatalog(db, katalogNi);
+/**
+ * Leihfrist in Tagen: zuerst die Medienart, sonst die Vorgabe aus den
+ * Einstellungen – zusätzlich immer verschoben um die globale Fristverschiebung
+ * (z. B. +14 Tage für eine Ferienschließzeit), die für alle Medienarten gilt.
+ */
+function leihfristTage(db, katalogNi, fallbackTage, offsetTage = 0) {
+  let basis = fallbackTage;
+  const katalog = katalogNi ? getKatalog(db, katalogNi) : null;
   if (katalog?.MedArtKb) {
     const art = db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = ?`).get(katalog.MedArtKb);
-    if (art?.Frist) return Number(art.Frist);
+    if (art?.Frist) basis = Number(art.Frist);
   }
-  return fallbackTage;
+  return basis + (Number(offsetTage) || 0);
 }
 
 function addDays(dateStr, days) {
@@ -162,7 +197,7 @@ function addDays(dateStr, days) {
  * Wirft eine Error mit sprechender Meldung, wenn es nicht geht – der Aufrufer
  * (IPC-Handler) reicht die Meldung unverändert an die Oberfläche weiter.
  */
-function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe }) {
+function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe, leihfristOffsetTage = 0 }) {
   const medium = db.prepare(`SELECT * FROM "Medien" WHERE "MedienNi" = ?`).get(medienNi);
   if (!medium) throw new Error('Unbekanntes Exemplar.');
   const status = exemplarStatus(db, medienNi);
@@ -180,7 +215,8 @@ function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe }) {
     AuslDatum: todayStr(),
     ErfassAnw: benutzer || 'inga',
   });
-  return { id: info.lastInsertRowid, faelligAm: addDays(todayStr(), leihfristTage(db, medium.KatalogNi, leihfristTageVorgabe)) };
+  const frist = leihfristTage(db, medium.KatalogNi, leihfristTageVorgabe, leihfristOffsetTage);
+  return { id: info.lastInsertRowid, faelligAm: addDays(todayStr(), frist) };
 }
 
 function zurueckgeben(db, ausleiheId) {
@@ -196,23 +232,61 @@ function verlaengern(db, ausleiheId, maxVerlaengerung) {
 }
 
 /**
- * Überfällige Ausleihen mit der passenden Mahnstufe (nach Tagen seit Ausleihe,
- * Leihfrist der Medienart eingerechnet). Nutzt Mahnstufen aus den Einstellungen.
+ * Verschiebt das Ausleihdatum aller offenen Ausleihen um die angegebene Anzahl
+ * Tage (kann negativ sein) – dadurch verschiebt sich auch die berechnete
+ * Fälligkeit entsprechend. Für einmalige Aktionen wie „alle Fristen wegen
+ * Ferien um 14 Tage nach hinten schieben“. Behält das Zeitformat von
+ * todayStr() bei, damit Export/Import unverändert bleiben.
  */
-function ueberfaelligeMitStufe(db, { mahnstufen, leihfristTageVorgabe }) {
+function verschiebeOffeneAusleihen(db, tage) {
+  const delta = Math.round(Number(tage) || 0);
+  if (!delta) return 0;
+  const offen = db.prepare(`SELECT id, "AuslDatum" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
+  const stmt = db.prepare(`UPDATE "Ausleihe" SET "AuslDatum" = ? WHERE id = ?`);
+  const tx = db.transaction(() => {
+    for (const row of offen) {
+      stmt.run(`${addDays(row.AuslDatum, delta)} 00:00:00.000`, row.id);
+    }
+  });
+  tx();
+  return offen.length;
+}
+
+/**
+ * Alle offenen Ausleihen, die überfällig sind (Leihfrist der Medienart bzw.
+ * Vorgabe plus globale Fristverschiebung eingerechnet) – unabhängig davon, ob
+ * sie eine Mahnstufe erreicht haben. Grundlage für Übersicht/Dashboard und für
+ * die rote Markierung in Nutzer- und Rückgabeliste. Absteigend nach Tagen
+ * überfällig sortiert (am dringendsten zuerst).
+ */
+function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage = 0 } = {}) {
   const offen = alleOffenenAusleihen(db);
   const heute = new Date();
   const ergebnis = [];
   for (const a of offen) {
-    const frist = leihfristTage(db, undefined, leihfristTageVorgabe);
+    const frist = leihfristTage(db, a.KatalogNi, leihfristTageVorgabe, leihfristOffsetTage);
     const faelligAm = new Date(addDays(a.AuslDatum, frist));
     const tageUeberfaellig = Math.floor((heute - faelligAm) / (1000 * 60 * 60 * 24));
     if (tageUeberfaellig <= 0) continue;
+    ergebnis.push({ ...a, tageUeberfaellig, faelligAm: faelligAm.toISOString().slice(0, 10) });
+  }
+  ergebnis.sort((x, y) => y.tageUeberfaellig - x.tageUeberfaellig);
+  return ergebnis;
+}
+
+/**
+ * Überfällige Ausleihen mit der passenden Mahnstufe (nach Tagen überfällig).
+ * Nutzt Mahnstufen aus den Einstellungen; Ausleihen, die noch keine Stufe
+ * erreicht haben, tauchen hier nicht auf (siehe dafür ueberfaelligeAusleihen).
+ */
+function ueberfaelligeMitStufe(db, { mahnstufen, leihfristTageVorgabe, leihfristOffsetTage = 0 }) {
+  const ergebnis = [];
+  for (const a of ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage })) {
     let stufe = null;
     for (const s of mahnstufen) {
-      if (tageUeberfaellig >= s.tageUeberfaellig) stufe = s;
+      if (a.tageUeberfaellig >= s.tageUeberfaellig) stufe = s;
     }
-    if (stufe) ergebnis.push({ ...a, tageUeberfaellig, faelligAm: faelligAm.toISOString().slice(0, 10), stufe });
+    if (stufe) ergebnis.push({ ...a, stufe });
   }
   return ergebnis;
 }
@@ -233,6 +307,54 @@ function mahnhistorieVonLeser(db, leserNi) {
        WHERE mh."LeserNi" = ? ORDER BY mh."Mahndatum" DESC`
     )
     .all(leserNi);
+}
+
+/**
+ * Die meistausgeliehenen Titel über den gesamten Verlauf (offene und
+ * zurückgegebene Ausleihen), für das Dashboard.
+ */
+function topAusgelieheneBuecher(db, limit = 10) {
+  return db
+    .prepare(
+      `SELECT k."KatalogNi", k."Titel", k."Autor", COUNT(*) AS anzahl
+       FROM "Ausleihe" a
+       JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
+       JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
+       GROUP BY k."KatalogNi"
+       ORDER BY anzahl DESC, k."Titel"
+       LIMIT ?`
+    )
+    .all(limit);
+}
+
+/** Wie oft wurde ein Titel insgesamt ausgeliehen (für die Buchdetailseite). */
+function ausleihStatistikFuerKatalog(db, katalogNi) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS gesamt
+       FROM "Ausleihe" a
+       JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
+       WHERE m."KatalogNi" = ?`
+    )
+    .get(katalogNi);
+  return { gesamt: row?.gesamt || 0 };
+}
+
+/* ------------------------------------------------------------- Cover */
+
+function coverInfo(db, katalogNi) {
+  return db.prepare(`SELECT * FROM inga_covers WHERE "KatalogNi" = ?`).get(katalogNi) || null;
+}
+
+function setCover(db, katalogNi, dateiname, quelle) {
+  db.prepare(
+    `INSERT INTO inga_covers ("KatalogNi","dateiname","quelle","aktualisiert") VALUES (?, ?, ?, ?)
+     ON CONFLICT("KatalogNi") DO UPDATE SET "dateiname" = excluded."dateiname", "quelle" = excluded."quelle", "aktualisiert" = excluded."aktualisiert"`
+  ).run(katalogNi, dateiname, quelle, nowStamp());
+}
+
+function removeCover(db, katalogNi) {
+  db.prepare(`DELETE FROM inga_covers WHERE "KatalogNi" = ?`).run(katalogNi);
 }
 
 /* ---------------------------------------------------------- Stammdaten */
@@ -273,9 +395,16 @@ module.exports = {
   ausleihen,
   zurueckgeben,
   verlaengern,
+  verschiebeOffeneAusleihen,
+  ueberfaelligeAusleihen,
   ueberfaelligeMitStufe,
   mahnungEintragen,
   mahnhistorieVonLeser,
+  topAusgelieheneBuecher,
+  ausleihStatistikFuerKatalog,
+  coverInfo,
+  setCover,
+  removeCover,
   stammdaten,
   kennzahlen,
 };

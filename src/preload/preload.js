@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated']);
+const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress']);
 
 contextBridge.exposeInMainWorld('inga', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
@@ -13,11 +13,13 @@ contextBridge.exposeInMainWorld('inga', {
   },
 
   katalog: {
-    search: (query) => ipcRenderer.invoke('katalog:search', query),
+    search: (filter) => ipcRenderer.invoke('katalog:search', filter),
     get: (katalogNi) => ipcRenderer.invoke('katalog:get', katalogNi),
     save: (row) => ipcRenderer.invoke('katalog:save', row),
     delete: (katalogNi) => ipcRenderer.invoke('katalog:delete', katalogNi),
     exemplare: (katalogNi) => ipcRenderer.invoke('katalog:exemplare', katalogNi),
+    topAusgeliehen: (limit) => ipcRenderer.invoke('katalog:top-ausgeliehen', limit),
+    ausleihStatistik: (katalogNi) => ipcRenderer.invoke('katalog:ausleih-statistik', katalogNi),
   },
 
   medium: {
@@ -28,7 +30,7 @@ contextBridge.exposeInMainWorld('inga', {
   },
 
   leser: {
-    search: (query) => ipcRenderer.invoke('leser:search', query),
+    search: (filter) => ipcRenderer.invoke('leser:search', filter),
     get: (leserNi) => ipcRenderer.invoke('leser:get', leserNi),
     save: (row) => ipcRenderer.invoke('leser:save', row),
     delete: (leserNi) => ipcRenderer.invoke('leser:delete', leserNi),
@@ -38,14 +40,26 @@ contextBridge.exposeInMainWorld('inga', {
 
   ausleihe: {
     alleOffen: () => ipcRenderer.invoke('ausleihe:alle-offen'),
+    ueberfaelligeAlle: () => ipcRenderer.invoke('ausleihe:ueberfaellige-alle'),
     ausleihen: (payload) => ipcRenderer.invoke('ausleihe:ausleihen', payload),
     zurueckgeben: (id) => ipcRenderer.invoke('ausleihe:zurueckgeben', id),
     verlaengern: (id) => ipcRenderer.invoke('ausleihe:verlaengern', id),
+    verschiebenAlle: (tage) => ipcRenderer.invoke('ausleihe:verschieben-alle', tage),
   },
 
   mahnung: {
     ueberfaellige: () => ipcRenderer.invoke('mahnung:ueberfaellige'),
     erzeugenUndDrucken: (positionen) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', positionen),
+    logoAuswaehlen: () => ipcRenderer.invoke('mahnung:logo-auswaehlen'),
+  },
+
+  cover: {
+    get: (katalogNi) => ipcRenderer.invoke('cover:get', katalogNi),
+    fetchOne: (katalogNi) => ipcRenderer.invoke('cover:fetch-one', katalogNi),
+    upload: (katalogNi) => ipcRenderer.invoke('cover:upload', katalogNi),
+    delete: (katalogNi) => ipcRenderer.invoke('cover:delete', katalogNi),
+    fetchAll: (options) => ipcRenderer.invoke('cover:fetch-all', options),
+    fetchAllCancel: () => ipcRenderer.invoke('cover:fetch-all-cancel'),
   },
 
   stammdaten: {

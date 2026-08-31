@@ -2,29 +2,63 @@
 
 const api = window.inga;
 
+/** Setzt {Vorname} {Nachname} {Titel} {Tage} {Gebuehr} {Datum} {Faellig} {Stufe} in einer Vorlage ein. */
+function fuelleVorlage(vorlage, werte) {
+  return String(vorlage || '').replace(/\{(\w+)\}/g, (match, key) => (Object.hasOwn(werte, key) ? werte[key] : match));
+}
+
+/** Die Stufe des dringendsten Postens eines Briefs – bestimmt Betreff und Brieftext, falls mehrere Medien überfällig sind. */
+function massgeblicheStufe(posten) {
+  return posten.reduce((max, p) => (!max || (p.stufe?.tageUeberfaellig || 0) >= (max.tageUeberfaellig || 0) ? p.stufe : max), null) || {};
+}
+
 function renderBrief(brief) {
   const { leser, posten, summe } = brief;
+  const stufe = massgeblicheStufe(posten);
+  const tageMax = Math.max(...posten.map((p) => p.tageUeberfaellig || 0));
+  const faelligMin = posten.map((p) => p.faelligAm).sort()[0];
+  const werte = {
+    Vorname: leser?.Vorname || '',
+    Nachname: leser?.Nachname || '',
+    Titel: posten.map((p) => p.Titel).join(', '),
+    Tage: String(tageMax),
+    Gebuehr: fmtGeld(summe),
+    Datum: brief.datum,
+    Faellig: fmtDatum(faelligMin),
+    Stufe: stufe.text || 'Mahnung',
+  };
+
   return el('article', { class: 'brief' }, [
-    el('div', { class: 'absender' }, [brief.absenderName || 'Schulbibliothek', brief.absenderAdresse ? el('div', {}, [brief.absenderAdresse]) : null]),
+    el('div', { class: 'briefkopf' }, [
+      brief.mahnLogoDataUrl ? el('img', { class: 'logo', src: brief.mahnLogoDataUrl, alt: '' }) : null,
+      el('div', { class: 'absender' }, [
+        brief.absenderName || 'Schulbibliothek',
+        brief.absenderAdresse ? el('div', {}, [brief.absenderAdresse]) : null,
+        [brief.absenderEmail, brief.absenderTelefon].filter(Boolean).length
+          ? el('div', { class: 'kontakt' }, [[brief.absenderEmail, brief.absenderTelefon].filter(Boolean).join(' · ')])
+          : null,
+      ]),
+    ]),
     el('div', { class: 'empfaenger' }, [
       el('div', {}, [`${leser?.Vorname || ''} ${leser?.Nachname || ''}`]),
       leser?.Strasse ? el('div', {}, [leser.Strasse]) : null,
       leser?.Ort ? el('div', {}, [`${leser.PLZ || ''} ${leser.Ort}`.trim()]) : null,
     ]),
     el('div', { class: 'datum' }, [brief.datum]),
-    el('h1', {}, [posten[0]?.stufe?.text || 'Mahnung']),
-    el('p', {}, [
-      `Liebe/r ${leser?.Vorname || ''} ${leser?.Nachname || ''}, `,
-      'die folgenden Medien sind überfällig. Bitte gib sie so bald wie möglich zurück.',
-    ]),
+    el('h1', {}, [fuelleVorlage(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung']),
+    ...fuelleVorlage(stufe.briefText, werte)
+      .split('\n')
+      .map((zeile) => (zeile.trim() ? el('p', {}, [zeile]) : null)),
     el('table', {}, [
-      el('thead', {}, [el('tr', {}, [el('th', {}, ['Titel']), el('th', {}, ['Ausgeliehen am']), el('th', { class: 'num' }, ['Gebühr'])])]),
+      el('thead', {}, [el('tr', {}, [el('th', {}, ['Titel']), el('th', {}, ['Ausgeliehen am']), el('th', {}, ['Tage überfällig']), el('th', { class: 'num' }, ['Gebühr'])])]),
       el('tbody', {}, posten.map((p) =>
-        el('tr', {}, [el('td', {}, [p.Titel]), el('td', {}, [fmtDatum(p.AuslDatum)]), el('td', { class: 'num' }, [fmtGeld(p.stufe.gebuehr)])])
+        el('tr', {}, [el('td', {}, [p.Titel]), el('td', {}, [fmtDatum(p.AuslDatum)]), el('td', {}, [String(p.tageUeberfaellig || 0)]), el('td', { class: 'num' }, [fmtGeld(p.stufe.gebuehr)])])
       )),
     ]),
     el('div', { class: 'summe' }, [`Gesamt: ${fmtGeld(summe)}`]),
-    el('p', { class: 'schluss' }, ['Vielen Dank für die Rückgabe.']),
+    ...String(brief.mahnSchluss || '')
+      .split('\n')
+      .map((zeile) => (zeile.trim() ? el('p', { class: 'schluss' }, [zeile]) : el('br'))),
   ]);
 }
 
