@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+<title>INGA</title>
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/platform.css" />
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+<div id="app">
+
+  <div class="titlebar">
+    <div class="window-controls">
+      <button class="icon-button" id="win-close" title="Schließen">✕</button>
+    </div>
+    <div class="brand"><span>📚</span><span>INGA</span></div>
+    <div class="spacer"></div>
+    <div class="caption-space"></div>
+  </div>
+
+  <div id="main">
+    <nav id="sidebar">
+      <div class="nav-section">
+        <div class="nav-item active" data-view="dashboard"><span class="icon">🏠</span><span class="label">Übersicht</span></div>
+        <div class="nav-item" data-view="katalog"><span class="icon">📖</span><span class="label">Katalog</span></div>
+        <div class="nav-item" data-view="leser"><span class="icon">🧑‍🎓</span><span class="label">Nutzer</span></div>
+      </div>
+      <div class="nav-section">
+        <h4>Verleih</h4>
+        <div class="nav-item" data-view="ausleihe"><span class="icon">➡️</span><span class="label">Ausleihen</span></div>
+        <div class="nav-item" data-view="rueckgabe"><span class="icon">⬅️</span><span class="label">Rückgabe</span><span class="nav-count" id="count-offen"></span></div>
+        <div class="nav-item" data-view="mahnungen"><span class="icon">✉️</span><span class="label">Mahnungen</span><span class="nav-count" id="count-mahn"></span></div>
+      </div>
+      <div class="nav-section">
+        <h4>System</h4>
+        <div class="nav-item" data-view="bestand"><span class="icon">🔄</span><span class="label">Import / Export</span></div>
+        <div class="nav-item" data-view="einstellungen"><span class="icon">⚙️</span><span class="label">Einstellungen</span></div>
+      </div>
+    </nav>
+
+    <div id="content">
+
+      <!-- ------------------------------------------------------------ Dashboard -->
+      <section class="view" id="view-dashboard">
+        <div class="toolbar"><h1>Übersicht</h1></div>
+        <div class="view">
+          <div class="stat-row">
+            <div class="card stat-card"><div class="n" id="stat-titel">–</div><div class="label">Titel im Katalog</div></div>
+            <div class="card stat-card"><div class="n" id="stat-exemplare">–</div><div class="label">Exemplare</div></div>
+            <div class="card stat-card"><div class="n" id="stat-leser">–</div><div class="label">Nutzer</div></div>
+            <div class="card stat-card"><div class="n" id="stat-offen">–</div><div class="label">Offene Ausleihen</div></div>
+          </div>
+          <div class="card" style="padding:18px">
+            <div class="section-title">Willkommen</div>
+            <p class="hint">INGA verwaltet Katalog, Ausleihe, Nutzer und Mahnwesen deiner Bibliothek – vollständig kompatibel zum Perpustakaan-Format für Import und Export.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------ Katalog -->
+      <section class="view" id="view-katalog" hidden>
+        <div class="toolbar">
+          <h1>Katalog</h1>
+          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="katalog-suche" placeholder="Titel, Autor, ISBN …" /></div>
+          <div class="spacer"></div>
+          <button class="button primary" id="katalog-neu">+ Neuer Titel</button>
+        </div>
+        <div class="view">
+          <table>
+            <thead><tr><th>Titel</th><th>Autor</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
+            <tbody id="katalog-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------------- Leser -->
+      <section class="view" id="view-leser" hidden>
+        <div class="toolbar">
+          <h1>Nutzer</h1>
+          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="leser-suche" placeholder="Name, Ausweis, Kürzel …" /></div>
+          <div class="spacer"></div>
+          <button class="button primary" id="leser-neu">+ Neuer Nutzer</button>
+        </div>
+        <div class="view">
+          <table>
+            <thead><tr><th>Name</th><th>Kürzel</th><th>Jahrgang</th><th>E-Mail</th><th class="num">Offene Ausleihen</th></tr></thead>
+            <tbody id="leser-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- Ausleihe -->
+      <section class="view" id="view-ausleihe" hidden>
+        <div class="toolbar"><h1>Ausleihen</h1></div>
+        <div class="view">
+          <div class="card" style="padding:18px; max-width:520px">
+            <div class="field">
+              <label>Exemplar (Barcode / Etikett)</label>
+              <input type="text" id="ausleihe-etikett" placeholder="Barcode scannen oder eingeben" autofocus />
+            </div>
+            <div class="field">
+              <label>Nutzer (Ausweis-Nr. / Kürzel)</label>
+              <input type="text" id="ausleihe-leser" placeholder="Ausweisnummer scannen oder eingeben" />
+            </div>
+            <button class="button primary" id="ausleihe-bestaetigen">Ausleihen</button>
+            <p class="hint" id="ausleihe-status" style="margin-top:10px"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- Rückgabe -->
+      <section class="view" id="view-rueckgabe" hidden>
+        <div class="toolbar">
+          <h1>Offene Ausleihen</h1>
+          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="rueckgabe-etikett" placeholder="Barcode zur schnellen Rückgabe" /></div>
+        </div>
+        <div class="view">
+          <table>
+            <thead><tr><th>Titel</th><th>Nutzer</th><th>Ausgeliehen am</th><th>Verlängerungen</th><th class="actions"></th></tr></thead>
+            <tbody id="rueckgabe-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------- Mahnungen -->
+      <section class="view" id="view-mahnungen" hidden>
+        <div class="toolbar">
+          <h1>Mahnungen</h1>
+          <div class="spacer"></div>
+          <button class="button primary" id="mahnungen-drucken">Ausgewählte mahnen &amp; drucken</button>
+        </div>
+        <div class="view">
+          <table>
+            <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Titel</th><th>Nutzer</th><th>Fällig seit</th><th>Tage</th><th>Stufe</th><th class="num">Gebühr</th></tr></thead>
+            <tbody id="mahnungen-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------ Bestand -->
+      <section class="view" id="view-bestand" hidden>
+        <div class="toolbar"><h1>Import / Export</h1></div>
+        <div class="view">
+          <div class="card" style="padding:18px; max-width:560px; margin-bottom:16px">
+            <div class="section-title">Perpustakaan-Import</div>
+            <p class="hint">Liest ein Perpustakaan-Export-Zip vollständig ein (Katalog, Medien, Leser, Ausleihe, Mahnungen und alle weiteren Tabellen). Bestehende Daten in den betroffenen Tabellen werden ersetzt.</p>
+            <button class="button" id="bestand-import">Zip importieren …</button>
+          </div>
+          <div class="card" style="padding:18px; max-width:560px">
+            <div class="section-title">Perpustakaan-Export</div>
+            <p class="hint">Schreibt den kompletten Bestand als Perpustakaan-kompatibles Zip – inklusive aller Tabellen, die INGA nicht selbst bearbeitet.</p>
+            <button class="button" id="bestand-export">Als Zip exportieren …</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- Einstellungen -->
+      <section class="view" id="view-einstellungen" hidden>
+        <div class="toolbar"><h1>Einstellungen</h1></div>
+        <div class="view" style="max-width:640px">
+          <div class="section-title">Oberfläche</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div class="field">
+              <label>Gestaltung</label>
+              <select id="set-uiStyle">
+                <option value="auto">Automatisch (System)</option>
+                <option value="mac">macOS</option>
+                <option value="win">Windows 11</option>
+                <option value="kde">KDE Plasma</option>
+                <option value="gnome">GNOME</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Farbschema</label>
+              <select id="set-theme">
+                <option value="auto">Automatisch</option>
+                <option value="light">Hell</option>
+                <option value="dark">Dunkel</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-title">Ausleihe</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div class="field-row">
+              <div class="field"><label>Standard-Leihfrist (Tage)</label><input type="number" id="set-leihfristTage" min="1" max="365" /></div>
+              <div class="field"><label>Max. Verlängerungen</label><input type="number" id="set-maxVerlaengerung" min="0" max="10" /></div>
+            </div>
+          </div>
+
+          <div class="section-title">Mahnwesen</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div id="mahnstufen-liste"></div>
+            <button class="button small" id="mahnstufe-hinzufuegen">+ Stufe hinzufügen</button>
+            <div class="field" style="margin-top:14px"><label>Absender – Name</label><input type="text" id="set-absenderName" /></div>
+            <div class="field"><label>Absender – Adresse</label><textarea id="set-absenderAdresse" rows="3"></textarea></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="sheet-backdrop" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="icon-button" id="sheet-close">✕</button></div>
+    <div class="sheet-body" id="sheet-body"></div>
+    <div class="sheet-foot">
+      <button class="button" id="sheet-delete" style="margin-right:auto" hidden>Löschen</button>
+      <button class="button" id="sheet-cancel">Abbrechen</button>
+      <button class="button primary" id="sheet-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="js/util.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+<title>Mahnungen</title>
+<style id="page-style"></style>
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/platform.css" />
+<link rel="stylesheet" href="css/print.css" />
+</head>
+<body>
+  <div class="print-bar">
+    <div class="window-controls"><button class="icon-button" id="close">✕</button></div>
+    <div class="brand">Mahnungen</div>
+    <div class="spacer"></div>
+    <span class="hint" id="anzahl"></span>
+    <button class="button" id="print">Drucken</button>
+    <button class="button primary" id="pdf">Als PDF sichern</button>
+  </div>
+  <div id="paper"></div>
+
+<script src="js/util.js"></script>
+<script src="js/mahnung-print.js"></script>
+</body>
+</html>

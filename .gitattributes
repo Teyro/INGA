@@ -1,0 +1,4 @@
+* text=auto eol=lf
+test/fixtures/*.zip binary
+build/*.png binary
+build/*.ico binary

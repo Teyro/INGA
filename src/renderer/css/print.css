@@ -1,0 +1,44 @@
+html, body { margin: 0; height: 100%; background: var(--window); }
+
+.print-bar {
+  display: flex; align-items: center; gap: 10px;
+  height: var(--titlebar-height, 52px);
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+.print-bar .brand { font-weight: 700; -webkit-app-region: no-drag; }
+.print-bar .spacer { flex: 1; }
+.print-bar button, .print-bar .hint { -webkit-app-region: no-drag; }
+
+#paper { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 24px; overflow-y: auto; height: calc(100% - var(--titlebar-height, 52px)); }
+
+.brief {
+  background: #fff;
+  color: #111;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 25mm 20mm 20mm 25mm;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+  font-family: var(--font);
+  font-size: 11pt;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.brief .absender { font-size: 8.5pt; color: #555; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 22px; width: fit-content; }
+.brief .empfaenger { margin-bottom: 30px; }
+.brief .datum { text-align: right; margin-bottom: 24px; }
+.brief h1 { font-size: 13pt; margin: 0 0 16px; }
+.brief table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; }
+.brief th, .brief td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 10pt; }
+.brief td.num, .brief th.num { text-align: right; }
+.brief .summe { text-align: right; font-weight: 700; margin-top: 4px; }
+.brief .schluss { margin-top: 30px; }
+
+@media print {
+  .print-bar { display: none; }
+  #paper { padding: 0; gap: 0; overflow: visible; height: auto; }
+  .brief { box-shadow: none; width: auto; min-height: auto; page-break-after: always; }
+}

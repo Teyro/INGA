@@ -1,0 +1,143 @@
+/*
+ * Die Oberfläche in der Sprache des jeweiligen Systems.
+ *
+ *   data-ui="mac"    Liquid Glass – durchscheinende Flächen, weiche Kanten
+ *   data-ui="win"     Fluent       – Mica-Untergrund, deckende Karten, 4-px-Ecken
+ *   data-ui="kde"     Breeze/Qt    – angedockte Flächen, 4-px-Ecken, klare Trennlinien
+ *   data-ui="gnome"   Adwaita/GTK  – Kopfleiste im Fenster, 12-px-Ecken
+ *
+ * data-chrome sagt, wer die Titelleiste zeichnet: macOS blendet sie aus (die
+ * Kopfzeile ersetzt sie), Windows legt nur die Fensterknöpfe darüber, GNOME
+ * zeichnet die Kopfleiste selbst inklusive Schließknopf, sonst dekoriert der
+ * Fenstermanager.
+ */
+
+/* ------------------------------------------------------------- Fensterrahmen */
+
+.window-controls { display: none; }
+
+:root[data-chrome="mac"] .titlebar { padding-left: 92px; }
+:root[data-chrome="mac"] .caption-space { display: none; }
+
+:root[data-chrome="overlay"] .titlebar { padding-left: 14px; padding-right: 0; }
+:root[data-chrome="overlay"] .caption-space { display: block; width: 146px; height: 100%; }
+
+:root[data-chrome="native"] .titlebar { padding-left: 12px; -webkit-app-region: no-drag; }
+:root[data-chrome="native"] .caption-space { display: none; }
+
+:root[data-chrome="csd"] .titlebar { padding-left: 12px; padding-right: 8px; -webkit-app-region: drag; }
+:root[data-chrome="csd"] .titlebar button,
+:root[data-chrome="csd"] .titlebar input,
+:root[data-chrome="csd"] .titlebar .searchbar { -webkit-app-region: no-drag; }
+:root[data-chrome="csd"] .caption-space { display: none; }
+:root[data-chrome="csd"] .window-controls { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+:root[data-chrome="csd"] .window-controls .icon-button { width: 26px; height: 26px; border-radius: 999px; background: var(--fill); }
+:root[data-chrome="csd"] .window-controls .icon-button:hover { background: var(--fill-hover); }
+
+/* =========================================================================== */
+/* Windows 11 – Fluent                                                          */
+/* =========================================================================== */
+
+:root[data-ui="win"] {
+  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 8px; --radius-sm: 4px;
+  --titlebar-height: 48px; --sidebar-width: 240px;
+  --window: #f3f3f3; --surface: #ffffff; --surface-2: #f9f9f9;
+  --text: #1a1a1a; --text-soft: #5d5d5d; --text-faint: #767676;
+  --line: rgb(0 0 0 / 0.0578); --line-strong: rgb(0 0 0 / 0.16);
+  --fill: rgb(0 0 0 / 0.04); --fill-hover: rgb(0 0 0 / 0.07); --fill-active: rgb(0 0 0 / 0.11);
+}
+:root[data-ui="win"][data-theme="dark"] {
+  --window: #202020; --surface: #2b2b2b; --surface-2: #272727;
+  --text: #ffffff; --text-soft: #c5c5c5; --text-faint: #9a9a9a;
+  --line: rgb(255 255 255 / 0.0698); --line-strong: rgb(255 255 255 / 0.18);
+  --fill: rgb(255 255 255 / 0.0605); --fill-hover: rgb(255 255 255 / 0.0837); --fill-active: rgb(255 255 255 / 0.0326);
+}
+:root[data-ui="win"] .card { border-radius: 8px; box-shadow: 0 2px 4px rgb(var(--shadow-rgb) / 0.09); }
+:root[data-ui="win"] .titlebar { background: transparent; }
+:root[data-ui="win"] .button, :root[data-ui="win"] input, :root[data-ui="win"] select { border-radius: 4px; }
+:root[data-ui="win"] .button { border: 1px solid var(--line-strong); border-bottom-color: rgb(var(--shadow-rgb) / 0.1); background: var(--fill); }
+:root[data-ui="win"] .button.primary { border-color: transparent; }
+:root[data-ui="win"] .nav-item { border-radius: 4px; position: relative; }
+:root[data-ui="win"] .nav-item.active { background: var(--fill-hover); }
+:root[data-ui="win"] .nav-item.active::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 16px; border-radius: 999px; background: var(--accent); transform: translateY(-50%); }
+:root[data-ui="win"] table th { font-weight: 600; }
+:root[data-ui="win"] table tr:hover td { background: var(--fill); }
+
+/* =========================================================================== */
+/* KDE Plasma – Breeze                                                          */
+/* =========================================================================== */
+
+:root[data-ui="kde"] {
+  --font: "Noto Sans", Oxygen, Cantarell, "DejaVu Sans", system-ui, sans-serif;
+  --radius-lg: 5px; --radius-sm: 4px;
+  --titlebar-height: 46px; --sidebar-width: 232px;
+  --window: #eff0f1; --surface: #fcfcfc; --surface-2: #f3f4f5;
+  --text: #232629;
+  --text-soft: color-mix(in srgb, var(--text) 76%, transparent);
+  --text-faint: color-mix(in srgb, var(--text) 55%, transparent);
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 28%, transparent);
+  --fill: color-mix(in srgb, var(--text) 6%, transparent);
+  --fill-hover: color-mix(in srgb, var(--text) 11%, transparent);
+  --fill-active: color-mix(in srgb, var(--text) 17%, transparent);
+}
+:root[data-ui="kde"][data-theme="dark"] {
+  --window: #2a2e32; --surface: #31363b; --surface-2: #2c3034;
+  --text: #eff0f1;
+  --text-soft: color-mix(in srgb, var(--text) 78%, transparent);
+  --text-faint: color-mix(in srgb, var(--text) 52%, transparent);
+  --line: color-mix(in srgb, var(--text) 13%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 26%, transparent);
+  --fill: color-mix(in srgb, var(--text) 7%, transparent);
+  --fill-hover: color-mix(in srgb, var(--text) 12%, transparent);
+  --fill-active: color-mix(in srgb, var(--text) 18%, transparent);
+}
+:root[data-ui="kde"] body { background: var(--window); }
+:root[data-ui="kde"] .card { border-radius: 0; border: 0; box-shadow: none; background: var(--surface); }
+:root[data-ui="kde"] .titlebar { border-bottom: 1px solid var(--line); background: var(--window); }
+:root[data-ui="kde"] #sidebar { border-right: 1px solid var(--line); background: var(--surface-2); }
+:root[data-ui="kde"] .button { height: 30px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
+:root[data-ui="kde"] .button:hover { border-color: var(--accent); }
+:root[data-ui="kde"] .button.primary { border-color: color-mix(in srgb, var(--accent) 70%, black); }
+:root[data-ui="kde"] .nav-item { border-radius: 4px; }
+:root[data-ui="kde"] .nav-item.active { background: var(--accent); color: #fff; }
+:root[data-ui="kde"] input, :root[data-ui="kde"] select { border-radius: 4px; border-color: var(--line-strong); }
+:root[data-ui="kde"] table th { border-bottom: 1px solid var(--line-strong); }
+:root[data-ui="kde"] table tr:hover td { background: var(--fill); }
+:root[data-ui="kde"] ::-webkit-scrollbar { width: 12px; height: 12px; }
+:root[data-ui="kde"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 6px; background-color: var(--line-strong); }
+
+/* =========================================================================== */
+/* GNOME – Adwaita                                                              */
+/* =========================================================================== */
+
+:root[data-ui="gnome"] {
+  --font: "Adwaita Sans", Cantarell, "Noto Sans", "DejaVu Sans", system-ui, sans-serif;
+  --radius-lg: 12px; --radius-sm: 8px;
+  --titlebar-height: 47px; --sidebar-width: 248px;
+  --window: #fafafa; --surface: #ffffff; --surface-2: #ebebeb;
+  --text: #202020;
+  --text-soft: color-mix(in srgb, var(--text) 70%, transparent);
+  --text-faint: color-mix(in srgb, var(--text) 50%, transparent);
+  --line: rgb(0 0 0 / 0.12); --line-strong: rgb(0 0 0 / 0.2);
+  --fill: rgb(0 0 0 / 0.05); --fill-hover: rgb(0 0 0 / 0.09); --fill-active: rgb(0 0 0 / 0.14);
+}
+:root[data-ui="gnome"][data-theme="dark"] {
+  --window: #242424; --surface: #303030; --surface-2: #303030;
+  --text: #ffffff;
+  --line: rgb(255 255 255 / 0.12); --line-strong: rgb(255 255 255 / 0.2);
+  --fill: rgb(255 255 255 / 0.08); --fill-hover: rgb(255 255 255 / 0.13); --fill-active: rgb(255 255 255 / 0.19);
+}
+:root[data-ui="gnome"] body { background: var(--window); }
+:root[data-ui="gnome"] .card { border-radius: 12px; border: 0; box-shadow: 0 0 0 1px rgb(var(--shadow-rgb) / 0.06), 0 1px 3px rgb(var(--shadow-rgb) / 0.12); }
+:root[data-ui="gnome"] .titlebar { background: var(--surface); border-bottom: 1px solid var(--line); }
+:root[data-ui="gnome"] #sidebar { background: var(--surface-2); border-right: 1px solid var(--line); }
+:root[data-ui="gnome"] .button { height: 34px; border: 0; border-radius: 6px; background: var(--fill); font-weight: 700; }
+:root[data-ui="gnome"] .button.primary { background: var(--accent); color: #fff; }
+:root[data-ui="gnome"] .nav-item { border-radius: 6px; }
+:root[data-ui="gnome"] .nav-item.active { background: var(--fill-active); font-weight: 700; }
+:root[data-ui="gnome"] input, :root[data-ui="gnome"] select { border: 0; border-radius: 8px; background: var(--fill); }
+:root[data-ui="gnome"] table tr:hover td { background: var(--fill); }
+:root[data-ui="gnome"] ::-webkit-scrollbar { width: 13px; height: 13px; }
+:root[data-ui="gnome"] ::-webkit-scrollbar-thumb { border: 4px solid transparent; border-radius: 999px; background-color: color-mix(in srgb, var(--text) 30%, transparent); }

@@ -1,0 +1,83 @@
+/*
+ * Grundwerte der Oberfläche. Die Werte hier sind die Startpunkte, bis
+ * app.js die gespeicherten Einstellungen als Inline-Variablen auf :root legt.
+ */
+
+:root {
+  color-scheme: light;
+
+  --accent-rgb: 79 142 247;
+  --radius: 10px;
+  --font-scale: 1;
+
+  --accent: rgb(var(--accent-rgb));
+  --accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --accent-line: rgb(var(--accent-rgb) / 0.45);
+  --accent-text: rgb(var(--accent-rgb));
+
+  --radius-lg: calc(var(--radius) * 1.6);
+  --radius-sm: calc(var(--radius) * 0.6);
+
+  --window: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #f6f7fa;
+  --text: #14161c;
+  --text-soft: #5a6272;
+  --text-faint: #8b93a3;
+  --line: rgb(16 20 28 / 0.11);
+  --line-strong: rgb(16 20 28 / 0.2);
+  --fill: rgb(16 20 28 / 0.05);
+  --fill-hover: rgb(16 20 28 / 0.09);
+  --fill-active: rgb(16 20 28 / 0.14);
+  --shadow-rgb: 14 20 34;
+
+  --danger: #d33a30;
+  --danger-soft: rgb(211 58 48 / 0.12);
+  --warn: #b8790a;
+  --warn-soft: rgb(184 121 10 / 0.14);
+  --ok-rgb: 34 141 92;
+  --ok: rgb(var(--ok-rgb));
+  --ok-soft: rgb(var(--ok-rgb) / 0.14);
+
+  --titlebar-height: 52px;
+  --sidebar-width: 220px;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --duration: 0.18s;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --window: #14161c;
+  --surface: #1b1e26;
+  --surface-2: #21242d;
+  --text: #edf0f6;
+  --text-soft: #a3abbb;
+  --text-faint: #767e8e;
+  --line: rgb(255 255 255 / 0.11);
+  --line-strong: rgb(255 255 255 / 0.22);
+  --fill: rgb(255 255 255 / 0.07);
+  --fill-hover: rgb(255 255 255 / 0.12);
+  --fill-active: rgb(255 255 255 / 0.18);
+  --shadow-rgb: 0 0 0;
+  --danger: #ff6b61;
+  --danger-soft: rgb(255 107 97 / 0.16);
+  --warn: #e2ac3d;
+  --warn-soft: rgb(226 172 61 / 0.16);
+  --ok-rgb: 52 173 116;
+}
+
+:root[data-transparency="reduced"] * {
+  backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
