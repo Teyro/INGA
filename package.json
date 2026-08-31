@@ -31,6 +31,11 @@
     "electron": "^34.0.0",
     "electron-builder": "^26.15.3"
   },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "electron": true,
+    "electron-winstaller": true
+  },
   "build": {
     "appId": "app.inga.bibliothek",
     "productName": "INGA",
