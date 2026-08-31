@@ -192,7 +192,7 @@ function buildMenu() {
       submenu: [
         {
           label: 'INGA auf GitHub',
-          click: () => shell.openExternal('https://github.com/teyro/inga'),
+          click: () => shell.openExternal('https://github.com/Teyro/INGA'),
         },
       ],
     },

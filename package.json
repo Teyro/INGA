@@ -11,7 +11,7 @@
   "author": "Teyro",
   "repository": {
     "type": "git",
-    "url": "https://github.com/teyro/inga.git"
+    "url": "https://github.com/Teyro/INGA.git"
   },
   "scripts": {
     "start": "electron .",
