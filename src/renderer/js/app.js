@@ -3,6 +3,27 @@
 const api = window.inga;
 const state = { view: 'dashboard', stammdaten: null, settings: null };
 
+/**
+ * Cover ändern sich selten, werden aber an mehreren Stellen in derselben
+ * Sitzung angezeigt (Dashboard-Top-10, Buchdetailseite, ggf. erneut nach
+ * Rückkehr zum Dashboard) – ein einfacher In-Memory-Cache erspart wiederholte
+ * IPC-Rundreisen samt Base64-Kodierung für dasselbe Bild. Wird bei
+ * Download/Upload/Löschen eines Covers gezielt invalidiert.
+ */
+const coverCache = new Map();
+
+async function holeCoverGecacht(katalogNi) {
+  if (coverCache.has(katalogNi)) return coverCache.get(katalogNi);
+  const dataUrl = await api.cover.get(katalogNi);
+  coverCache.set(katalogNi, dataUrl);
+  return dataUrl;
+}
+
+function invalidiereCover(katalogNi, dataUrl) {
+  if (dataUrl === undefined) coverCache.delete(katalogNi);
+  else coverCache.set(katalogNi, dataUrl);
+}
+
 /* ------------------------------------------------------------------ Start */
 
 async function boot() {
@@ -29,7 +50,11 @@ async function boot() {
   wireSheet();
 
   api.on('menu:action', onMenuAction);
-  api.on('settings:updated', (s) => { state.settings = s; applyChrome({ ...data, settings: s }); });
+  api.on('settings:updated', (s) => {
+    state.settings = s;
+    applyChrome({ ...data, settings: s });
+    if (state.view === 'mahnungen') fuelleMahnstufenFilter();
+  });
   api.on('cover:progress', aktualisiereCoverFortschritt);
 
   showView('dashboard');
@@ -64,7 +89,7 @@ function showView(name) {
   if (name === 'katalog') loadKatalog();
   else if (name === 'leser') loadLeser();
   else if (name === 'rueckgabe') loadRueckgabe();
-  else if (name === 'mahnungen') loadMahnungen();
+  else if (name === 'mahnungen') { fuelleMahnstufenFilter(); loadMahnungen(); }
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
 }
@@ -144,7 +169,7 @@ function renderTopAusgeliehen(top10) {
         el('span', { class: 'badge' }, [`${row.anzahl}×`]),
       ])
     );
-    api.cover.get(row.KatalogNi).then((dataUrl) => { if (dataUrl) cover.replaceChildren(el('img', { src: dataUrl, alt: '' })); });
+    holeCoverGecacht(row.KatalogNi).then((dataUrl) => { if (dataUrl) cover.replaceChildren(el('img', { src: dataUrl, alt: '' })); });
   });
 }
 
@@ -298,8 +323,9 @@ function buildCoverPanel(row) {
   const uploadBtn = el('button', { class: 'button small' }, ['Hochladen …']);
   const removeBtn = el('button', { class: 'button small', hidden: true }, ['Entfernen']);
 
-  async function refreshFrame() {
-    const dataUrl = await api.cover.get(row.KatalogNi);
+  async function refreshFrame({ neuLaden } = {}) {
+    if (neuLaden) invalidiereCover(row.KatalogNi);
+    const dataUrl = await holeCoverGecacht(row.KatalogNi);
     frame.replaceChildren(dataUrl ? el('img', { src: dataUrl, alt: '' }) : el('span', { class: 'cover-placeholder' }, ['📕']));
     removeBtn.hidden = !dataUrl;
   }
@@ -308,15 +334,16 @@ function buildCoverPanel(row) {
     downloadBtn.disabled = true;
     const result = await api.cover.fetchOne(row.KatalogNi);
     downloadBtn.disabled = false;
-    if (result.ok) { toast('Cover geladen.'); await refreshFrame(); }
+    if (result.ok) { toast('Cover geladen.'); await refreshFrame({ neuLaden: true }); }
     else toast(`Kein Cover gefunden (${result.grund || 'unbekannt'}).`, 'error');
   });
   uploadBtn.addEventListener('click', async () => {
     const result = await api.cover.upload(row.KatalogNi);
-    if (result.ok) { toast('Cover hochgeladen.'); await refreshFrame(); }
+    if (result.ok) { toast('Cover hochgeladen.'); await refreshFrame({ neuLaden: true }); }
   });
   removeBtn.addEventListener('click', async () => {
     await api.cover.delete(row.KatalogNi);
+    invalidiereCover(row.KatalogNi, null);
     toast('Cover entfernt.');
     await refreshFrame();
   });
@@ -343,17 +370,16 @@ async function openKatalogSheet(row) {
   let extraBox = null;
   if (row?.KatalogNi) {
     const [exemplare, statistik] = await Promise.all([
-      api.katalog.exemplare(row.KatalogNi),
+      api.katalog.exemplareMitStatus(row.KatalogNi),
       api.katalog.ausleihStatistik(row.KatalogNi),
     ]);
-    const status = await Promise.all(exemplare.map((m) => api.medium.status(m.MedienNi)));
     extraBox = el('div', {}, [
       el('div', { class: 'section-title' }, ['Exemplare']),
       exemplare.length
-        ? el('div', {}, exemplare.map((m, i) =>
+        ? el('div', {}, exemplare.map((m) =>
             el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
               el('span', { class: 'badge' }, [m.MedienEtik || `#${m.MedienNi}`]),
-              el('span', { class: `badge ${status[i].verliehen ? 'warn' : 'ok'}` }, [status[i].verliehen ? 'verliehen' : 'verfügbar']),
+              el('span', { class: `badge ${m.verliehen ? 'warn' : 'ok'}` }, [m.verliehen ? 'verliehen' : 'verfügbar']),
             ])
           ))
         : el('p', { class: 'hint' }, ['Noch keine Exemplare.']),
@@ -607,9 +633,9 @@ function wireMahnungen() {
   });
 }
 
-function stufeBadgeClass(stufe, mahnstufen) {
-  const index = mahnstufen.findIndex((s) => s === stufe || s.text === stufe.text);
-  if (index >= mahnstufen.length - 1) return 'danger';
+/** Stufen sind nur nach ihrer Position (nicht nach Namen) eindeutig – zwei Stufen dürfen gleich heißen. */
+function badgeKlasseFuerStufenIndex(index, anzahlStufen) {
+  if (index >= anzahlStufen - 1) return 'danger';
   if (index >= 1) return 'warn';
   return '';
 }
@@ -622,18 +648,14 @@ function fuelleMahnstufenFilter() {
 }
 
 async function loadMahnungen() {
-  fuelleMahnstufenFilter();
   const rows = await api.mahnung.ueberfaellige();
   const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
   const stufeFilter = document.getElementById('mahnungen-filter-stufe').value;
-  const mahnstufen = state.settings.mahnstufen;
+  const anzahlStufen = state.settings.mahnstufen.length;
 
   let gefiltert = rows;
   if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
-  if (stufeFilter !== '' && mahnstufen[Number(stufeFilter)]) {
-    const gesuchteStufe = mahnstufen[Number(stufeFilter)];
-    gefiltert = gefiltert.filter((r) => r.stufe.text === gesuchteStufe.text);
-  }
+  if (stufeFilter !== '') gefiltert = gefiltert.filter((r) => r.stufeIndex === Number(stufeFilter));
 
   const tbody = document.getElementById('mahnungen-tbody');
   tbody.replaceChildren();
@@ -643,7 +665,7 @@ async function loadMahnungen() {
     return;
   }
   for (const row of gefiltert) {
-    const badgeClass = stufeBadgeClass(row.stufe, mahnstufen);
+    const badgeClass = badgeKlasseFuerStufenIndex(row.stufeIndex, anzahlStufen);
     tbody.appendChild(
       el('tr', { class: badgeClass === 'danger' ? 'row-overdue' : '' }, [
         el('td', {}, [el('input', { type: 'checkbox', 'data-payload': JSON.stringify(row) })]),
@@ -791,7 +813,7 @@ function renderMahnstufen() {
     box.appendChild(
       el('div', { class: 'mahnstufe-card' }, [
         el('div', { class: 'mahnstufe-head' }, [
-          el('span', { class: `badge ${stufeBadgeClass(stufe, arr)}` }, [`Stufe ${i + 1}`]),
+          el('span', { class: `badge ${badgeKlasseFuerStufenIndex(i, arr.length)}` }, [`Stufe ${i + 1}`]),
           el('input', { type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text', onchange: (e) => { stufe.text = e.target.value; aktualisierePreview(); speichereEinstellungenFormular(); } }),
           el('div', { class: 'spacer' }),
           el('button', { class: 'icon-button', title: 'Nach oben', disabled: i === 0, onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['↑']),

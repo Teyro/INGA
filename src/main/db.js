@@ -88,6 +88,11 @@ function createSchema(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_leser ON "Ausleihe" ("LeserNi")`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_medien ON "Ausleihe" ("MedienNi")`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_medien_katalog ON "Medien" ("KatalogNi")`);
+  // Zusammengesetzte Indizes für die häufigen "offene Ausleihe zu X"-Abfragen
+  // (Exemplarstatus, Verfügbarkeitszähler im Katalog, offene-Ausleihen-Zähler
+  // je Nutzer) – vermeidet einen Extra-Lookup über den Einzelspalten-Index.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_medien_offen ON "Ausleihe" ("MedienNi", "Rueckgabe")`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_leser_offen ON "Ausleihe" ("LeserNi", "Rueckgabe")`);
 
   db.exec(`CREATE TABLE IF NOT EXISTS legacy_rows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

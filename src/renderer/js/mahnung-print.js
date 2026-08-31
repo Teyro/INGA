@@ -9,7 +9,8 @@ function fuelleVorlage(vorlage, werte) {
 
 /** Die Stufe des dringendsten Postens eines Briefs – bestimmt Betreff und Brieftext, falls mehrere Medien überfällig sind. */
 function massgeblicheStufe(posten) {
-  return posten.reduce((max, p) => (!max || (p.stufe?.tageUeberfaellig || 0) >= (max.tageUeberfaellig || 0) ? p.stufe : max), null) || {};
+  const dringendster = posten.reduce((max, p) => (!max || (p.stufeIndex ?? -1) >= (max.stufeIndex ?? -1) ? p : max), null);
+  return dringendster?.stufe || {};
 }
 
 function renderBrief(brief) {

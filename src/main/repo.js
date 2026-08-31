@@ -62,6 +62,18 @@ function exemplareFuer(db, katalogNi) {
   return db.prepare(`SELECT * FROM "Medien" WHERE "KatalogNi" = ? ORDER BY "MedienNi"`).all(katalogNi);
 }
 
+/** Wie exemplareFuer, aber inklusive Ausleihstatus je Exemplar – ohne dafür pro Exemplar einzeln nachzufragen. */
+function exemplareMitStatusFuer(db, katalogNi) {
+  return db
+    .prepare(
+      `SELECT m.*,
+        EXISTS(SELECT 1 FROM "Ausleihe" a WHERE a."MedienNi" = m."MedienNi" AND a."Rueckgabe" IS NULL) AS verliehen
+       FROM "Medien" m WHERE m."KatalogNi" = ? ORDER BY m."MedienNi"`
+    )
+    .all(katalogNi)
+    .map((m) => ({ ...m, verliehen: Boolean(m.verliehen) }));
+}
+
 function findExemplarByEtikett(db, etikett) {
   return db.prepare(`SELECT * FROM "Medien" WHERE "MedienEtik" = ?`).get(etikett);
 }
@@ -158,13 +170,21 @@ function offeneAusleihenVonLeser(db, leserNi) {
     .all(leserNi);
 }
 
+/**
+ * Alle offenen Ausleihen inkl. der Leihfrist der jeweiligen Medienart
+ * (medArtFrist, per LEFT JOIN – NULL wenn die Medienart keine eigene Frist
+ * hat oder gar keine gesetzt ist). Der JOIN spart genau die Datenbankzugriffe,
+ * die sonst pro Zeile in einer Schleife anfallen würden (siehe
+ * ueberfaelligeAusleihen).
+ */
 function alleOffenenAusleihen(db) {
   return db
     .prepare(
-      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor", l."Nachname", l."Vorname"
+      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor", ma."Frist" AS medArtFrist, l."Nachname", l."Vorname"
        FROM "Ausleihe" a
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
+       LEFT JOIN "MedArt" ma ON ma."MedArtKb" = k."MedArtKb"
        JOIN "Leser" l ON l."LeserNi" = a."LeserNi"
        ORDER BY a."AuslDatum"`
     )
@@ -175,6 +195,8 @@ function alleOffenenAusleihen(db) {
  * Leihfrist in Tagen: zuerst die Medienart, sonst die Vorgabe aus den
  * Einstellungen – zusätzlich immer verschoben um die globale Fristverschiebung
  * (z. B. +14 Tage für eine Ferienschließzeit), die für alle Medienarten gilt.
+ * Für Einzelabfragen (z. B. beim Ausleihen eines Exemplars); für Listen siehe
+ * leihfristTageAusRow, die ohne zusätzliche Datenbankzugriffe auskommt.
  */
 function leihfristTage(db, katalogNi, fallbackTage, offsetTage = 0) {
   let basis = fallbackTage;
@@ -183,6 +205,12 @@ function leihfristTage(db, katalogNi, fallbackTage, offsetTage = 0) {
     const art = db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = ?`).get(katalog.MedArtKb);
     if (art?.Frist) basis = Number(art.Frist);
   }
+  return basis + (Number(offsetTage) || 0);
+}
+
+/** Wie leihfristTage, aber aus einer bereits geladenen Zeile von alleOffenenAusleihen – ohne DB-Zugriff. */
+function leihfristTageAusRow(row, fallbackTage, offsetTage = 0) {
+  const basis = row.medArtFrist !== null && row.medArtFrist !== undefined && row.medArtFrist !== '' ? Number(row.medArtFrist) : fallbackTage;
   return basis + (Number(offsetTage) || 0);
 }
 
@@ -264,7 +292,10 @@ function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage 
   const heute = new Date();
   const ergebnis = [];
   for (const a of offen) {
-    const frist = leihfristTage(db, a.KatalogNi, leihfristTageVorgabe, leihfristOffsetTage);
+    // Kein DB-Zugriff je Zeile mehr (a.medArtFrist kommt schon aus dem JOIN
+    // in alleOffenenAusleihen) – wichtig, weil diese Schleife bei jedem
+    // Dashboard-/Listen-Aufruf über alle offenen Ausleihen läuft.
+    const frist = leihfristTageAusRow(a, leihfristTageVorgabe, leihfristOffsetTage);
     const faelligAm = new Date(addDays(a.AuslDatum, frist));
     const tageUeberfaellig = Math.floor((heute - faelligAm) / (1000 * 60 * 60 * 24));
     if (tageUeberfaellig <= 0) continue;
@@ -278,15 +309,19 @@ function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage 
  * Überfällige Ausleihen mit der passenden Mahnstufe (nach Tagen überfällig).
  * Nutzt Mahnstufen aus den Einstellungen; Ausleihen, die noch keine Stufe
  * erreicht haben, tauchen hier nicht auf (siehe dafür ueberfaelligeAusleihen).
+ * Liefert zusätzlich stufeIndex mit – die Oberfläche braucht ihn, um die
+ * Stufe eindeutig wiederzuerkennen (Namen allein sind nicht eindeutig, falls
+ * zwei Stufen gleich benannt wurden).
  */
 function ueberfaelligeMitStufe(db, { mahnstufen, leihfristTageVorgabe, leihfristOffsetTage = 0 }) {
   const ergebnis = [];
   for (const a of ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage })) {
     let stufe = null;
-    for (const s of mahnstufen) {
-      if (a.tageUeberfaellig >= s.tageUeberfaellig) stufe = s;
-    }
-    if (stufe) ergebnis.push({ ...a, stufe });
+    let stufeIndex = -1;
+    mahnstufen.forEach((s, i) => {
+      if (a.tageUeberfaellig >= s.tageUeberfaellig) { stufe = s; stufeIndex = i; }
+    });
+    if (stufe) ergebnis.push({ ...a, stufe, stufeIndex });
   }
   return ergebnis;
 }
@@ -381,6 +416,7 @@ module.exports = {
   saveKatalog,
   deleteKatalog,
   exemplareFuer,
+  exemplareMitStatusFuer,
   findExemplarByEtikett,
   saveMedium,
   deleteMedium,

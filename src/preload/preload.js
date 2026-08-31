@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('inga', {
     save: (row) => ipcRenderer.invoke('katalog:save', row),
     delete: (katalogNi) => ipcRenderer.invoke('katalog:delete', katalogNi),
     exemplare: (katalogNi) => ipcRenderer.invoke('katalog:exemplare', katalogNi),
+    exemplareMitStatus: (katalogNi) => ipcRenderer.invoke('katalog:exemplare-mit-status', katalogNi),
     topAusgeliehen: (limit) => ipcRenderer.invoke('katalog:top-ausgeliehen', limit),
     ausleihStatistik: (katalogNi) => ipcRenderer.invoke('katalog:ausleih-statistik', katalogNi),
   },

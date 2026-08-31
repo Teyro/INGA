@@ -21,6 +21,7 @@ let db = null;
 let coversDir = null;
 let activeStyle = platform.nativeStyle();
 let coverBulkAbgebrochen = false;
+let coverBulkLaeuft = false;
 
 function settings() {
   return store.get('settings', defaultSettingsFor(platform.nativeStyle(), platform.STYLE_ACCENTS[platform.nativeStyle()]));
@@ -211,8 +212,27 @@ function buildMenu() {
 
 const COVER_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
 
+/**
+ * Dateiendung aus einem (vom Nutzer per natívem Dialog gewählten) Pfad – auf
+ * eine feste Allowlist begrenzt statt roh zu übernehmen. Ein Pfad ohne Punkt
+ * würde sonst als "Endung" den kompletten Pfad liefern (inkl. Trennzeichen),
+ * woraus beim Zusammenbauen des Zieldateinamens ein ungültiger bzw.
+ * unerwarteter Pfad entstehen könnte.
+ */
+function sichereBildEndung(filePath, fallback = 'jpg') {
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+  return Object.hasOwn(COVER_MIME, ext) ? ext : fallback;
+}
+
+/** KatalogNi kommt per IPC aus dem Renderer – vor Dateisystemzugriffen als echte, positive Ganzzahl absichern. */
+function alsKatalogNi(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) throw new Error('Ungültige KatalogNi.');
+  return n;
+}
+
 async function coverDataUrl(katalogNi) {
-  const info = repo.coverInfo(db, katalogNi);
+  const info = repo.coverInfo(db, alsKatalogNi(katalogNi));
   if (!info) return null;
   try {
     const buf = await fs.readFile(path.join(coversDir, info.dateiname));
@@ -224,7 +244,8 @@ async function coverDataUrl(katalogNi) {
 }
 
 /** Lädt das Cover eines Titels per ISBN/EAN von Open Library (frei, ohne API-Key). */
-async function downloadCoverForKatalog(katalogNi) {
+async function downloadCoverForKatalog(katalogNiRoh) {
+  const katalogNi = alsKatalogNi(katalogNiRoh);
   const katalog = repo.getKatalog(db, katalogNi);
   const isbn = String(katalog?.ISBN || katalog?.EAN || '').replace(/[^0-9Xx]/g, '');
   if (!isbn) return { ok: false, grund: 'keine ISBN/EAN hinterlegt' };
@@ -311,6 +332,7 @@ function registerIpc() {
   ipcMain.handle('katalog:save', (_e, row) => repo.saveKatalog(db, row));
   ipcMain.handle('katalog:delete', (_e, katalogNi) => repo.deleteKatalog(db, katalogNi));
   ipcMain.handle('katalog:exemplare', (_e, katalogNi) => repo.exemplareFuer(db, katalogNi));
+  ipcMain.handle('katalog:exemplare-mit-status', (_e, katalogNi) => repo.exemplareMitStatusFuer(db, katalogNi));
   ipcMain.handle('katalog:top-ausgeliehen', (_e, limit) => repo.topAusgelieheneBuecher(db, limit || 10));
   ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
 
@@ -392,15 +414,16 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
-    const ext = (filePath.split('.').pop() || 'png').toLowerCase();
+    const ext = sichereBildEndung(filePath, 'png');
     const buf = await fs.readFile(filePath);
     if (buf.byteLength > 1_500_000) return { error: 'Datei zu groß (max. 1,5 MB).' };
-    return { dataUrl: `data:${COVER_MIME[ext] || 'image/png'};base64,${buf.toString('base64')}` };
+    return { dataUrl: `data:${COVER_MIME[ext]};base64,${buf.toString('base64')}` };
   });
 
   ipcMain.handle('cover:get', (_e, katalogNi) => coverDataUrl(katalogNi));
   ipcMain.handle('cover:fetch-one', async (_e, katalogNi) => downloadCoverForKatalog(katalogNi));
-  ipcMain.handle('cover:upload', async (_e, katalogNi) => {
+  ipcMain.handle('cover:upload', async (_e, katalogNiRoh) => {
+    const katalogNi = alsKatalogNi(katalogNiRoh);
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Cover auswählen',
       properties: ['openFile'],
@@ -408,7 +431,7 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePaths[0]) return { ok: false };
     const quelle = result.filePaths[0];
-    const ext = (quelle.split('.').pop() || 'jpg').toLowerCase();
+    const ext = sichereBildEndung(quelle, 'jpg');
     const dateiname = `${katalogNi}.${ext}`;
     await fs.copyFile(quelle, path.join(coversDir, dateiname));
     // altes Cover mit ggf. anderer Endung entfernen, damit nicht zwei Dateien liegen bleiben
@@ -419,28 +442,39 @@ function registerIpc() {
     repo.setCover(db, katalogNi, dateiname, 'upload');
     return { ok: true };
   });
-  ipcMain.handle('cover:delete', async (_e, katalogNi) => {
+  ipcMain.handle('cover:delete', async (_e, katalogNiRoh) => {
+    const katalogNi = alsKatalogNi(katalogNiRoh);
     const info = repo.coverInfo(db, katalogNi);
     if (info) await fs.unlink(path.join(coversDir, info.dateiname)).catch(() => {});
     repo.removeCover(db, katalogNi);
     return { ok: true };
   });
   ipcMain.handle('cover:fetch-all', async (event, { nurFehlende = true } = {}) => {
+    // Schützt vor zwei sich überlappenden Sammel-Downloads (z. B. durch einen
+    // Doppelklick, bevor der Button in der Oberfläche deaktiviert ist) – die
+    // beiden Läufe würden sich sonst denselben coverBulkAbgebrochen-Schalter
+    // teilen und sich gegenseitig ins Gehege kommen.
+    if (coverBulkLaeuft) return { done: 0, total: 0, gefunden: 0, fehler: 0, abgebrochen: false, bereitsAktiv: true };
+    coverBulkLaeuft = true;
     coverBulkAbgebrochen = false;
-    const alle = db.prepare(`SELECT "KatalogNi" FROM "Katalog"`).all();
-    let done = 0, gefunden = 0, fehler = 0;
-    for (const { KatalogNi } of alle) {
-      if (coverBulkAbgebrochen) break;
-      done += 1;
-      if (nurFehlende && repo.coverInfo(db, KatalogNi)) {
-        event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler, uebersprungen: true });
-        continue;
+    try {
+      const alle = db.prepare(`SELECT "KatalogNi" FROM "Katalog"`).all();
+      let done = 0, gefunden = 0, fehler = 0;
+      for (const { KatalogNi } of alle) {
+        if (coverBulkAbgebrochen) break;
+        done += 1;
+        if (nurFehlende && repo.coverInfo(db, KatalogNi)) {
+          event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler, uebersprungen: true });
+          continue;
+        }
+        const result = await downloadCoverForKatalog(KatalogNi);
+        if (result.ok) gefunden += 1; else fehler += 1;
+        event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler });
       }
-      const result = await downloadCoverForKatalog(KatalogNi);
-      if (result.ok) gefunden += 1; else fehler += 1;
-      event.sender.send('cover:progress', { done, total: alle.length, gefunden, fehler });
+      return { done, total: alle.length, gefunden, fehler, abgebrochen: coverBulkAbgebrochen };
+    } finally {
+      coverBulkLaeuft = false;
     }
-    return { done, total: alle.length, gefunden, fehler, abgebrochen: coverBulkAbgebrochen };
   });
   ipcMain.handle('cover:fetch-all-cancel', () => { coverBulkAbgebrochen = true; });
 
