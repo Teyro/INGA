@@ -191,18 +191,34 @@ function wireSheet() {
   document.getElementById('sheet-backdrop').addEventListener('click', (e) => { if (e.target.id === 'sheet-backdrop') closeSheet(); });
   document.getElementById('sheet-save').addEventListener('click', async () => {
     if (!sheetState) return;
+    // Während des Speicherns gesperrt – sonst könnte ein schneller
+    // Doppelklick (oder Klick+Enter) onSave() zweimal auslösen, bevor
+    // closeSheet() das Sheet schließt, und so bei einem neuen Datensatz
+    // zwei Zeilen statt einer anlegen.
+    const saveBtn = document.getElementById('sheet-save');
+    saveBtn.disabled = true;
     try {
       await sheetState.onSave(readSheetValues());
       closeSheet();
     } catch (err) {
       toast(err.message || String(err), 'error');
+    } finally {
+      saveBtn.disabled = false;
     }
   });
   document.getElementById('sheet-delete').addEventListener('click', async () => {
     if (!sheetState?.onDelete) return;
     if (!confirm('Wirklich löschen?')) return;
-    await sheetState.onDelete();
-    closeSheet();
+    const deleteBtn = document.getElementById('sheet-delete');
+    deleteBtn.disabled = true;
+    try {
+      await sheetState.onDelete();
+      closeSheet();
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    } finally {
+      deleteBtn.disabled = false;
+    }
   });
 }
 
@@ -454,12 +470,16 @@ async function katalogExport(art) {
     ErschJahr: r.ErschJahr || '',
     Exemplare: `${r.exemplareVerfuegbar}/${r.exemplareGesamt}`,
   }));
-  const dateiname = `katalog_${new Date().toISOString().slice(0, 10)}`;
-  const pfad =
-    art === 'xlsx'
-      ? await api.export.xlsx({ dateiname, blattname: 'Katalog', spalten: KATALOG_EXPORT_SPALTEN, zeilen })
-      : await api.export.csv({ dateiname, spalten: KATALOG_EXPORT_SPALTEN, zeilen });
-  if (pfad) toast(`Exportiert nach ${pfad}`);
+  const dateiname = `katalog_${heutigesDatumISO()}`;
+  try {
+    const pfad =
+      art === 'xlsx'
+        ? await api.export.xlsx({ dateiname, blattname: 'Katalog', spalten: KATALOG_EXPORT_SPALTEN, zeilen })
+        : await api.export.csv({ dateiname, spalten: KATALOG_EXPORT_SPALTEN, zeilen });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  } catch (err) {
+    toast(`Export fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
 }
 
 /** Cover-Panel für die Buchdetailseite: Vorschau, Herunterladen (per ISBN), Hochladen, Entfernen. */
@@ -540,11 +560,18 @@ async function openKatalogSheet(row) {
         el('input', { id: 'neues-etikett', type: 'text', placeholder: 'Neues Etikett / Barcode' }),
         el('button', {
           class: 'button small',
-          onclick: async () => {
+          onclick: async (e) => {
             const etikett = document.getElementById('neues-etikett').value.trim();
             if (!etikett) return;
-            await api.medium.save({ KatalogNi: row.KatalogNi, MedienEtik: etikett });
-            openKatalogSheet(await api.katalog.get(row.KatalogNi));
+            e.target.disabled = true;
+            try {
+              await api.medium.save({ KatalogNi: row.KatalogNi, MedienEtik: etikett });
+              openKatalogSheet(await api.katalog.get(row.KatalogNi));
+            } catch (err) {
+              toast(err.message || String(err), 'error');
+            } finally {
+              e.target.disabled = false;
+            }
           },
         }, ['+ Exemplar']),
       ]),
@@ -684,12 +711,16 @@ async function leserExport(art) {
     EMail: r.emailPriv || '',
     OffeneAusleihen: r.offeneAusleihen || 0,
   }));
-  const dateiname = `nutzer_${new Date().toISOString().slice(0, 10)}`;
-  const pfad =
-    art === 'xlsx'
-      ? await api.export.xlsx({ dateiname, blattname: 'Nutzer', spalten: LESER_EXPORT_SPALTEN, zeilen })
-      : await api.export.csv({ dateiname, spalten: LESER_EXPORT_SPALTEN, zeilen });
-  if (pfad) toast(`Exportiert nach ${pfad}`);
+  const dateiname = `nutzer_${heutigesDatumISO()}`;
+  try {
+    const pfad =
+      art === 'xlsx'
+        ? await api.export.xlsx({ dateiname, blattname: 'Nutzer', spalten: LESER_EXPORT_SPALTEN, zeilen })
+        : await api.export.csv({ dateiname, spalten: LESER_EXPORT_SPALTEN, zeilen });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  } catch (err) {
+    toast(`Export fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
 }
 
 async function openLeserSheet(row) {
@@ -954,12 +985,16 @@ async function rueckgabeExport(art) {
       AnzVerl: r.AnzVerl || 0,
     };
   });
-  const dateiname = `rueckgabe_${new Date().toISOString().slice(0, 10)}`;
-  const pfad =
-    art === 'xlsx'
-      ? await api.export.xlsx({ dateiname, blattname: 'Rückgabe', spalten: RUECKGABE_EXPORT_SPALTEN, zeilen })
-      : await api.export.csv({ dateiname, spalten: RUECKGABE_EXPORT_SPALTEN, zeilen });
-  if (pfad) toast(`Exportiert nach ${pfad}`);
+  const dateiname = `rueckgabe_${heutigesDatumISO()}`;
+  try {
+    const pfad =
+      art === 'xlsx'
+        ? await api.export.xlsx({ dateiname, blattname: 'Rückgabe', spalten: RUECKGABE_EXPORT_SPALTEN, zeilen })
+        : await api.export.csv({ dateiname, spalten: RUECKGABE_EXPORT_SPALTEN, zeilen });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  } catch (err) {
+    toast(`Export fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
 }
 
 /* ------------------------------------------------------------- Mahnungen */
@@ -1163,18 +1198,26 @@ function umlaufFuerExport() {
 async function umlaufExport(art) {
   const zeilen = umlaufFuerExport();
   if (!zeilen.length) { toast('Nichts zu exportieren.', 'error'); return; }
-  const dateiname = `im_umlauf_${new Date().toISOString().slice(0, 10)}`;
-  const pfad =
-    art === 'xlsx'
-      ? await api.export.xlsx({ dateiname, blattname: 'Im Umlauf', spalten: UMLAUF_SPALTEN, zeilen })
-      : await api.export.csv({ dateiname, spalten: UMLAUF_SPALTEN, zeilen });
-  if (pfad) toast(`Exportiert nach ${pfad}`);
+  const dateiname = `im_umlauf_${heutigesDatumISO()}`;
+  try {
+    const pfad =
+      art === 'xlsx'
+        ? await api.export.xlsx({ dateiname, blattname: 'Im Umlauf', spalten: UMLAUF_SPALTEN, zeilen })
+        : await api.export.csv({ dateiname, spalten: UMLAUF_SPALTEN, zeilen });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  } catch (err) {
+    toast(`Export fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
 }
 
 async function umlaufDrucken() {
   const gruppen = umlaufGruppiert(umlaufSortiert(umlaufGefiltert()));
   if (!gruppen.some((g) => g.zeilen.length)) { toast('Nichts zu drucken.', 'error'); return; }
-  await api.umlauf.drucken({ titel: 'Im Umlauf – was ist gerade unterwegs?', filterBeschreibung: umlaufFilterBeschreibung(), gruppen });
+  try {
+    await api.umlauf.drucken({ titel: 'Im Umlauf – was ist gerade unterwegs?', filterBeschreibung: umlaufFilterBeschreibung(), gruppen });
+  } catch (err) {
+    toast(`Drucken fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
 }
 
 /* --------------------------------------------------------------- Bestand */
@@ -1309,14 +1352,14 @@ function beispielGebuehr(tageUeberfaellig) {
   return max > 0 ? Math.min(betrag, max) : betrag;
 }
 
-/** Setzt {Platzhalter} für die Live-Vorschau einer Mahnstufe mit Beispieldaten. */
+/** Setzt {Platzhalter} für die Live-Vorschau einer Mahnstufe mit Beispieldaten – dieselbe Ersetzung wie im tatsächlichen Druck (siehe util.js/fuellePlatzhalter). */
 function fuelleVorschauVorlage(vorlage, stufe) {
   const werte = {
     Vorname: 'Anna', Nachname: 'Muster', Titel: 'Beispielbuch',
     Tage: String(stufe.tageUeberfaellig || 0), Gebuehr: fmtGeld(beispielGebuehr(stufe.tageUeberfaellig)),
-    Datum: fmtDatum(new Date().toISOString()), Faellig: fmtDatum(new Date().toISOString()), Stufe: stufe.text,
+    Datum: fmtDatum(heutigesDatumISO()), Faellig: fmtDatum(heutigesDatumISO()), Stufe: stufe.text,
   };
-  return String(vorlage || '').replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(werte, k) ? werte[k] : m));
+  return fuellePlatzhalter(vorlage, werte);
 }
 
 function renderMahnstufen() {
@@ -1512,9 +1555,13 @@ function renderFerienListe(liste) {
             onclick: async (e) => {
               e.stopPropagation();
               if (!confirm(`„${row.bezeichnung}“ wirklich löschen?`)) return;
-              await api.ferien.loeschen(row.id);
-              await loadFerien();
-              toast('Eintrag gelöscht.');
+              try {
+                await api.ferien.loeschen(row.id);
+                await loadFerien();
+                toast('Eintrag gelöscht.');
+              } catch (err) {
+                toast(err.message || String(err), 'error');
+              }
             },
           }, ['✕']),
         ]),

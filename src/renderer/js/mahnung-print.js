@@ -2,11 +2,6 @@
 
 const api = window.inga;
 
-/** Setzt {Vorname} {Nachname} {Titel} {Tage} {Gebuehr} {Datum} {Faellig} {Stufe} in einer Vorlage ein. */
-function fuelleVorlage(vorlage, werte) {
-  return String(vorlage || '').replace(/\{(\w+)\}/g, (match, key) => (Object.hasOwn(werte, key) ? werte[key] : match));
-}
-
 /** Die Stufe des dringendsten Postens eines Briefs – bestimmt Betreff und Brieftext, falls mehrere Medien überfällig sind. */
 function massgeblicheStufe(posten) {
   const dringendster = posten.reduce((max, p) => (!max || (p.stufeIndex ?? -1) >= (max.stufeIndex ?? -1) ? p : max), null);
@@ -46,8 +41,8 @@ function renderBrief(brief) {
       leser?.Ort ? el('div', {}, [`${leser.PLZ || ''} ${leser.Ort}`.trim()]) : null,
     ]),
     el('div', { class: 'datum' }, [brief.datum]),
-    el('h1', {}, [fuelleVorlage(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung']),
-    ...fuelleVorlage(stufe.briefText, werte)
+    el('h1', {}, [fuellePlatzhalter(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung']),
+    ...fuellePlatzhalter(stufe.briefText, werte)
       .split('\n')
       .map((zeile) => (zeile.trim() ? el('p', {}, [zeile]) : null)),
     el('table', {}, [
@@ -93,5 +88,5 @@ api.on('print:data', (data) => {
 });
 
 document.getElementById('close').addEventListener('click', () => api.window.close());
-document.getElementById('print').addEventListener('click', () => api.print.now());
-document.getElementById('pdf').addEventListener('click', () => api.print.pdf({ name: 'Mahnungen' }));
+document.getElementById('print').addEventListener('click', () => api.print.now().catch((err) => alert(`Drucken fehlgeschlagen: ${err.message || err}`)));
+document.getElementById('pdf').addEventListener('click', () => api.print.pdf({ name: 'Mahnungen' }).catch((err) => alert(`PDF-Export fehlgeschlagen: ${err.message || err}`)));

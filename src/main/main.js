@@ -16,6 +16,7 @@ const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden } = require('./backup');
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
+const { sicher } = require('./fehler');
 
 /** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
 function sichererDateiname(name) {
@@ -383,23 +384,23 @@ function registerIpc() {
   ipcMain.handle('katalog:search', (_e, filter, seitenOptionen) => repo.searchKatalog(db, filter, seitenOptionen));
   ipcMain.handle('katalog:ueberfaellige-ni', () => repo.katalogNiMitUeberfaelligemExemplar(db, settings()));
   ipcMain.handle('katalog:get', (_e, katalogNi) => repo.getKatalog(db, katalogNi));
-  ipcMain.handle('katalog:save', (_e, row) => repo.saveKatalog(db, row));
-  ipcMain.handle('katalog:delete', (_e, katalogNi) => repo.deleteKatalog(db, katalogNi));
+  ipcMain.handle('katalog:save', sicher((_e, row) => repo.saveKatalog(db, row)));
+  ipcMain.handle('katalog:delete', sicher((_e, katalogNi) => repo.deleteKatalog(db, katalogNi)));
   ipcMain.handle('katalog:exemplare', (_e, katalogNi) => repo.exemplareFuer(db, katalogNi));
   ipcMain.handle('katalog:exemplare-mit-status', (_e, katalogNi) => repo.exemplareMitStatusFuer(db, katalogNi));
   ipcMain.handle('katalog:top-ausgeliehen', (_e, limit) => repo.topAusgelieheneBuecher(db, limit || 10));
   ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
 
-  ipcMain.handle('medium:save', (_e, row) => repo.saveMedium(db, row));
-  ipcMain.handle('medium:delete', (_e, medienNi) => repo.deleteMedium(db, medienNi));
+  ipcMain.handle('medium:save', sicher((_e, row) => repo.saveMedium(db, row)));
+  ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi)));
   ipcMain.handle('medium:status', (_e, medienNi) => repo.exemplarStatus(db, medienNi));
   ipcMain.handle('medium:find-etikett', (_e, etikett) => repo.findExemplarByEtikett(db, etikett));
 
   ipcMain.handle('leser:search', (_e, filter, seitenOptionen) => repo.searchLeser(db, filter, seitenOptionen));
   ipcMain.handle('leser:jahrgaenge', () => repo.distinctJahrgaenge(db));
   ipcMain.handle('leser:get', (_e, leserNi) => repo.getLeser(db, leserNi));
-  ipcMain.handle('leser:save', (_e, row) => repo.saveLeser(db, row));
-  ipcMain.handle('leser:delete', (_e, leserNi) => repo.deleteLeser(db, leserNi));
+  ipcMain.handle('leser:save', sicher((_e, row) => repo.saveLeser(db, row)));
+  ipcMain.handle('leser:delete', sicher((_e, leserNi) => repo.deleteLeser(db, leserNi)));
   ipcMain.handle('leser:offene-ausleihen', (_e, leserNi) => repo.offeneAusleihenVonLeser(db, leserNi));
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
 
@@ -412,7 +413,7 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
-  ipcMain.handle('ausleihe:zurueckgeben', (_e, id) => repo.zurueckgeben(db, id));
+  ipcMain.handle('ausleihe:zurueckgeben', sicher((_e, id) => repo.zurueckgeben(db, id)));
   ipcMain.handle('ausleihe:verlaengern', (_e, id) => {
     try {
       return { ok: true, ...repo.verlaengern(db, id, settings()) };
@@ -433,7 +434,7 @@ function registerIpc() {
 
   /* ------------------------------------------------------- Allgemeiner Export */
 
-  ipcMain.handle('export:csv', async (event, { dateiname, spalten, zeilen }) => {
+  ipcMain.handle('export:csv', sicher(async (event, { dateiname, spalten, zeilen }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showSaveDialog(win, {
       title: 'Als CSV exportieren',
@@ -443,9 +444,9 @@ function registerIpc() {
     if (result.canceled || !result.filePath) return null;
     await fs.writeFile(result.filePath, alsExcelCsv(spalten, zeilen), 'utf8');
     return result.filePath;
-  });
+  }));
 
-  ipcMain.handle('export:xlsx', async (event, { dateiname, blattname, spalten, zeilen }) => {
+  ipcMain.handle('export:xlsx', sicher(async (event, { dateiname, blattname, spalten, zeilen }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showSaveDialog(win, {
       title: 'Als Excel-Datei exportieren',
@@ -455,7 +456,7 @@ function registerIpc() {
     if (result.canceled || !result.filePath) return null;
     schreibeXlsx(result.filePath, { blattname: blattname || dateiname, spalten, zeilen });
     return result.filePath;
-  });
+  }));
 
   ipcMain.handle('mahnung:ueberfaellige', () => repo.ueberfaelligeMitStufe(db, settings()));
   ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, positionen) => {
@@ -487,10 +488,10 @@ function registerIpc() {
     return { anzahl: briefe.length };
   });
 
-  ipcMain.handle('medart:frist-speichern', (_e, { medArtKb, frist, fristVerl }) => {
+  ipcMain.handle('medart:frist-speichern', sicher((_e, { medArtKb, frist, fristVerl }) => {
     repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });
     return { ok: true };
-  });
+  }));
 
   /* ------------------------------------------------------------ Ferien */
 
@@ -625,7 +626,7 @@ function registerIpc() {
   ipcMain.handle('stammdaten:get', () => repo.stammdaten(db));
   ipcMain.handle('kennzahlen:get', () => repo.kennzahlen(db));
 
-  ipcMain.handle('bestand:import', async () => {
+  ipcMain.handle('bestand:import', sicher(async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Bestand importieren',
       properties: ['openFile'],
@@ -634,18 +635,18 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return null;
     importZip(db, result.filePaths[0]);
     return { datei: result.filePaths[0], kennzahlen: repo.kennzahlen(db) };
-  });
+  }));
 
-  ipcMain.handle('bestand:export', async () => {
+  ipcMain.handle('bestand:export', sicher(async () => {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Bestand exportieren',
-      defaultPath: `inga_export_${new Date().toISOString().slice(0, 10)}.zip`,
+      defaultPath: `inga_export_${heuteISO()}.zip`,
       filters: [{ name: 'Perpustakaan-Export', extensions: ['zip'] }],
     });
     if (result.canceled || !result.filePath) return null;
     exportZip(db, result.filePath);
     return result.filePath;
-  });
+  }));
 
   ipcMain.handle('print:now', (event, options = {}) => {
     const contents = event.sender;
@@ -656,7 +657,7 @@ function registerIpc() {
     });
   });
 
-  ipcMain.handle('print:pdf', async (event, options = {}) => {
+  ipcMain.handle('print:pdf', sicher(async (event, options = {}) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showSaveDialog(win, {
       title: 'Als PDF sichern',
@@ -681,7 +682,7 @@ function registerIpc() {
     const data = await event.sender.printToPDF(pdfOptions);
     await fs.writeFile(result.filePath, data);
     return result.filePath;
-  });
+  }));
 
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

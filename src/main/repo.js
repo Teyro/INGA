@@ -135,12 +135,25 @@ function getKatalog(db, katalogNi) {
 
 function saveKatalog(db, row) {
   const clean = { ...row };
+  if (!String(clean.Titel ?? '').trim()) throw new Error('Bitte einen Titel angeben.');
   if (!clean.KatalogNi) clean.KatalogNi = nextId(db, 'Katalog', 'KatalogNi');
   if (!clean.ErfassDat) clean.ErfassDat = nowStamp();
   return upsert(db, 'Katalog', clean);
 }
 
+/**
+ * Löscht einen Titel samt aller Exemplare – aber nur, wenn keines davon
+ * gerade ausgeliehen ist. Ohne diese Prüfung würde eine noch offene Ausleihe
+ * verwaist zurückbleiben: sie verschwindet dann (die Rückgabe-/Umlauf-/
+ * Mahnlisten arbeiten mit JOINs auf Medien/Katalog) aus jeder Liste, in der
+ * kennzahlen()-Zählung ("offene Ausleihen") aber weiter mitgezählt, und lässt
+ * sich über die Oberfläche nie mehr zurückgeben.
+ */
 function deleteKatalog(db, katalogNi) {
+  const exemplare = exemplareFuer(db, katalogNi);
+  if (exemplare.some((m) => exemplarStatus(db, m.MedienNi).verliehen)) {
+    throw new Error('Mindestens ein Exemplar dieses Titels ist noch ausgeliehen. Bitte erst alle Exemplare zurückgeben, dann löschen.');
+  }
   db.prepare(`DELETE FROM "Medien" WHERE "KatalogNi" = ?`).run(katalogNi);
   db.prepare(`DELETE FROM "Katalog" WHERE "KatalogNi" = ?`).run(katalogNi);
 }
@@ -169,12 +182,27 @@ function findExemplarByEtikett(db, etikett) {
 
 function saveMedium(db, row) {
   const clean = { ...row };
+  const etikett = String(clean.MedienEtik ?? '').trim();
+  if (!etikett) throw new Error('Bitte ein Etikett/Barcode für das Exemplar angeben.');
+  // Eindeutigkeit der Signatur/des Barcodes: ohne diese Prüfung könnten zwei
+  // Exemplare denselben Code tragen – findExemplarByEtikett() liefert dann
+  // beim Scannen (Ausleihe/Rückgabe) über .get() nur zufällig eines der
+  // beiden, das andere wäre über den Scanner nie mehr erreichbar.
+  const doppelt = db
+    .prepare(`SELECT "MedienNi" FROM "Medien" WHERE "MedienEtik" = ? AND "MedienNi" != ?`)
+    .get(etikett, clean.MedienNi || -1);
+  if (doppelt) throw new Error(`Das Etikett/der Barcode „${etikett}“ wird bereits von einem anderen Exemplar verwendet.`);
+  clean.MedienEtik = etikett;
   if (!clean.MedienNi) clean.MedienNi = nextId(db, 'Medien', 'MedienNi');
   if (!clean.ErfassDat) clean.ErfassDat = nowStamp();
   return upsert(db, 'Medien', clean);
 }
 
+/** Löscht ein Exemplar – nicht, solange es ausgeliehen ist (siehe deleteKatalog für die Begründung). */
 function deleteMedium(db, medienNi) {
+  if (exemplarStatus(db, medienNi).verliehen) {
+    throw new Error('Dieses Exemplar ist noch ausgeliehen. Bitte erst zurückgeben, dann löschen.');
+  }
   db.prepare(`DELETE FROM "Medien" WHERE "MedienNi" = ?`).run(medienNi);
 }
 
@@ -258,12 +286,17 @@ function getLeser(db, leserNi) {
 
 function saveLeser(db, row) {
   const clean = { ...row };
+  if (!String(clean.Nachname ?? '').trim()) throw new Error('Bitte einen Nachnamen angeben.');
   if (!clean.LeserNi) clean.LeserNi = nextId(db, 'Leser', 'LeserNi');
   if (!clean.ImportDat) clean.ImportDat = nowStamp();
   return upsert(db, 'Leser', clean);
 }
 
+/** Löscht einen Nutzer – nicht, solange er noch offene Ausleihen hat (siehe deleteKatalog für die Begründung). */
 function deleteLeser(db, leserNi) {
+  if (offeneAusleihenVonLeser(db, leserNi).length) {
+    throw new Error('Dieser Nutzer hat noch offene Ausleihen. Bitte erst alle Bücher zurückgeben, dann löschen.');
+  }
   db.prepare(`DELETE FROM "Leser" WHERE "LeserNi" = ?`).run(leserNi);
 }
 
@@ -586,14 +619,29 @@ function katalogNiMitUeberfaelligemExemplar(db, einstellungen) {
  * zwei Stufen gleich benannt wurden).
  */
 function ueberfaelligeMitStufe(db, einstellungen) {
+  // Die Stufe mit der höchsten Schwelle wählen, die noch erreicht ist – dafür
+  // erst nach Schwelle aufsteigend sortieren (Regressionsfix: die Oberfläche
+  // hängt eine neue Stufe beim Anlegen immer ANS ENDE des Arrays an, nicht an
+  // die nach Tagen richtige Stelle; ein Durchlauf in Array-Reihenfolge hätte
+  // dann bei jeder nicht mehr zufällig schon sortierten Stufenliste die
+  // falsche – meist zu milde – Stufe gewählt). stufeIndex bleibt der Index in
+  // der URSPRÜNGLICHEN (unsortierten) Liste, weil die Oberfläche darüber die
+  // Stufe wiedererkennt (Mahnstufen-Filter, Badges).
+  const stufenNachSchwelle = (einstellungen.mahnstufen || [])
+    .map((s, stufeIndex) => ({ ...s, stufeIndex }))
+    .sort((a, b) => a.tageUeberfaellig - b.tageUeberfaellig);
+
   const ergebnis = [];
   for (const a of ueberfaelligeAusleihen(db, einstellungen)) {
-    let stufe = null;
-    let stufeIndex = -1;
-    (einstellungen.mahnstufen || []).forEach((s, i) => {
-      if (a.tageUeberfaellig >= s.tageUeberfaellig) { stufe = s; stufeIndex = i; }
-    });
-    if (stufe) ergebnis.push({ ...a, stufe, stufeIndex, gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen) });
+    let treffer = null;
+    for (const s of stufenNachSchwelle) {
+      if (a.tageUeberfaellig < s.tageUeberfaellig) break; // aufsteigend sortiert: alles Weitere ist noch strenger
+      treffer = s;
+    }
+    if (treffer) {
+      const { stufeIndex, ...stufe } = treffer;
+      ergebnis.push({ ...a, stufe, stufeIndex, gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen) });
+    }
   }
   return ergebnis;
 }

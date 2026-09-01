@@ -36,6 +36,30 @@ function toast(message, kind = '') {
   toast._t = setTimeout(() => node.classList.remove('show'), 3200);
 }
 
+/**
+ * Heutiges Kalenderdatum als "YYYY-MM-DD" für Datei-Vorschlagsnamen und
+ * Vorschau-Platzhalter – bewusst über die lokalen Date-Getter statt über
+ * `new Date().toISOString()`, das in Deutschland (positiver UTC-Offset)
+ * kurz nach lokaler Mitternacht noch den Vortag liefern würde (derselbe
+ * Fehler, den date-utils.js im Hauptprozess schon beheben musste).
+ */
+function heutigesDatumISO() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Ersetzt {Platzhalter} in einer Vorlage durch Werte aus `werte` – von der
+ * Live-Vorschau in den Einstellungen UND vom tatsächlichen Mahnungsdruck
+ * gleich genutzt (Platzhalter: {Vorname} {Nachname} {Titel} {Tage}
+ * {Gebuehr} {Datum} {Faellig} {Stufe}), damit beide garantiert identisch
+ * ersetzen. Unbekannte Platzhalter bleiben unverändert stehen.
+ */
+function fuellePlatzhalter(vorlage, werte) {
+  return String(vorlage || '').replace(/\{(\w+)\}/g, (ganzerTreffer, name) => (Object.hasOwn(werte, name) ? werte[name] : ganzerTreffer));
+}
+
 function fmtDatum(value) {
   if (!value) return '–';
   const d = String(value).slice(0, 10);

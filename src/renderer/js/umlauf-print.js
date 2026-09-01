@@ -83,17 +83,21 @@ api.on('print:data', (data) => {
 
 document.getElementById('close').addEventListener('click', () => api.window.close());
 
-document.getElementById('print').addEventListener('click', () => api.print.now({ landscape: true }));
+document.getElementById('print').addEventListener('click', () =>
+  api.print.now({ landscape: true }).catch((err) => alert(`Drucken fehlgeschlagen: ${err.message || err}`))
+);
 
 document.getElementById('pdf').addEventListener('click', () => {
   const s = letzteDaten?.settings || {};
   const schulname = escapeHtml(s.absenderName || 'Schulbibliothek');
   const filterBeschreibung = escapeHtml(letzteDaten?.filterBeschreibung || '');
   const datum = escapeHtml(new Date().toLocaleDateString('de-DE'));
-  api.print.pdf({
-    name: 'Im Umlauf',
-    landscape: true,
-    headerTemplate: `<div style="font-size:8px; width:100%; padding:0 10mm; display:flex; justify-content:space-between; color:#333;"><span>${schulname}</span><span>${filterBeschreibung}</span><span>${datum}</span></div>`,
-    footerTemplate: `<div style="font-size:8px; width:100%; text-align:center; color:#333;">Seite <span class="pageNumber"></span> von <span class="totalPages"></span></div>`,
-  });
+  api.print
+    .pdf({
+      name: 'Im Umlauf',
+      landscape: true,
+      headerTemplate: `<div style="font-size:8px; width:100%; padding:0 10mm; display:flex; justify-content:space-between; color:#333;"><span>${schulname}</span><span>${filterBeschreibung}</span><span>${datum}</span></div>`,
+      footerTemplate: `<div style="font-size:8px; width:100%; text-align:center; color:#333;">Seite <span class="pageNumber"></span> von <span class="totalPages"></span></div>`,
+    })
+    .catch((err) => alert(`PDF-Export fehlgeschlagen: ${err.message || err}`));
 });
