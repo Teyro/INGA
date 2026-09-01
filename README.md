@@ -101,9 +101,19 @@ Ferienschließzeit.
 - Standard-Leihfrist und maximale Verlängerungen
 - **Fristverschiebung**: ein Tage-Offset, der sofort auf jede berechnete
   Fälligkeit wirkt (offene und künftige Ausleihen) – z. B. `+14` während
-  einer Ferienschließzeit
+  einer kurzfristigen, noch nicht als Ferieneintrag erfassten Schließzeit
 - **Einmalige Verschiebung**: verschiebt das Ausleihdatum aller aktuell
   offenen Ausleihen um X Tage, ohne die Standardfrist dauerhaft zu ändern
+- **Ferien & Schließzeiten**: eigene Verwaltung für Ferien, Feiertage und
+  Schließzeiten – manuell gepflegt, per ICS-Datei/URL importiert oder für
+  Hamburg automatisch abgerufen (laufendes plus die nächsten drei
+  Schuljahre, mit Vorschau vor der Übernahme). Fällt eine berechnete
+  Rückgabefrist in einen solchen Zeitraum oder auf ein Wochenende, wird sie
+  automatisch auf den nächsten echten Schultag danach verschoben – auch über
+  mehrere direkt aneinandergrenzende Zeiträume hinweg (z. B. Ferien direkt
+  gefolgt von einem Feiertag). Der Grund erscheint als Hinweis in der
+  Rückgabeliste ("+12 Tage wegen Herbstferien"). Zusätzlich abschaltbar:
+  Ferientage als Verzugstage nicht mitzählen
 
 ### Import & Export im Perpustakaan-Format
 

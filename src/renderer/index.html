@@ -268,6 +268,33 @@
             </div>
           </div>
 
+          <div class="section-title">Ferien &amp; Schließzeiten</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <p class="hint">Fällt eine berechnete Rückgabefrist in einen hier eingetragenen Zeitraum (oder auf ein Wochenende), verschiebt INGA sie automatisch auf den nächsten Schultag danach – auch über mehrere direkt aneinandergrenzende Zeiträume hinweg (z.&nbsp;B. Ferien direkt gefolgt von einem Feiertag).</p>
+            <label class="checkbox-label"><input type="checkbox" id="set-ueberfaelligTageOhneFerien" /> Während der Ferien keine Überfälligkeit zählen</label>
+            <p class="hint">Ferientage (und Wochenenden) zählen dann nicht als Verzugstage – wichtig, wenn ein Kind ein Buch wegen der Ferien einfach nicht zurückgeben kann.</p>
+
+            <div class="row-inline" style="margin:14px 0; flex-wrap:wrap">
+              <button class="button" id="ferien-neu">+ Neuer Eintrag</button>
+              <button class="button" id="ferien-ics-datei">ICS-Datei importieren …</button>
+              <button class="button" id="ferien-ics-url">Von URL importieren …</button>
+              <button class="button" id="ferien-api-abrufen">Hamburger Schulferien automatisch abrufen</button>
+            </div>
+            <p class="hint" id="ferien-abruf-status"></p>
+
+            <table>
+              <thead><tr><th>Bezeichnung</th><th>Von</th><th>Bis</th><th>Typ</th><th>Quelle</th><th class="actions"></th></tr></thead>
+              <tbody id="ferien-tbody"></tbody>
+            </table>
+
+            <div class="field" style="margin-top:18px">
+              <label>Bereits laufende Ausleihen</label>
+              <div><button class="button" id="ferien-neuberechnen">Fristen anhand der Ferien neu berechnen</button></div>
+              <p class="hint">INGA berechnet Fälligkeiten ohnehin bei jeder Anzeige live neu – ein neuer oder geänderter Ferieneintrag wirkt sofort. Dieser Knopf zeigt vorab, welche offenen Ausleihen sich dadurch verschieben, bevor es in der Rückgabe-/Mahnliste auffällt.</p>
+              <div id="ferien-neuberechnen-ergebnis" hidden></div>
+            </div>
+          </div>
+
           <div class="section-title">Mahnwesen</div>
           <div class="card" style="padding:18px; margin-bottom:16px">
             <label class="checkbox-label"><input type="checkbox" id="set-mahngebuehrenAktiv" /> Mahngebühren verwenden</label>
@@ -318,6 +345,23 @@
       <button class="button" id="sheet-delete" style="margin-right:auto" hidden>Löschen</button>
       <button class="button" id="sheet-cancel">Abbrechen</button>
       <button class="button primary" id="sheet-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="ferien-import-backdrop" hidden>
+  <div class="sheet table-wide" id="ferien-import-panel">
+    <div class="sheet-head"><h2>Import prüfen</h2><button class="icon-button" id="ferien-import-close">✕</button></div>
+    <div class="sheet-body">
+      <p class="hint">Bitte vor der Übernahme prüfen: Termine abwählen oder Bezeichnung/Typ korrigieren. Bereits vorhandene, identische Einträge werden beim Übernehmen automatisch übersprungen.</p>
+      <table>
+        <thead><tr><th style="width:30px"><input type="checkbox" id="ferien-import-alle" checked /></th><th>Bezeichnung</th><th>Von</th><th>Bis</th><th>Typ</th></tr></thead>
+        <tbody id="ferien-import-tbody"></tbody>
+      </table>
+    </div>
+    <div class="sheet-foot">
+      <button class="button" id="ferien-import-abbrechen">Abbrechen</button>
+      <button class="button primary" id="ferien-import-uebernehmen">Ausgewählte übernehmen</button>
     </div>
   </div>
 </div>

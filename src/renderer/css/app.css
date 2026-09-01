@@ -296,6 +296,9 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .sheet.wide .sheet-body { display: grid; grid-template-columns: 190px 1fr; gap: 24px; align-content: start; }
 .sheet.wide .sheet-fields { min-width: 0; }
 .sheet-extra-full { grid-column: 1 / -1; }
+/* Wie .wide, aber ohne die 2-Spalten-Aufteilung (Cover+Felder) – für Sheets,
+   deren Inhalt eine einzelne breite Tabelle ist (z. B. Ferien-Importvorschau). */
+.sheet.table-wide { width: min(820px, 94vw); }
 @media (max-width: 640px) {
   .sheet.wide .sheet-body { grid-template-columns: 1fr; }
 }

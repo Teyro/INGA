@@ -8,6 +8,10 @@ const platform = require('./platform');
 const { Store, DEFAULT_SETTINGS, defaultSettingsFor, sanitizeSettings } = require('./store');
 const { openDatabase } = require('./db');
 const repo = require('./repo');
+const ferien = require('./ferien');
+const { parseIcs } = require('./ics');
+const { ferienAbrufen } = require('./ferien-api');
+const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden } = require('./backup');
 
@@ -405,6 +409,64 @@ function registerIpc() {
     repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });
     return { ok: true };
   });
+
+  /* ------------------------------------------------------------ Ferien */
+
+  ipcMain.handle('ferien:liste', () => ferien.listeFerien(db));
+  ipcMain.handle('ferien:speichern', (_e, row) => {
+    try {
+      return { ok: true, id: ferien.saveFerienEintrag(db, row) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('ferien:loeschen', (_e, id) => {
+    ferien.deleteFerienEintrag(db, id);
+    return { ok: true };
+  });
+
+  ipcMain.handle('ferien:import-ics-datei', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'ICS-Kalenderdatei importieren',
+      properties: ['openFile'],
+      filters: [{ name: 'Kalender (ICS)', extensions: ['ics'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    try {
+      const text = await fs.readFile(result.filePaths[0], 'utf8');
+      return { ok: true, termine: parseIcs(text) };
+    } catch (err) {
+      return { ok: false, error: `Datei konnte nicht gelesen werden: ${err.message}` };
+    }
+  });
+
+  ipcMain.handle('ferien:import-ics-url', async (_e, url) => {
+    if (!/^https?:\/\//i.test(String(url || ''))) return { ok: false, error: 'Bitte eine gültige http(s)-Adresse angeben.' };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return { ok: false, error: `Server antwortete mit HTTP ${res.status}.` };
+      const text = await res.text();
+      return { ok: true, termine: parseIcs(text) };
+    } catch (err) {
+      return { ok: false, error: err.name === 'AbortError' ? 'Zeitüberschreitung beim Abruf.' : `Kalender nicht erreichbar: ${err.message}` };
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  ipcMain.handle('ferien:api-abrufen', async () => ferienAbrufen(heuteISO()));
+
+  ipcMain.handle('ferien:import-uebernehmen', (_e, eintraege) => {
+    try {
+      return { ok: true, ...ferien.ferienImportUebernehmen(db, eintraege) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('ausleihe:ferien-vorschau', () => repo.vorschauFristenMitFerien(db, settings()));
 
   ipcMain.handle('mahnung:logo-auswaehlen', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

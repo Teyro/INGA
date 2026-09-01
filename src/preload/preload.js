@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('inga', {
     zurueckgeben: (id) => ipcRenderer.invoke('ausleihe:zurueckgeben', id),
     verlaengern: (id) => ipcRenderer.invoke('ausleihe:verlaengern', id),
     verschiebenAlle: (tage) => ipcRenderer.invoke('ausleihe:verschieben-alle', tage),
+    ferienVorschau: () => ipcRenderer.invoke('ausleihe:ferien-vorschau'),
   },
 
   mahnung: {
@@ -70,6 +71,16 @@ contextBridge.exposeInMainWorld('inga', {
     fristSpeichern: (payload) => ipcRenderer.invoke('medart:frist-speichern', payload),
   },
   kennzahlen: () => ipcRenderer.invoke('kennzahlen:get'),
+
+  ferien: {
+    liste: () => ipcRenderer.invoke('ferien:liste'),
+    speichern: (row) => ipcRenderer.invoke('ferien:speichern', row),
+    loeschen: (id) => ipcRenderer.invoke('ferien:loeschen', id),
+    importIcsDatei: () => ipcRenderer.invoke('ferien:import-ics-datei'),
+    importIcsUrl: (url) => ipcRenderer.invoke('ferien:import-ics-url', url),
+    apiAbrufen: () => ipcRenderer.invoke('ferien:api-abrufen'),
+    importUebernehmen: (eintraege) => ipcRenderer.invoke('ferien:import-uebernehmen', eintraege),
+  },
 
   bestand: {
     importieren: () => ipcRenderer.invoke('bestand:import'),

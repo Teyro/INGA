@@ -798,7 +798,7 @@ function wireEinstellungen() {
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-verlaengerungGesperrtBeiVormerkung']) {
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
@@ -839,6 +839,8 @@ function wireEinstellungen() {
     zeigeLogoVorschau('');
     speichereEinstellungenFormular();
   });
+
+  wireFerien();
 }
 
 function zeigeLogoVorschau(dataUrl) {
@@ -917,6 +919,7 @@ async function loadEinstellungen() {
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
   document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
+  document.getElementById('set-ueberfaelligTageOhneFerien').checked = Boolean(s.ueberfaelligTageOhneFerien);
   document.getElementById('set-mahngebuehrenAktiv').checked = Boolean(s.mahngebuehrenAktiv);
   document.getElementById('mahngebuehr-felder').hidden = !s.mahngebuehrenAktiv;
   document.getElementById('set-mahnGebuehrProTag').value = s.mahnGebuehrProTag;
@@ -931,6 +934,7 @@ async function loadEinstellungen() {
   zeigeLogoVorschau(s.mahnLogoDataUrl || '');
   renderMahnstufen();
   renderMedArtFristen();
+  loadFerien();
 }
 
 /** Abweichende Fristen je Medienart – kleine Liste direkt in den Einstellungen, kein eigener Bereich nötig. */
@@ -967,6 +971,213 @@ function renderMedArtFristen() {
   }
 }
 
+/* ------------------------------------------------------------- Ferien */
+
+const FERIEN_TYPEN = ['Ferien', 'Feiertag', 'Schließzeit'].map((t) => ({ value: t, label: t }));
+
+function wireFerien() {
+  document.getElementById('ferien-neu').addEventListener('click', () => openFerienSheet(null));
+
+  document.getElementById('ferien-ics-datei').addEventListener('click', async () => {
+    const result = await api.ferien.importIcsDatei();
+    if (!result) return; // Dialog abgebrochen
+    behandleFerienImportErgebnis(result);
+  });
+
+  document.getElementById('ferien-ics-url').addEventListener('click', async () => {
+    const url = prompt('Adresse (URL) des ICS-Ferienkalenders:');
+    if (!url) return;
+    const result = await api.ferien.importIcsUrl(url.trim());
+    behandleFerienImportErgebnis(result);
+  });
+
+  const abrufBtn = document.getElementById('ferien-api-abrufen');
+  const abrufStatus = document.getElementById('ferien-abruf-status');
+  abrufBtn.addEventListener('click', async () => {
+    abrufBtn.disabled = true;
+    abrufStatus.textContent = 'Rufe Hamburger Schulferien/Feiertage ab …';
+    const result = await api.ferien.apiAbrufen();
+    abrufBtn.disabled = false;
+    if (!result.ok) {
+      abrufStatus.textContent = result.fehler;
+      toast('Abruf fehlgeschlagen – ohne Internetverbindung geht das nur manuell oder per ICS-Datei.', 'error');
+      return;
+    }
+    abrufStatus.textContent = `${result.termine.length} Termine von ${result.quelle} gefunden – bitte prüfen.`;
+    if (!result.termine.length) { toast('Keine Termine gefunden.', 'error'); return; }
+    openFerienImportPreview(result.termine);
+  });
+
+  document.getElementById('ferien-neuberechnen').addEventListener('click', async () => {
+    const liste = await api.ausleihe.ferienVorschau();
+    renderFerienNeuberechnenErgebnis(liste);
+  });
+
+  document.getElementById('ferien-import-close').addEventListener('click', closeFerienImportPreview);
+  document.getElementById('ferien-import-abbrechen').addEventListener('click', closeFerienImportPreview);
+  document.getElementById('ferien-import-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'ferien-import-backdrop') closeFerienImportPreview();
+  });
+  document.getElementById('ferien-import-alle').addEventListener('change', (e) => {
+    for (const cb of document.querySelectorAll('#ferien-import-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+  });
+  document.getElementById('ferien-import-uebernehmen').addEventListener('click', ferienImportUebernehmenAbschicken);
+}
+
+function behandleFerienImportErgebnis(result) {
+  if (!result.ok) { toast(result.error, 'error'); return; }
+  if (!result.termine.length) { toast('Keine Termine gefunden.', 'error'); return; }
+  openFerienImportPreview(result.termine);
+}
+
+async function loadFerien() {
+  const liste = await api.ferien.liste();
+  renderFerienListe(liste);
+}
+
+function ferienTypBadgeKlasse(typ) {
+  if (typ === 'Feiertag') return 'warn';
+  if (typ === 'Schließzeit') return 'danger';
+  return '';
+}
+
+function renderFerienListe(liste) {
+  const tbody = document.getElementById('ferien-tbody');
+  tbody.replaceChildren();
+  if (!liste.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty small' }, ['Noch keine Ferien/Schließzeiten eingetragen.'])])]));
+    return;
+  }
+  for (const row of liste) {
+    tbody.appendChild(
+      el('tr', { onclick: () => openFerienSheet(row) }, [
+        el('td', {}, [row.bezeichnung]),
+        el('td', {}, [fmtDatum(row.startdatum)]),
+        el('td', {}, [fmtDatum(row.enddatum)]),
+        el('td', {}, [el('span', { class: `badge ${ferienTypBadgeKlasse(row.typ)}` }, [row.typ])]),
+        el('td', {}, [row.quelle]),
+        el('td', { class: 'actions' }, [
+          el('button', {
+            class: 'icon-button',
+            title: 'Löschen',
+            onclick: async (e) => {
+              e.stopPropagation();
+              if (!confirm(`„${row.bezeichnung}“ wirklich löschen?`)) return;
+              await api.ferien.loeschen(row.id);
+              await loadFerien();
+              toast('Eintrag gelöscht.');
+            },
+          }, ['✕']),
+        ]),
+      ])
+    );
+  }
+}
+
+function openFerienSheet(row) {
+  openSheet({
+    title: row ? row.bezeichnung : 'Neuer Ferien-/Schließzeiteintrag',
+    fields: [
+      { name: 'bezeichnung', label: 'Bezeichnung' },
+      { name: 'startdatum', label: 'Von', type: 'date' },
+      { name: 'enddatum', label: 'Bis', type: 'date' },
+      { name: 'typ', label: 'Typ', type: 'select', options: FERIEN_TYPEN },
+    ],
+    values: row || { typ: 'Ferien' },
+    onSave: async (values) => {
+      const result = await api.ferien.speichern(row ? { ...values, id: row.id } : values);
+      if (!result.ok) throw new Error(result.error);
+      await loadFerien();
+      await refreshKennzahlen();
+      toast('Gespeichert.');
+    },
+    onDelete: row
+      ? async () => {
+          await api.ferien.loeschen(row.id);
+          await loadFerien();
+          toast('Eintrag gelöscht.');
+        }
+      : null,
+  });
+}
+
+/** Zeile in der Import-Vorschau: Checkbox + editierbare Bezeichnung/Typ, Von/Bis nur lesend. */
+function ferienImportZeile(termin) {
+  const bezeichnungInput = el('input', { type: 'text', value: termin.bezeichnung });
+  const typSelect = el(
+    'select',
+    {},
+    FERIEN_TYPEN.map((o) => el('option', { value: o.value, selected: o.value === (termin.typ || 'Ferien') }, [o.label]))
+  );
+  const checkbox = el('input', { type: 'checkbox', checked: true });
+  const tr = el('tr', {}, [
+    el('td', {}, [checkbox]),
+    el('td', {}, [bezeichnungInput]),
+    el('td', {}, [fmtDatum(termin.startdatum)]),
+    el('td', {}, [fmtDatum(termin.enddatum)]),
+    el('td', {}, [typSelect]),
+  ]);
+  tr._lesen = () => ({
+    ausgewaehlt: checkbox.checked,
+    bezeichnung: bezeichnungInput.value.trim(),
+    startdatum: termin.startdatum,
+    enddatum: termin.enddatum,
+    typ: typSelect.value,
+  });
+  return tr;
+}
+
+function openFerienImportPreview(termine) {
+  const tbody = document.getElementById('ferien-import-tbody');
+  tbody.replaceChildren(...termine.map(ferienImportZeile));
+  document.getElementById('ferien-import-alle').checked = true;
+  document.getElementById('ferien-import-backdrop').hidden = false;
+}
+
+function closeFerienImportPreview() {
+  document.getElementById('ferien-import-backdrop').hidden = true;
+}
+
+async function ferienImportUebernehmenAbschicken() {
+  const zeilen = [...document.querySelectorAll('#ferien-import-tbody tr')].map((tr) => tr._lesen());
+  const ausgewaehlt = zeilen.filter((z) => z.ausgewaehlt && z.bezeichnung);
+  if (!ausgewaehlt.length) { toast('Nichts ausgewählt.', 'error'); return; }
+  const result = await api.ferien.importUebernehmen(ausgewaehlt);
+  if (!result.ok) { toast(result.error, 'error'); return; }
+  closeFerienImportPreview();
+  await loadFerien();
+  toast(`${result.neu} Termin(e) übernommen${result.uebersprungen ? `, ${result.uebersprungen} bereits vorhanden übersprungen` : ''}.`);
+}
+
+/** Ergebnis von "Fristen anhand der Ferien neu berechnen" – reine Anzeige, siehe repo.vorschauFristenMitFerien. */
+function renderFerienNeuberechnenErgebnis(liste) {
+  const box = document.getElementById('ferien-neuberechnen-ergebnis');
+  box.hidden = false;
+  box.replaceChildren();
+  if (!liste.length) {
+    box.appendChild(el('p', { class: 'hint' }, ['Keine Änderungen durch die aktuelle Ferienplanung – alle offenen Ausleihen sind bereits korrekt eingeplant.']));
+    return;
+  }
+  const table = el('table', {}, [
+    el('thead', {}, [el('tr', {}, [el('th', {}, ['Titel']), el('th', {}, ['Nutzer']), el('th', {}, ['Bisher fällig']), el('th', {}, ['Neu fällig']), el('th', {}, ['Grund'])])]),
+    el(
+      'tbody',
+      {},
+      liste.map((r) =>
+        el('tr', {}, [
+          el('td', {}, [r.Titel]),
+          el('td', {}, [`${r.Nachname}, ${r.Vorname}`]),
+          el('td', {}, [fmtDatum(r.faelligOhneFerien)]),
+          el('td', {}, [fmtDatum(r.faelligMitFerien)]),
+          el('td', {}, [r.grund]),
+        ])
+      )
+    ),
+  ]);
+  box.appendChild(el('p', { class: 'hint' }, [`${liste.length} offene Ausleihe(n) verschieben sich durch die aktuelle Ferienplanung:`]));
+  box.appendChild(table);
+}
+
 const speichereEinstellungenFormular = debounce(async () => {
   const patch = {
     uiStyle: document.getElementById('set-uiStyle').value,
@@ -976,6 +1187,7 @@ const speichereEinstellungenFormular = debounce(async () => {
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
     verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
+    ueberfaelligTageOhneFerien: document.getElementById('set-ueberfaelligTageOhneFerien').checked,
     mahngebuehrenAktiv: document.getElementById('set-mahngebuehrenAktiv').checked,
     mahnGebuehrProTag: Number(document.getElementById('set-mahnGebuehrProTag').value) || 0,
     mahnGebuehrMax: Number(document.getElementById('set-mahnGebuehrMax').value) || 0,
