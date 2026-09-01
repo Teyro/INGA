@@ -970,6 +970,15 @@ function wireRueckgabe() {
     );
     await loadRueckgabe();
   });
+  document.getElementById('rueckgabe-zurueckgeben-mehrere').addEventListener('click', async () => {
+    const ids = [...document.querySelectorAll('#rueckgabe-tbody input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.id));
+    if (!ids.length) { toast('Nichts ausgewählt.', 'error'); return; }
+    if (!confirm(`${ids.length} Ausleihe(n) wirklich als zurückgegeben verbuchen?`)) return;
+    for (const id of ids) await api.ausleihe.zurueckgeben(id);
+    toast(`${ids.length} Ausleihe(n) zurückgegeben.`);
+    await loadRueckgabe();
+    await refreshKennzahlen();
+  });
 }
 
 const RUECKGABE_FILTER_FELDER = [
@@ -1099,6 +1108,7 @@ function wireMahnungen() {
   });
   document.getElementById('mahnungen-suche').addEventListener('input', debounce(loadMahnungen, 200));
   document.getElementById('mahnungen-filter-stufe').addEventListener('change', loadMahnungen);
+  document.getElementById('mahnungen-filter-klasse').addEventListener('change', loadMahnungen);
   document.getElementById('mahnungen-drucken').addEventListener('click', async () => {
     const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]:checked')];
     if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
@@ -1124,10 +1134,21 @@ function fuelleMahnstufenFilter() {
   sel.value = bisher;
 }
 
+/** Klassen-Dropdown der Mahnliste aus den tatsächlich betroffenen Klassen befüllen (Jahrgang ist ein Freitextfeld, kein Stammdatum). */
+function fuelleMahnungenKlassenFilter(rows) {
+  const sel = document.getElementById('mahnungen-filter-klasse');
+  const bisher = sel.value;
+  const klassen = [...new Set(rows.map((r) => r.Jahrgang).filter(Boolean))].sort();
+  sel.replaceChildren(el('option', { value: '' }, ['Alle Klassen']), ...klassen.map((k) => el('option', { value: k }, [k])));
+  sel.value = bisher;
+}
+
 async function loadMahnungen() {
   const rows = await api.mahnung.ueberfaellige();
+  fuelleMahnungenKlassenFilter(rows);
   const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
   const stufeFilter = document.getElementById('mahnungen-filter-stufe').value;
+  const klasseFilter = document.getElementById('mahnungen-filter-klasse').value;
   const anzahlStufen = state.settings.mahnstufen.length;
   const gebuehrenAktiv = Boolean(state.settings.mahngebuehrenAktiv);
   document.getElementById('mahn-gebuehr-head').hidden = !gebuehrenAktiv;
@@ -1135,6 +1156,7 @@ async function loadMahnungen() {
   let gefiltert = rows;
   if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
   if (stufeFilter !== '') gefiltert = gefiltert.filter((r) => r.stufeIndex === Number(stufeFilter));
+  if (klasseFilter) gefiltert = gefiltert.filter((r) => r.Jahrgang === klasseFilter);
 
   const tbody = document.getElementById('mahnungen-tbody');
   tbody.replaceChildren();
