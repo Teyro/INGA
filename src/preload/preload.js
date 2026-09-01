@@ -39,6 +39,13 @@ contextBridge.exposeInMainWorld('inga', {
     delete: (leserNi) => ipcRenderer.invoke('leser:delete', leserNi),
     offeneAusleihen: (leserNi) => ipcRenderer.invoke('leser:offene-ausleihen', leserNi),
     mahnhistorie: (leserNi) => ipcRenderer.invoke('leser:mahnhistorie', leserNi),
+    vormerkungen: (leserNi) => ipcRenderer.invoke('leser:vormerkungen', leserNi),
+  },
+
+  vormerkung: {
+    liste: (katalogNi) => ipcRenderer.invoke('vormerkung:liste', katalogNi),
+    anlegen: (payload) => ipcRenderer.invoke('vormerkung:anlegen', payload),
+    loeschen: (id) => ipcRenderer.invoke('vormerkung:loeschen', id),
   },
 
   ausleihe: {

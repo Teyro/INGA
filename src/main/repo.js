@@ -488,6 +488,46 @@ function berechneMahngebuehr(tageUeberfaellig, einstellungen) {
   return max > 0 ? Math.min(betrag, max) : betrag;
 }
 
+/* ------------------------------------------------------------ Vormerkungen */
+
+/** Merkt einen Titel für einen Nutzer vor – lehnt eine doppelte Vormerkung (derselbe Nutzer, derselbe Titel) ab. */
+function vormerken(db, { katalogNi, leserNi }) {
+  const doppelt = db.prepare(`SELECT id FROM "Vormerkung" WHERE "KatalogNi" = ? AND "LeserNi" = ?`).get(katalogNi, leserNi);
+  if (doppelt) throw new Error('Dieser Titel ist für diesen Nutzer bereits vorgemerkt.');
+  const bisherige = db.prepare(`SELECT MAX(CAST("Prioritaet" AS INTEGER)) AS max FROM "Vormerkung" WHERE "KatalogNi" = ?`).get(katalogNi);
+  const naechstePrioritaet = (bisherige?.max || 0) + 1;
+  const info = db
+    .prepare(`INSERT INTO "Vormerkung" ("LeserNi","KatalogNi","Prioritaet","VormerkDat") VALUES (?, ?, ?, ?)`)
+    .run(leserNi, katalogNi, naechstePrioritaet, heuteISO());
+  return { id: info.lastInsertRowid, prioritaet: naechstePrioritaet };
+}
+
+/** Vormerkungen für einen Titel, in der Reihenfolge, in der sie vergeben wurden (wer zuerst vorgemerkt hat, ist zuerst dran). */
+function vormerkungenFuer(db, katalogNi) {
+  return db
+    .prepare(
+      `SELECT v.*, l."Nachname", l."Vorname" FROM "Vormerkung" v
+       JOIN "Leser" l ON l."LeserNi" = v."LeserNi"
+       WHERE v."KatalogNi" = ? ORDER BY CAST(v."Prioritaet" AS INTEGER)`
+    )
+    .all(katalogNi);
+}
+
+/** Vormerkungen eines Nutzers, für die Nutzerakte. */
+function vormerkungenVonLeser(db, leserNi) {
+  return db
+    .prepare(
+      `SELECT v.*, k."Titel", k."Autor" FROM "Vormerkung" v
+       JOIN "Katalog" k ON k."KatalogNi" = v."KatalogNi"
+       WHERE v."LeserNi" = ? ORDER BY v."VormerkDat"`
+    )
+    .all(leserNi);
+}
+
+function vormerkungLoeschen(db, id) {
+  db.prepare(`DELETE FROM "Vormerkung" WHERE id = ?`).run(id);
+}
+
 /**
  * Ausleihen: prüft Sperre und Doppelausleihe, legt den Datensatz an.
  * Wirft eine Error mit sprechender Meldung, wenn es nicht geht – der Aufrufer
@@ -512,8 +552,22 @@ function ausleihen(db, { medienNi, leserNi, benutzer, einstellungen }) {
     AuslDatum: auslDatum,
     ErfassAnw: benutzer || 'inga',
   });
+
+  // Merkte der ausleihende Nutzer diesen Titel selbst vor, gilt die
+  // Vormerkung jetzt als erfüllt – erst danach die verbleibenden (fremden)
+  // Vormerkungen ermitteln, damit sie in der Rückgabe nicht mitgezählt wird.
+  db.prepare(`DELETE FROM "Vormerkung" WHERE "KatalogNi" = ? AND "LeserNi" = ?`).run(medium.KatalogNi, leserNi);
+  const vormerkungenAndere = vormerkungenFuer(db, medium.KatalogNi);
+
   const { datum, hinweise } = berechneRueckgabedatum(db, { auslDatum, katalogNi: medium.KatalogNi, anzVerl: 0, einstellungen });
-  return { id: info.lastInsertRowid, faelligAm: datum, hinweise };
+  return {
+    id: info.lastInsertRowid,
+    faelligAm: datum,
+    hinweise,
+    vormerkungHinweis: vormerkungenAndere.length
+      ? `Achtung: ${vormerkungenAndere.length} weitere Vormerkung${vormerkungenAndere.length === 1 ? '' : 'en'} für diesen Titel (${vormerkungenAndere.map((v) => `${v.Nachname}, ${v.Vorname}`).join('; ')}).`
+      : null,
+  };
 }
 
 function zurueckgeben(db, ausleiheId) {
@@ -525,9 +579,6 @@ function zurueckgeben(db, ausleiheId) {
  * oder Vorgabe aus den Einstellungen) und gibt das neu berechnete
  * Rückgabedatum gleich mit zurück, damit die Oberfläche es sofort anzeigen
  * kann, ohne die Liste komplett neu zu laden.
- *
- * Hinweis: `einstellungen.verlaengerungGesperrtBeiVormerkung` wird hier noch
- * nicht ausgewertet – das greift erst, sobald es Vormerkungen gibt.
  */
 function verlaengern(db, ausleiheId, einstellungen) {
   const row = db
@@ -541,6 +592,13 @@ function verlaengern(db, ausleiheId, einstellungen) {
   if (row.Rueckgabe) throw new Error('Bereits zurückgegeben.');
   const maxVerlaengerung = Number(einstellungen.maxVerlaengerung) || 0;
   if ((row.AnzVerl || 0) >= maxVerlaengerung) throw new Error('Maximale Anzahl Verlängerungen erreicht.');
+
+  if (einstellungen.verlaengerungGesperrtBeiVormerkung) {
+    const vonAnderen = vormerkungenFuer(db, row.KatalogNi).filter((v) => v.LeserNi !== row.LeserNi);
+    if (vonAnderen.length) {
+      throw new Error(`Verlängerung nicht möglich: Dieser Titel ist von ${vonAnderen[0].Nachname}, ${vonAnderen[0].Vorname} vorgemerkt.`);
+    }
+  }
 
   db.prepare(`UPDATE "Ausleihe" SET "AnzVerl" = "AnzVerl" + 1 WHERE id = ?`).run(ausleiheId);
   const { datum, hinweise } = berechneRueckgabedatum(db, {
@@ -808,6 +866,10 @@ module.exports = {
   offeneAusleihenVonLeser,
   alleOffenenAusleihen,
   umlaufliste,
+  vormerken,
+  vormerkungenFuer,
+  vormerkungenVonLeser,
+  vormerkungLoeschen,
   ausleihen,
   zurueckgeben,
   verlaengern,

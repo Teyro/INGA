@@ -10,7 +10,7 @@
  */
 
 const AdmZip = require('adm-zip');
-const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, TABLES, quoteIdent } = require('./db');
+const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, ID_BASIERTE_TABELLEN, TABLES, quoteIdent } = require('./db');
 
 function parseCsv(text) {
   const lines = text.split(/\r\n|\n/).filter((l) => l.length > 0);
@@ -59,7 +59,7 @@ function importZip(db, filePath, { onProgress } = {}) {
       const { header, rows } = parseCsv(entry.getData().toString('utf8'));
       if (!header.length) continue;
 
-      if (table === 'Ausleihe' || table === 'Mahnung') {
+      if (ID_BASIERTE_TABELLEN.has(table)) {
         db.prepare(`DELETE FROM ${quoteIdent(table)}`).run();
         const cols = TABLES[table];
         const stmt = db.prepare(
@@ -143,7 +143,7 @@ function exportZip(db, filePath) {
     let header = TABLES[table];
     let rows;
 
-    if (table === 'Ausleihe' || table === 'Mahnung' || (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table))) {
+    if (ID_BASIERTE_TABELLEN.has(table) || (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table))) {
       rows = db.prepare(`SELECT * FROM ${quoteIdent(table)}`).all();
     } else if (DERIVED_TABLES.has(table)) {
       rows = table === 'StatMedien' ? computeStatMedien(db) : [];

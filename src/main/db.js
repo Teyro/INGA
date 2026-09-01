@@ -48,6 +48,10 @@ const NATIVE_TABLES = {
   // Stammdaten, siehe Migration Version 4 in MIGRATIONS unten.
   StandOrt: 'StOrtNi',
   Nichtverf: 'NichtVfNi',
+  // Vormerkungen: kein *Ni-Einzelschlüssel im Original (LeserNi+KatalogNi
+  // bilden zusammen eine Zeile) – bekommt wie Ausleihe/Mahnung eine eigene
+  // id-Spalte, siehe die Sonderbehandlung unten und Migration Version 5.
+  Vormerkung: null,
 };
 
 // StatMedien ist im Original eine abgeleitete Momentaufnahme der laufenden
@@ -55,8 +59,13 @@ const NATIVE_TABLES = {
 // Export aus Ausleihe/Medien/Leser neu zusammen.
 const DERIVED_TABLES = new Set(['StatMedien']);
 
+// Tabellen mit eigener id-Spalte statt eines *Ni-Einzelschlüssels (siehe
+// NATIVE_TABLES-Kommentare oben) – für die WHERE-Klausel unten UND für die
+// Sonderbehandlung in createSchema()/csvio.js an einer Stelle gepflegt.
+const ID_BASIERTE_TABELLEN = new Set(['Ausleihe', 'Mahnung', 'Vormerkung']);
+
 const LEGACY_TABLES = Object.keys(TABLES).filter(
-  (name) => !NATIVE_TABLES[name] && name !== 'Ausleihe' && name !== 'Mahnung' && !DERIVED_TABLES.has(name)
+  (name) => !NATIVE_TABLES[name] && !ID_BASIERTE_TABELLEN.has(name) && !DERIVED_TABLES.has(name)
 );
 
 function quoteIdent(name) {
@@ -73,7 +82,7 @@ function createSchema(db) {
   // ganze Zahl verlangt. Die bekommen ein typloses PRIMARY KEY: erzwingt nur
   // Eindeutigkeit, keine Typumwandlung.
   for (const [table, pk] of Object.entries(NATIVE_TABLES)) {
-    if (table === 'Ausleihe' || table === 'Mahnung') continue; // eigene id-Spalte, siehe unten
+    if (ID_BASIERTE_TABELLEN.has(table)) continue; // eigene id-Spalte, siehe unten
     const columns = TABLES[table];
     const pkType = pk && pk.endsWith('Ni') ? 'INTEGER PRIMARY KEY' : 'PRIMARY KEY';
     const defs = columns.map((col) => {
@@ -91,7 +100,13 @@ function createSchema(db) {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ${TABLES.Mahnung.map(quoteIdent).join(', ')}
   )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS "Vormerkung" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ${TABLES.Vormerkung.map(quoteIdent).join(', ')}
+  )`);
 
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_vormerkung_katalog ON "Vormerkung" ("KatalogNi")`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_vormerkung_leser ON "Vormerkung" ("LeserNi")`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_offen ON "Ausleihe" ("Rueckgabe")`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_leser ON "Ausleihe" ("LeserNi")`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ausleihe_medien ON "Ausleihe" ("MedienNi")`);
@@ -144,7 +159,29 @@ function createSchema(db) {
  *       db.exec(`CREATE TABLE IF NOT EXISTS ferien ( ... )`);
  *     } }
  */
-const SCHEMA_VERSION = 4;
+/**
+ * Übernimmt Altdaten einer Tabelle, die bislang nur als opake JSON-Zeilen in
+ * legacy_rows lag (ein Perpustakaan-Import, bevor INGA die Tabelle selbst
+ * verstand), in die frisch angelegte native Tabelle – und räumt legacy_rows
+ * danach auf. `insertSql` bekommt die Spalten als @Spaltenname-Platzhalter
+ * übergeben (fertig zusammengesetzt vom Aufrufer, da INSERT vs.
+ * INSERT OR IGNORE je nach Zieltabelle unterschiedlich sein kann).
+ */
+function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
+  const vorhandene = db.prepare(`SELECT data FROM legacy_rows WHERE table_name = ? ORDER BY seq`).all(table);
+  if (!vorhandene.length) return;
+  const stmt = db.prepare(insertSql);
+  for (const zeile of vorhandene) {
+    const parsed = JSON.parse(zeile.data);
+    const params = {};
+    for (const c of columns) params[c] = parsed[c] === '' || parsed[c] === undefined ? null : parsed[c];
+    stmt.run(params);
+  }
+  db.prepare(`DELETE FROM legacy_rows WHERE table_name = ?`).run(table);
+  db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
+}
+
+const SCHEMA_VERSION = 5;
 const MIGRATIONS = [
   {
     version: 2,
@@ -194,26 +231,36 @@ const MIGRATIONS = [
         const columns = TABLES[table];
         const defs = columns.map((col) => (col === pk ? `${quoteIdent(col)} INTEGER PRIMARY KEY` : quoteIdent(col)));
         db.exec(`CREATE TABLE IF NOT EXISTS ${quoteIdent(table)} (${defs.join(', ')})`);
-
-        // Daten aus einem früheren Import (dort noch als opake JSON-Zeilen
-        // unter legacy_rows abgelegt) übernehmen, damit ein bereits
-        // bestehender Bestand nichts verliert.
-        const vorhandene = db.prepare(`SELECT data FROM legacy_rows WHERE table_name = ? ORDER BY seq`).all(table);
-        if (vorhandene.length) {
-          const stmt = db.prepare(
-            `INSERT OR IGNORE INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(', ')})
-             VALUES (${columns.map((c) => `@${c}`).join(', ')})`
-          );
-          for (const zeile of vorhandene) {
-            const parsed = JSON.parse(zeile.data);
-            const params = {};
-            for (const c of columns) params[c] = parsed[c] === '' || parsed[c] === undefined ? null : parsed[c];
-            stmt.run(params);
-          }
-          db.prepare(`DELETE FROM legacy_rows WHERE table_name = ?`).run(table);
-          db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
-        }
+        uebernehmeLegacyAltdaten(
+          db,
+          table,
+          columns,
+          `INSERT OR IGNORE INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(', ')})
+           VALUES (${columns.map((c) => `@${c}`).join(', ')})`
+        );
       }
+    },
+  },
+  {
+    version: 5,
+    beschreibung: 'Vormerkung wird eine echte Tabelle statt nur Legacy-Passthrough (Vormerkungen/Reservierungen)',
+    up(db) {
+      // Kein *Ni-Einzelschlüssel im Original (LeserNi+KatalogNi bilden
+      // zusammen eine Zeile) – bekommt wie Ausleihe/Mahnung eine eigene
+      // id-Spalte (siehe createSchema()/ID_BASIERTE_TABELLEN).
+      const columns = TABLES.Vormerkung;
+      db.exec(`CREATE TABLE IF NOT EXISTS "Vormerkung" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ${columns.map(quoteIdent).join(', ')}
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_vormerkung_katalog ON "Vormerkung" ("KatalogNi")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_vormerkung_leser ON "Vormerkung" ("LeserNi")`);
+      uebernehmeLegacyAltdaten(
+        db,
+        'Vormerkung',
+        columns,
+        `INSERT INTO "Vormerkung" (${columns.map(quoteIdent).join(', ')}) VALUES (${columns.map((c) => `@${c}`).join(', ')})`
+      );
     },
   },
 ];
@@ -307,6 +354,7 @@ module.exports = {
   NATIVE_TABLES,
   DERIVED_TABLES,
   LEGACY_TABLES,
+  ID_BASIERTE_TABELLEN,
   TABLES,
   SCHEMA_VERSION,
   MIGRATIONS,

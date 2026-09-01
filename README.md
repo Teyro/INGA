@@ -91,6 +91,12 @@ Ferienschließzeit.
 - Rückgabe-Liste mit Volltextsuche, Filtern (nur überfällige,
   Überfälligkeit ab X Tagen, verlängert ja/nein, Klasse,
   Ausleihdatum-Zeitraum), Status-Badge pro Zeile und Export als CSV/Excel
+- **Vormerkungen**: ein Titel lässt sich auf der Buchdetailseite für eine
+  Person vormerken (mehrere Personen möglich, Reihenfolge nach Anmeldung).
+  Leiht die vormerkende Person den Titel selbst aus, gilt die Vormerkung
+  automatisch als erfüllt; leiht jemand anderes aus, erscheint ein
+  Hinweis. Einstellung „Verlängerung gesperrt, wenn Buch vorgemerkt ist“
+  verhindert eine Verlängerung, solange eine andere Person wartet
 
 ### Im Umlauf
 

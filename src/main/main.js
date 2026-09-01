@@ -448,6 +448,14 @@ function registerIpc() {
   ipcMain.handle('leser:delete', sicher((_e, leserNi) => repo.deleteLeser(db, leserNi)));
   ipcMain.handle('leser:offene-ausleihen', (_e, leserNi) => repo.offeneAusleihenVonLeser(db, leserNi));
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
+  ipcMain.handle('leser:vormerkungen', (_e, leserNi) => repo.vormerkungenVonLeser(db, leserNi));
+
+  ipcMain.handle('vormerkung:liste', (_e, katalogNi) => repo.vormerkungenFuer(db, katalogNi));
+  ipcMain.handle('vormerkung:anlegen', sicher((_e, { katalogNi, leserNi }) => repo.vormerken(db, { katalogNi, leserNi })));
+  ipcMain.handle('vormerkung:loeschen', sicher((_e, id) => {
+    repo.vormerkungLoeschen(db, id);
+    return { ok: true };
+  }));
 
   ipcMain.handle('ausleihe:alle-offen', () => repo.alleOffenenAusleihen(db));
   ipcMain.handle('ausleihe:ueberfaellige-alle', () => repo.ueberfaelligeAusleihen(db, settings()));

@@ -100,3 +100,25 @@ test('Migration Version 4: StandOrt-Altdaten aus legacy_rows (Perpustakaan-Impor
   assert.equal(uebrig.n, 0, 'nach der Übernahme darf nichts mehr doppelt in legacy_rows stehen');
   db.close();
 });
+
+test('Migration Version 5: Vormerkung-Altdaten aus legacy_rows gehen beim Upgrade nicht verloren', () => {
+  const dir = tmpDir();
+
+  let db = openDatabase(dir);
+  db.prepare(`DELETE FROM "Vormerkung"`).run();
+  db.prepare(`INSERT INTO legacy_rows (table_name, seq, data) VALUES ('Vormerkung', 0, ?)`).run(
+    JSON.stringify({ LeserNi: '3', KatalogNi: '9', Prioritaet: '1', VormerkDat: '2026-01-01', VerfallDat: '' })
+  );
+  db.prepare(`UPDATE inga_meta SET value = '4' WHERE key = 'schema_version'`).run();
+  db.close();
+
+  db = openDatabase(dir);
+  assert.equal(gespeicherteSchemaVersion(db), SCHEMA_VERSION);
+  const vormerkung = db.prepare(`SELECT * FROM "Vormerkung" WHERE "LeserNi" = '3' AND "KatalogNi" = '9'`).get();
+  assert.ok(vormerkung, 'Vormerkung-Altdatensatz muss in die native Tabelle übernommen werden');
+  assert.equal(vormerkung.Prioritaet, '1');
+  assert.ok(Number.isInteger(vormerkung.id), 'die neue Tabelle muss eine eigene id-Spalte haben (kein *Ni-Einzelschlüssel im Original)');
+  const uebrig = db.prepare(`SELECT COUNT(*) AS n FROM legacy_rows WHERE table_name = 'Vormerkung'`).get();
+  assert.equal(uebrig.n, 0);
+  db.close();
+});

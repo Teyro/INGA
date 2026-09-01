@@ -542,9 +542,10 @@ async function openKatalogSheet(row) {
 
   let extraBox = null;
   if (row?.KatalogNi) {
-    const [exemplare, statistik] = await Promise.all([
+    const [exemplare, statistik, vormerkungen] = await Promise.all([
       api.katalog.exemplareMitStatus(row.KatalogNi),
       api.katalog.ausleihStatistik(row.KatalogNi),
+      api.vormerkung.liste(row.KatalogNi),
     ]);
     extraBox = el('div', {}, [
       el('div', { class: 'section-title' }, ['Exemplare']),
@@ -576,6 +577,48 @@ async function openKatalogSheet(row) {
         }, ['+ Exemplar']),
       ]),
       el('p', { class: 'hint', style: { marginTop: '14px' } }, [`Insgesamt ${statistik.gesamt}× ausgeliehen.`]),
+      el('div', { class: 'section-title', style: { marginTop: '18px' } }, ['Vormerkungen']),
+      vormerkungen.length
+        ? el('div', {}, vormerkungen.map((v) =>
+            el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
+              el('span', { class: 'badge' }, [`${v.Nachname}, ${v.Vorname}`]),
+              el('span', { class: 'hint' }, [`seit ${fmtDatum(v.VormerkDat)}`]),
+              el('button', {
+                class: 'icon-button',
+                title: 'Vormerkung entfernen',
+                onclick: async () => {
+                  try {
+                    await api.vormerkung.loeschen(v.id);
+                    openKatalogSheet(await api.katalog.get(row.KatalogNi));
+                  } catch (err) {
+                    toast(err.message || String(err), 'error');
+                  }
+                },
+              }, ['✕']),
+            ])
+          ))
+        : el('p', { class: 'hint' }, ['Keine Vormerkungen.']),
+      el('div', { class: 'row-inline', style: { marginTop: '8px' } }, [
+        el('input', { id: 'neue-vormerkung', type: 'text', placeholder: 'Ausweisnummer / Kürzel' }),
+        el('button', {
+          class: 'button small',
+          onclick: async (e) => {
+            const kennung = document.getElementById('neue-vormerkung').value.trim();
+            if (!kennung) return;
+            e.target.disabled = true;
+            try {
+              const leser = await findLeserByKennung(kennung);
+              if (!leser) { toast(`Kein Nutzer für „${kennung}“ gefunden.`, 'error'); return; }
+              await api.vormerkung.anlegen({ katalogNi: row.KatalogNi, leserNi: leser.LeserNi });
+              openKatalogSheet(await api.katalog.get(row.KatalogNi));
+            } catch (err) {
+              toast(err.message || String(err), 'error');
+            } finally {
+              e.target.disabled = false;
+            }
+          },
+        }, ['+ Vormerken']),
+      ]),
     ]);
   }
 
@@ -739,12 +782,22 @@ async function openLeserSheet(row) {
 
   let historyBox = null;
   if (row?.LeserNi) {
-    const [offen, historie] = await Promise.all([api.leser.offeneAusleihen(row.LeserNi), api.leser.mahnhistorie(row.LeserNi)]);
+    const [offen, historie, vormerkungen] = await Promise.all([
+      api.leser.offeneAusleihen(row.LeserNi),
+      api.leser.mahnhistorie(row.LeserNi),
+      api.leser.vormerkungen(row.LeserNi),
+    ]);
     historyBox = el('div', {}, [
       offen.length
         ? el('div', {}, [
             el('div', { class: 'section-title' }, ['Offene Ausleihen']),
             ...offen.map((o) => el('div', { class: 'hint', style: { marginBottom: '4px' } }, [`${o.Titel} – seit ${fmtDatum(o.AuslDatum)}`])),
+          ])
+        : null,
+      vormerkungen.length
+        ? el('div', {}, [
+            el('div', { class: 'section-title', style: { marginTop: '18px' } }, ['Vormerkungen']),
+            ...vormerkungen.map((v) => el('div', { class: 'hint', style: { marginBottom: '4px' } }, [`${v.Titel} – seit ${fmtDatum(v.VormerkDat)}`])),
           ])
         : null,
       historie.length
@@ -821,6 +874,7 @@ async function ausleihenAbschicken() {
   if (!result.ok) { status.textContent = result.error; toast(result.error, 'error'); return; }
   const hinweisText = result.hinweise?.length ? ` (${result.hinweise.join(', ')})` : '';
   status.textContent = `Ausgeliehen an ${leser.Nachname}, ${leser.Vorname} – fällig am ${fmtDatum(result.faelligAm)}${hinweisText}.`;
+  if (result.vormerkungHinweis) toast(result.vormerkungHinweis, 'error');
   document.getElementById('ausleihe-etikett').value = '';
   document.getElementById('ausleihe-leser').value = '';
   document.getElementById('ausleihe-etikett').focus();
