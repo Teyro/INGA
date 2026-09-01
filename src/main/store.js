@@ -111,8 +111,14 @@ const DEFAULT_SETTINGS = {
   highContrast: false,
 
   // Ausleihe
-  leihfristTage: 28,
+  leihfristTage: 7,
   maxVerlaengerung: 2,
+  // Um wie viele Tage sich eine Verlängerung jeweils auswirkt (sofern die
+  // Medienart keine eigene FristVerl hat) – Vorgabe ebenfalls 7 Tage.
+  verlaengerungDauerTage: 7,
+  // Greift erst, sobald es Vormerkungen gibt (spätere Ausbaustufe) – bis
+  // dahin ohne Wirkung, aber schon abfragbar/einstellbar.
+  verlaengerungGesperrtBeiVormerkung: false,
   // Wirkt zusätzlich zur Leihfrist (Standard oder Medienart) auf JEDE
   // berechnete Fälligkeit – z. B. +14 für eine Ferienschließzeit. Betrifft
   // offene und künftige Ausleihen sofort, ohne AuslDatum zu verändern.
@@ -124,6 +130,14 @@ const DEFAULT_SETTINGS = {
     { tageUeberfaellig: 21, gebuehr: 1.5, text: '2. Mahnung', briefText: DEFAULT_BRIEFTEXT },
     { tageUeberfaellig: 42, gebuehr: 3.0, text: 'Letzte Mahnung', briefText: DEFAULT_BRIEFTEXT_LETZTE },
   ],
+  // Mahngebühren sind standardmäßig aus – Mahnungen als Erinnerung bleiben
+  // davon unberührt, nur die Geldseite ist optional. Ist der Schalter aus,
+  // werden Gebührenspalten/-summen in der gesamten Oberfläche und in allen
+  // Ausdrucken ausgeblendet statt nur auf 0,00 € gesetzt.
+  mahngebuehrenAktiv: false,
+  mahnGebuehrProTag: 0.1,
+  mahnGebuehrMax: 5.0,
+  mahnKarenztage: 0,
   absenderName: '',
   absenderAdresse: '',
   absenderEmail: '',

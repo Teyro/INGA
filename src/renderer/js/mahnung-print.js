@@ -14,7 +14,7 @@ function massgeblicheStufe(posten) {
 }
 
 function renderBrief(brief) {
-  const { leser, posten, summe } = brief;
+  const { leser, posten, summe, mahngebuehrenAktiv } = brief;
   const stufe = massgeblicheStufe(posten);
   const tageMax = Math.max(...posten.map((p) => p.tageUeberfaellig || 0));
   const faelligMin = posten.map((p) => p.faelligAm).sort()[0];
@@ -51,12 +51,28 @@ function renderBrief(brief) {
       .split('\n')
       .map((zeile) => (zeile.trim() ? el('p', {}, [zeile]) : null)),
     el('table', {}, [
-      el('thead', {}, [el('tr', {}, [el('th', {}, ['Titel']), el('th', {}, ['Ausgeliehen am']), el('th', {}, ['Tage überfällig']), el('th', { class: 'num' }, ['Gebühr'])])]),
-      el('tbody', {}, posten.map((p) =>
-        el('tr', {}, [el('td', {}, [p.Titel]), el('td', {}, [fmtDatum(p.AuslDatum)]), el('td', {}, [String(p.tageUeberfaellig || 0)]), el('td', { class: 'num' }, [fmtGeld(p.stufe.gebuehr)])])
-      )),
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', {}, ['Titel']),
+          el('th', {}, ['Ausgeliehen am']),
+          el('th', {}, ['Tage überfällig']),
+          mahngebuehrenAktiv ? el('th', { class: 'num' }, ['Gebühr']) : null,
+        ]),
+      ]),
+      el(
+        'tbody',
+        {},
+        posten.map((p) =>
+          el('tr', {}, [
+            el('td', {}, [p.Titel]),
+            el('td', {}, [fmtDatum(p.AuslDatum)]),
+            el('td', {}, [String(p.tageUeberfaellig || 0)]),
+            mahngebuehrenAktiv ? el('td', { class: 'num' }, [fmtGeld(p.gebuehr)]) : null,
+          ])
+        )
+      ),
     ]),
-    el('div', { class: 'summe' }, [`Gesamt: ${fmtGeld(summe)}`]),
+    mahngebuehrenAktiv ? el('div', { class: 'summe' }, [`Gesamt: ${fmtGeld(summe)}`]) : null,
     ...String(brief.mahnSchluss || '')
       .split('\n')
       .map((zeile) => (zeile.trim() ? el('p', { class: 'schluss' }, [zeile]) : el('br'))),

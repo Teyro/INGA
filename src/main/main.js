@@ -350,13 +350,10 @@ function registerIpc() {
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
 
   ipcMain.handle('ausleihe:alle-offen', () => repo.alleOffenenAusleihen(db));
-  ipcMain.handle('ausleihe:ueberfaellige-alle', () =>
-    repo.ueberfaelligeAusleihen(db, { leihfristTageVorgabe: settings().leihfristTage, leihfristOffsetTage: settings().leihfristOffsetTage })
-  );
+  ipcMain.handle('ausleihe:ueberfaellige-alle', () => repo.ueberfaelligeAusleihen(db, settings()));
   ipcMain.handle('ausleihe:ausleihen', (_e, payload) => {
     try {
-      const s = settings();
-      return { ok: true, ...repo.ausleihen(db, { ...payload, leihfristTageVorgabe: s.leihfristTage, leihfristOffsetTage: s.leihfristOffsetTage }) };
+      return { ok: true, ...repo.ausleihen(db, { ...payload, einstellungen: settings() }) };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -364,8 +361,7 @@ function registerIpc() {
   ipcMain.handle('ausleihe:zurueckgeben', (_e, id) => repo.zurueckgeben(db, id));
   ipcMain.handle('ausleihe:verlaengern', (_e, id) => {
     try {
-      repo.verlaengern(db, id, settings().maxVerlaengerung);
-      return { ok: true };
+      return { ok: true, ...repo.verlaengern(db, id, settings()) };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -375,25 +371,23 @@ function registerIpc() {
     return { anzahl };
   });
 
-  ipcMain.handle('mahnung:ueberfaellige', () =>
-    repo.ueberfaelligeMitStufe(db, {
-      mahnstufen: settings().mahnstufen,
-      leihfristTageVorgabe: settings().leihfristTage,
-      leihfristOffsetTage: settings().leihfristOffsetTage,
-    })
-  );
+  ipcMain.handle('mahnung:ueberfaellige', () => repo.ueberfaelligeMitStufe(db, settings()));
   ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, positionen) => {
     const s = settings();
     const nachLeser = new Map();
     for (const p of positionen) {
-      repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr: p.stufe.gebuehr });
+      // p.gebuehr kommt bereits aus mahnung:ueberfaellige (repo.berechneMahngebuehr,
+      // beachtet den An/Aus-Schalter) – nicht erneut aus p.stufe.gebuehr lesen,
+      // das ist nur noch der Name/Text der Eskalationsstufe.
+      repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr: p.gebuehr || 0 });
       if (!nachLeser.has(p.LeserNi)) nachLeser.set(p.LeserNi, { leser: repo.getLeser(db, p.LeserNi), posten: [] });
       nachLeser.get(p.LeserNi).posten.push(p);
     }
     const briefe = [...nachLeser.values()].map(({ leser, posten }) => ({
       leser,
       posten,
-      summe: posten.reduce((sum, p) => sum + Number(p.stufe.gebuehr || 0), 0),
+      summe: posten.reduce((sum, p) => sum + Number(p.gebuehr || 0), 0),
+      mahngebuehrenAktiv: s.mahngebuehrenAktiv,
       absenderName: s.absenderName,
       absenderAdresse: s.absenderAdresse,
       absenderEmail: s.absenderEmail,
@@ -405,6 +399,11 @@ function registerIpc() {
     }));
     await openMahnungPrintWindow(briefe);
     return { anzahl: briefe.length };
+  });
+
+  ipcMain.handle('medart:frist-speichern', (_e, { medArtKb, frist, fristVerl }) => {
+    repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });
+    return { ok: true };
   });
 
   ipcMain.handle('mahnung:logo-auswaehlen', async () => {

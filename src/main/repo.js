@@ -186,7 +186,8 @@ function offeneAusleihenVonLeser(db, leserNi) {
 function alleOffenenAusleihen(db) {
   return db
     .prepare(
-      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor", ma."Frist" AS medArtFrist, l."Nachname", l."Vorname"
+      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor",
+         ma."Frist" AS medArtFrist, ma."FristVerl" AS medArtFristVerl, l."Nachname", l."Vorname"
        FROM "Ausleihe" a
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
@@ -197,37 +198,90 @@ function alleOffenenAusleihen(db) {
     .all();
 }
 
-/**
- * Leihfrist in Tagen: zuerst die Medienart, sonst die Vorgabe aus den
- * Einstellungen – zusätzlich immer verschoben um die globale Fristverschiebung
- * (z. B. +14 Tage für eine Ferienschließzeit), die für alle Medienarten gilt.
- * Für Einzelabfragen (z. B. beim Ausleihen eines Exemplars); für Listen siehe
- * leihfristTageAusRow, die ohne zusätzliche Datenbankzugriffe auskommt.
- */
-function leihfristTage(db, katalogNi, fallbackTage, offsetTage = 0) {
-  let basis = fallbackTage;
-  const katalog = katalogNi ? getKatalog(db, katalogNi) : null;
-  if (katalog?.MedArtKb) {
-    const art = db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = ?`).get(katalog.MedArtKb);
-    if (art?.Frist) basis = Number(art.Frist);
-  }
-  return basis + (Number(offsetTage) || 0);
-}
-
-/** Wie leihfristTage, aber aus einer bereits geladenen Zeile von alleOffenenAusleihen – ohne DB-Zugriff. */
-function leihfristTageAusRow(row, fallbackTage, offsetTage = 0) {
-  const basis = row.medArtFrist !== null && row.medArtFrist !== undefined && row.medArtFrist !== '' ? Number(row.medArtFrist) : fallbackTage;
-  return basis + (Number(offsetTage) || 0);
-}
-
 const addDays = addTage;
+
+/** true, wenn ein aus der Datenbank gelesener Wert tatsächlich gesetzt ist (0 zählt als gesetzt, '' und NULL nicht). */
+function istGesetzt(wert) {
+  return wert !== null && wert !== undefined && wert !== '';
+}
+
+/**
+ * Reine Tagesrechnung ohne Datenbankzugriff – der gemeinsame Kern von
+ * berechneRueckgabedatum() und berechneRueckgabedatumAusRow(). Liefert neben
+ * der Gesamttagezahl auch nachvollziehbare Hinweise (z. B. für die Anzeige
+ * „+7 Tage durch 1 Verlängerung“ in der Ausleihliste).
+ */
+function fristTageGesamt({ basisFristTage, verlaengerungFristTage, anzVerl = 0, offsetTage = 0 }) {
+  const hinweise = [];
+  let gesamt = Number(basisFristTage) || 0;
+  const anz = Number(anzVerl) || 0;
+  if (anz > 0) {
+    const verlTage = (Number(verlaengerungFristTage) || 0) * anz;
+    gesamt += verlTage;
+    hinweise.push(`+${verlTage} Tag${verlTage === 1 ? '' : 'e'} durch ${anz} Verlängerung${anz === 1 ? '' : 'en'}`);
+  }
+  const offset = Number(offsetTage) || 0;
+  if (offset) {
+    gesamt += offset;
+    hinweise.push(`${offset > 0 ? '+' : ''}${offset} Tag${Math.abs(offset) === 1 ? '' : 'e'} Fristverschiebung`);
+  }
+  return { gesamt, hinweise };
+}
+
+/**
+ * Zentrale Fälligkeitsberechnung: Basisfrist (Medienart, sonst die
+ * Vorgabe aus den Einstellungen) + je Verlängerung die Verlängerungsdauer
+ * (ebenfalls Medienart vor Vorgabe) + globale Fristverschiebung. Wird von
+ * der Ausleihe, der Verlängerung und (ab der Ferienverwaltung) auch von der
+ * feiertagsbewussten Verschiebung genutzt – nie an mehreren Stellen kopieren.
+ * Für Einzelabfragen (ein DB-Zugriff für Katalog+Medienart); für Listen siehe
+ * berechneRueckgabedatumAusRow, die ohne Zusatzabfrage auskommt.
+ */
+function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstellungen }) {
+  const katalog = katalogNi ? getKatalog(db, katalogNi) : null;
+  const art = katalog?.MedArtKb ? db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = ?`).get(katalog.MedArtKb) : null;
+  const { gesamt, hinweise } = fristTageGesamt({
+    basisFristTage: istGesetzt(art?.Frist) ? art.Frist : einstellungen.leihfristTage,
+    verlaengerungFristTage: istGesetzt(art?.FristVerl) ? art.FristVerl : einstellungen.verlaengerungDauerTage,
+    anzVerl,
+    offsetTage: einstellungen.leihfristOffsetTage,
+  });
+  return { datum: addDays(auslDatum, gesamt), tageGesamt: gesamt, hinweise };
+}
+
+/** Wie berechneRueckgabedatum, aber aus einer bereits geladenen Zeile von alleOffenenAusleihen – ohne DB-Zugriff. */
+function berechneRueckgabedatumAusRow(row, einstellungen) {
+  const { gesamt, hinweise } = fristTageGesamt({
+    basisFristTage: istGesetzt(row.medArtFrist) ? row.medArtFrist : einstellungen.leihfristTage,
+    verlaengerungFristTage: istGesetzt(row.medArtFristVerl) ? row.medArtFristVerl : einstellungen.verlaengerungDauerTage,
+    anzVerl: row.AnzVerl,
+    offsetTage: einstellungen.leihfristOffsetTage,
+  });
+  return { datum: addDays(row.AuslDatum, gesamt), tageGesamt: gesamt, hinweise };
+}
+
+/**
+ * Mahngebühr für eine Ausleihe mit `tageUeberfaellig` Tagen Verzug: pro Tag
+ * nach Ablauf der Karenzzeit ein fester Betrag, gedeckelt auf den
+ * Höchstbetrag. Ist der Schalter aus, immer 0 – die Aufrufer blenden die
+ * Gebühr dann komplett aus, statt nur 0,00 € anzuzeigen.
+ */
+function berechneMahngebuehr(tageUeberfaellig, einstellungen) {
+  if (!einstellungen.mahngebuehrenAktiv) return 0;
+  const karenz = Number(einstellungen.mahnKarenztage) || 0;
+  const proTag = Number(einstellungen.mahnGebuehrProTag) || 0;
+  const max = Number(einstellungen.mahnGebuehrMax) || 0;
+  const tageMitGebuehr = Math.max(0, (Number(tageUeberfaellig) || 0) - karenz);
+  const betrag = tageMitGebuehr * proTag;
+  return max > 0 ? Math.min(betrag, max) : betrag;
+}
 
 /**
  * Ausleihen: prüft Sperre und Doppelausleihe, legt den Datensatz an.
  * Wirft eine Error mit sprechender Meldung, wenn es nicht geht – der Aufrufer
  * (IPC-Handler) reicht die Meldung unverändert an die Oberfläche weiter.
  */
-function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe, leihfristOffsetTage = 0 }) {
+function ausleihen(db, { medienNi, leserNi, benutzer, einstellungen }) {
   const medium = db.prepare(`SELECT * FROM "Medien" WHERE "MedienNi" = ?`).get(medienNi);
   if (!medium) throw new Error('Unbekanntes Exemplar.');
   const status = exemplarStatus(db, medienNi);
@@ -235,6 +289,7 @@ function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe, leih
   const sperre = leserGesperrt(db, leserNi);
   if (sperre.gesperrt) throw new Error(`Ausleihe nicht möglich: ${sperre.grund}.`);
 
+  const auslDatum = todayStr();
   const stmt = db.prepare(
     `INSERT INTO "Ausleihe" ("MedienNi","LeserNi","AuslDatum","Rueckgabe","AnzVerl","ErfassAnw")
      VALUES (@MedienNi, @LeserNi, @AuslDatum, NULL, 0, @ErfassAnw)`
@@ -242,23 +297,47 @@ function ausleihen(db, { medienNi, leserNi, benutzer, leihfristTageVorgabe, leih
   const info = stmt.run({
     MedienNi: medienNi,
     LeserNi: leserNi,
-    AuslDatum: todayStr(),
+    AuslDatum: auslDatum,
     ErfassAnw: benutzer || 'inga',
   });
-  const frist = leihfristTage(db, medium.KatalogNi, leihfristTageVorgabe, leihfristOffsetTage);
-  return { id: info.lastInsertRowid, faelligAm: addDays(todayStr(), frist) };
+  const { datum, hinweise } = berechneRueckgabedatum(db, { auslDatum, katalogNi: medium.KatalogNi, anzVerl: 0, einstellungen });
+  return { id: info.lastInsertRowid, faelligAm: datum, hinweise };
 }
 
 function zurueckgeben(db, ausleiheId) {
   db.prepare(`UPDATE "Ausleihe" SET "Rueckgabe" = ? WHERE id = ? AND "Rueckgabe" IS NULL`).run(todayStr(), ausleiheId);
 }
 
-function verlaengern(db, ausleiheId, maxVerlaengerung) {
-  const row = db.prepare(`SELECT * FROM "Ausleihe" WHERE id = ?`).get(ausleiheId);
+/**
+ * Verlängert eine Ausleihe um eine weitere Verlängerungsdauer (Medienart
+ * oder Vorgabe aus den Einstellungen) und gibt das neu berechnete
+ * Rückgabedatum gleich mit zurück, damit die Oberfläche es sofort anzeigen
+ * kann, ohne die Liste komplett neu zu laden.
+ *
+ * Hinweis: `einstellungen.verlaengerungGesperrtBeiVormerkung` wird hier noch
+ * nicht ausgewertet – das greift erst, sobald es Vormerkungen gibt.
+ */
+function verlaengern(db, ausleiheId, einstellungen) {
+  const row = db
+    .prepare(
+      `SELECT a.*, m."KatalogNi" FROM "Ausleihe" a
+       JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
+       WHERE a.id = ?`
+    )
+    .get(ausleiheId);
   if (!row) throw new Error('Ausleihe nicht gefunden.');
   if (row.Rueckgabe) throw new Error('Bereits zurückgegeben.');
+  const maxVerlaengerung = Number(einstellungen.maxVerlaengerung) || 0;
   if ((row.AnzVerl || 0) >= maxVerlaengerung) throw new Error('Maximale Anzahl Verlängerungen erreicht.');
+
   db.prepare(`UPDATE "Ausleihe" SET "AnzVerl" = "AnzVerl" + 1 WHERE id = ?`).run(ausleiheId);
+  const { datum, hinweise } = berechneRueckgabedatum(db, {
+    auslDatum: row.AuslDatum,
+    katalogNi: row.KatalogNi,
+    anzVerl: (row.AnzVerl || 0) + 1,
+    einstellungen,
+  });
+  return { faelligAm: datum, hinweise };
 }
 
 /**
@@ -289,19 +368,19 @@ function verschiebeOffeneAusleihen(db, tage) {
  * die rote Markierung in Nutzer- und Rückgabeliste. Absteigend nach Tagen
  * überfällig sortiert (am dringendsten zuerst).
  */
-function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage = 0 } = {}) {
+function ueberfaelligeAusleihen(db, einstellungen) {
   const offen = alleOffenenAusleihen(db);
   const heute = heuteISO();
   const ergebnis = [];
   for (const a of offen) {
-    // Kein DB-Zugriff je Zeile mehr (a.medArtFrist kommt schon aus dem JOIN
-    // in alleOffenenAusleihen) – wichtig, weil diese Schleife bei jedem
-    // Dashboard-/Listen-Aufruf über alle offenen Ausleihen läuft.
-    const frist = leihfristTageAusRow(a, leihfristTageVorgabe, leihfristOffsetTage);
-    const faelligAm = addDays(a.AuslDatum, frist);
+    // Kein DB-Zugriff je Zeile mehr (a.medArtFrist/medArtFristVerl kommen
+    // schon aus dem JOIN in alleOffenenAusleihen) – wichtig, weil diese
+    // Schleife bei jedem Dashboard-/Listen-Aufruf über alle offenen
+    // Ausleihen läuft.
+    const { datum: faelligAm, hinweise } = berechneRueckgabedatumAusRow(a, einstellungen);
     const tageUeberfaellig = tageDifferenz(faelligAm, heute);
     if (tageUeberfaellig <= 0) continue;
-    ergebnis.push({ ...a, tageUeberfaellig, faelligAm });
+    ergebnis.push({ ...a, tageUeberfaellig, faelligAm, fristHinweise: hinweise });
   }
   ergebnis.sort((x, y) => y.tageUeberfaellig - x.tageUeberfaellig);
   return ergebnis;
@@ -315,15 +394,15 @@ function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage 
  * Stufe eindeutig wiederzuerkennen (Namen allein sind nicht eindeutig, falls
  * zwei Stufen gleich benannt wurden).
  */
-function ueberfaelligeMitStufe(db, { mahnstufen, leihfristTageVorgabe, leihfristOffsetTage = 0 }) {
+function ueberfaelligeMitStufe(db, einstellungen) {
   const ergebnis = [];
-  for (const a of ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage })) {
+  for (const a of ueberfaelligeAusleihen(db, einstellungen)) {
     let stufe = null;
     let stufeIndex = -1;
-    mahnstufen.forEach((s, i) => {
+    (einstellungen.mahnstufen || []).forEach((s, i) => {
       if (a.tageUeberfaellig >= s.tageUeberfaellig) { stufe = s; stufeIndex = i; }
     });
-    if (stufe) ergebnis.push({ ...a, stufe, stufeIndex });
+    if (stufe) ergebnis.push({ ...a, stufe, stufeIndex, gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen) });
   }
   return ergebnis;
 }
@@ -396,6 +475,16 @@ function removeCover(db, katalogNi) {
 
 /* ---------------------------------------------------------- Stammdaten */
 
+/** Abweichende Leih-/Verlängerungsfrist einer Medienart speichern (leer = Vorgabe aus den Einstellungen gilt wieder). */
+function medArtFristSpeichern(db, medArtKb, { frist, fristVerl }) {
+  const zuNullOderZahl = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
+  db.prepare(`UPDATE "MedArt" SET "Frist" = ?, "FristVerl" = ? WHERE "MedArtKb" = ?`).run(
+    zuNullOderZahl(frist),
+    zuNullOderZahl(fristVerl),
+    medArtKb
+  );
+}
+
 function stammdaten(db) {
   const out = {};
   for (const table of ['MedArt', 'Zweig', 'Systematik', 'Sprache', 'Reihe', 'LeserGrupp', 'AuslGrupp', 'Sperrung', 'SperrKat', 'Fachber']) {
@@ -436,6 +525,9 @@ module.exports = {
   verschiebeOffeneAusleihen,
   ueberfaelligeAusleihen,
   ueberfaelligeMitStufe,
+  berechneRueckgabedatum,
+  berechneRueckgabedatumAusRow,
+  berechneMahngebuehr,
   mahnungEintragen,
   mahnhistorieVonLeser,
   topAusgelieheneBuecher,
@@ -444,5 +536,6 @@ module.exports = {
   setCover,
   removeCover,
   stammdaten,
+  medArtFristSpeichern,
   kennzahlen,
 };

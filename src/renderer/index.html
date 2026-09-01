@@ -153,10 +153,12 @@
           <div class="searchbar"><span class="icon">🔎</span><input type="search" id="rueckgabe-etikett" placeholder="Barcode zur schnellen Rückgabe" /></div>
           <div class="searchbar"><span class="icon">🔍</span><input type="search" id="rueckgabe-suche" placeholder="Nach Name oder Titel filtern" /></div>
           <label class="checkbox-label"><input type="checkbox" id="rueckgabe-nur-ueberfaellig" /> Nur überfällige</label>
+          <div class="spacer"></div>
+          <button class="button" id="rueckgabe-verlaengern-mehrere">Ausgewählte verlängern</button>
         </div>
         <div class="view">
           <table>
-            <thead><tr><th>Titel</th><th>Nutzer</th><th>Ausgeliehen am</th><th>Status</th><th>Verlängerungen</th><th class="actions"></th></tr></thead>
+            <thead><tr><th style="width:30px"><input type="checkbox" id="rueckgabe-alle" /></th><th>Titel</th><th>Nutzer</th><th>Ausgeliehen am</th><th>Status</th><th>Verlängerungen</th><th class="actions"></th></tr></thead>
             <tbody id="rueckgabe-tbody"></tbody>
           </table>
         </div>
@@ -173,7 +175,7 @@
         </div>
         <div class="view">
           <table>
-            <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Titel</th><th>Nutzer</th><th>Fällig seit</th><th>Tage</th><th>Stufe</th><th class="num">Gebühr</th></tr></thead>
+            <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Titel</th><th>Nutzer</th><th>Fällig seit</th><th>Tage</th><th>Stufe</th><th class="num" id="mahn-gebuehr-head">Gebühr</th></tr></thead>
             <tbody id="mahnungen-tbody"></tbody>
           </table>
         </div>
@@ -239,6 +241,13 @@
               <div class="field"><label>Standard-Leihfrist (Tage)</label><input type="number" id="set-leihfristTage" min="1" max="365" /></div>
               <div class="field"><label>Max. Verlängerungen</label><input type="number" id="set-maxVerlaengerung" min="0" max="10" /></div>
             </div>
+            <div class="field-row">
+              <div class="field"><label>Verlängerungsdauer (Tage)</label><input type="number" id="set-verlaengerungDauerTage" min="1" max="365" /></div>
+              <div class="field">
+                <label class="checkbox-label"><input type="checkbox" id="set-verlaengerungGesperrtBeiVormerkung" /> Verlängerung gesperrt, wenn Buch vorgemerkt ist</label>
+                <p class="hint">Wirkt erst, sobald es Vormerkungen gibt (kommt in einer späteren Ausbaustufe) – schon jetzt einstellbar.</p>
+              </div>
+            </div>
             <div class="field">
               <label>Fristverschiebung (Tage)</label>
               <input type="number" id="set-leihfristOffsetTage" min="-365" max="365" />
@@ -252,11 +261,23 @@
               </div>
               <p class="hint">Verschiebt das Ausleihdatum aller aktuell offenen Ausleihen um die angegebene Anzahl Tage (dadurch verschiebt sich auch ihre Fälligkeit). Betrifft nicht künftige Ausleihen und ist nicht rückgängig zu machen.</p>
             </div>
+            <div class="field" style="margin-top:4px">
+              <label>Abweichende Fristen je Medienart</label>
+              <p class="hint">Leer lassen, damit die Vorgabe oben gilt. Wirkt für alle Titel dieser Medienart.</p>
+              <div id="medart-fristen-liste"></div>
+            </div>
           </div>
 
           <div class="section-title">Mahnwesen</div>
           <div class="card" style="padding:18px; margin-bottom:16px">
-            <p class="hint placeholder-legend">Platzhalter für Betreff &amp; Brieftext:
+            <label class="checkbox-label"><input type="checkbox" id="set-mahngebuehrenAktiv" /> Mahngebühren verwenden</label>
+            <p class="hint">Aus (Vorgabe): Mahnungen bleiben als Erinnerung erhalten, nur ohne Geldbeträge – Gebührenspalten und -summen werden überall ausgeblendet.</p>
+            <div class="field-row" id="mahngebuehr-felder" hidden>
+              <div class="field"><label>Betrag pro Tag (€)</label><input type="number" id="set-mahnGebuehrProTag" min="0" step="0.05" /></div>
+              <div class="field"><label>Höchstbetrag (€)</label><input type="number" id="set-mahnGebuehrMax" min="0" step="0.5" /></div>
+              <div class="field"><label>Karenztage</label><input type="number" id="set-mahnKarenztage" min="0" max="90" /></div>
+            </div>
+            <p class="hint placeholder-legend" style="margin-top:14px">Platzhalter für Betreff &amp; Brieftext:
               <code>{Vorname}</code> <code>{Nachname}</code> <code>{Titel}</code> <code>{Tage}</code> <code>{Gebuehr}</code> <code>{Datum}</code> <code>{Faellig}</code> <code>{Stufe}</code>
             </p>
             <div id="mahnstufen-liste"></div>

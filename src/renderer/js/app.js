@@ -559,7 +559,8 @@ async function ausleihenAbschicken() {
 
   const result = await api.ausleihe.ausleihen({ medienNi: medium.MedienNi, leserNi: leser.LeserNi, benutzer: 'inga' });
   if (!result.ok) { status.textContent = result.error; toast(result.error, 'error'); return; }
-  status.textContent = `Ausgeliehen an ${leser.Nachname}, ${leser.Vorname} – fällig am ${fmtDatum(result.faelligAm)}.`;
+  const hinweisText = result.hinweise?.length ? ` (${result.hinweise.join(', ')})` : '';
+  status.textContent = `Ausgeliehen an ${leser.Nachname}, ${leser.Vorname} – fällig am ${fmtDatum(result.faelligAm)}${hinweisText}.`;
   document.getElementById('ausleihe-etikett').value = '';
   document.getElementById('ausleihe-leser').value = '';
   document.getElementById('ausleihe-etikett').focus();
@@ -585,6 +586,27 @@ function wireRueckgabe() {
   });
   document.getElementById('rueckgabe-suche').addEventListener('input', debounce(loadRueckgabe, 200));
   document.getElementById('rueckgabe-nur-ueberfaellig').addEventListener('change', loadRueckgabe);
+  document.getElementById('rueckgabe-alle').addEventListener('change', (e) => {
+    for (const cb of document.querySelectorAll('#rueckgabe-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+  });
+  document.getElementById('rueckgabe-verlaengern-mehrere').addEventListener('click', async () => {
+    const ids = [...document.querySelectorAll('#rueckgabe-tbody input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.id));
+    if (!ids.length) { toast('Nichts ausgewählt.', 'error'); return; }
+    let erfolgreich = 0;
+    const fehler = [];
+    for (const id of ids) {
+      const result = await api.ausleihe.verlaengern(id);
+      if (result.ok) erfolgreich += 1;
+      else fehler.push(result.error);
+    }
+    toast(
+      fehler.length
+        ? `${erfolgreich} verlängert, ${fehler.length} nicht möglich (${fehler[0]}).`
+        : `${erfolgreich} Ausleihe(n) verlängert.`,
+      fehler.length && !erfolgreich ? 'error' : ''
+    );
+    await loadRueckgabe();
+  });
 }
 
 async function loadRueckgabe() {
@@ -599,21 +621,37 @@ async function loadRueckgabe() {
 
   const tbody = document.getElementById('rueckgabe-tbody');
   tbody.replaceChildren();
+  document.getElementById('rueckgabe-alle').checked = false;
   if (!gefiltert.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✅']), 'Keine offenen Ausleihen.'])])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 7 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✅']), 'Keine offenen Ausleihen.'])])]));
     return;
   }
   for (const row of gefiltert) {
     const ueb = ueberfMap.get(row.id);
+    // Grund für eine verschobene Frist (Verlängerung, Fristverschiebung) –
+    // ab der Ferienverwaltung kommt hier zusätzlich der Ferien-Hinweis dazu.
+    const hinweisText = ueb?.fristHinweise?.length ? ueb.fristHinweise.join(', ') : '';
     tbody.appendChild(
       el('tr', { class: ueb ? 'row-overdue' : '' }, [
+        el('td', {}, [el('input', { type: 'checkbox', 'data-id': String(row.id) })]),
         el('td', {}, [`${row.Titel} – ${row.MedienEtik || ''}`]),
         el('td', {}, [`${row.Nachname}, ${row.Vorname}`]),
         el('td', {}, [fmtDatum(row.AuslDatum)]),
-        el('td', {}, [ueb ? el('span', { class: 'badge danger' }, [`${ueb.tageUeberfaellig} Tage überfällig`]) : el('span', { class: 'badge ok' }, ['pünktlich'])]),
+        el('td', { title: hinweisText || undefined }, [
+          ueb ? el('span', { class: 'badge danger' }, [`${ueb.tageUeberfaellig} Tage überfällig`]) : el('span', { class: 'badge ok' }, ['pünktlich']),
+          hinweisText ? el('span', { class: 'hint', style: { marginLeft: '6px' } }, [hinweisText]) : null,
+        ]),
         el('td', {}, [String(row.AnzVerl || 0)]),
         el('td', { class: 'actions' }, [
-          el('button', { class: 'button small', onclick: async () => { await api.ausleihe.verlaengern(row.id); await loadRueckgabe(); toast('Verlängert.'); } }, ['Verlängern']),
+          el('button', {
+            class: 'button small',
+            onclick: async () => {
+              const result = await api.ausleihe.verlaengern(row.id);
+              if (!result.ok) { toast(result.error, 'error'); return; }
+              await loadRueckgabe();
+              toast(`Verlängert bis ${fmtDatum(result.faelligAm)}.`);
+            },
+          }, ['Verlängern']),
           ' ',
           el('button', { class: 'button small primary', onclick: async () => { await api.ausleihe.zurueckgeben(row.id); await loadRueckgabe(); await refreshKennzahlen(); toast('Zurückgegeben.'); } }, ['Zurückgeben']),
         ]),
@@ -660,6 +698,8 @@ async function loadMahnungen() {
   const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
   const stufeFilter = document.getElementById('mahnungen-filter-stufe').value;
   const anzahlStufen = state.settings.mahnstufen.length;
+  const gebuehrenAktiv = Boolean(state.settings.mahngebuehrenAktiv);
+  document.getElementById('mahn-gebuehr-head').hidden = !gebuehrenAktiv;
 
   let gefiltert = rows;
   if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
@@ -682,7 +722,7 @@ async function loadMahnungen() {
         el('td', {}, [fmtDatum(row.faelligAm)]),
         el('td', {}, [String(row.tageUeberfaellig)]),
         el('td', {}, [el('span', { class: `badge ${badgeClass}` }, [row.stufe.text])]),
-        el('td', { class: 'num' }, [fmtGeld(row.stufe.gebuehr)]),
+        el('td', { class: 'num', hidden: !gebuehrenAktiv }, [fmtGeld(row.gebuehr)]),
       ])
     );
   }
@@ -751,12 +791,20 @@ function wireEinstellungen() {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   for (const id of [
-    'set-leihfristTage', 'set-maxVerlaengerung', 'set-leihfristOffsetTage',
+    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage',
+    'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
     'set-mahnBetreffVorlage', 'set-mahnSchluss',
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung']) {
+    document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
+  }
+  document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
+    document.getElementById('mahngebuehr-felder').hidden = !e.target.checked;
+    speichereEinstellungenFormular();
+  });
 
   document.getElementById('mahnstufe-hinzufuegen').addEventListener('click', () => {
     state.settings.mahnstufen.push({
@@ -800,11 +848,21 @@ function zeigeLogoVorschau(dataUrl) {
   else { img.hidden = true; removeBtn.hidden = true; }
 }
 
+/** Beispielgebühr für die Vorschau, nach derselben Formel wie repo.berechneMahngebuehr. */
+function beispielGebuehr(tageUeberfaellig) {
+  const s = state.settings;
+  if (!s.mahngebuehrenAktiv) return 0;
+  const tageMitGebuehr = Math.max(0, (Number(tageUeberfaellig) || 0) - (Number(s.mahnKarenztage) || 0));
+  const betrag = tageMitGebuehr * (Number(s.mahnGebuehrProTag) || 0);
+  const max = Number(s.mahnGebuehrMax) || 0;
+  return max > 0 ? Math.min(betrag, max) : betrag;
+}
+
 /** Setzt {Platzhalter} für die Live-Vorschau einer Mahnstufe mit Beispieldaten. */
 function fuelleVorschauVorlage(vorlage, stufe) {
   const werte = {
     Vorname: 'Anna', Nachname: 'Muster', Titel: 'Beispielbuch',
-    Tage: String(stufe.tageUeberfaellig || 0), Gebuehr: fmtGeld(stufe.gebuehr),
+    Tage: String(stufe.tageUeberfaellig || 0), Gebuehr: fmtGeld(beispielGebuehr(stufe.tageUeberfaellig)),
     Datum: fmtDatum(new Date().toISOString()), Faellig: fmtDatum(new Date().toISOString()), Stufe: stufe.text,
   };
   return String(vorlage || '').replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(werte, k) ? werte[k] : m));
@@ -838,7 +896,6 @@ function renderMahnstufen() {
         ]),
         el('div', { class: 'field-row' }, [
           el('div', { class: 'field' }, [el('label', {}, ['Tage überfällig']), el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
-          el('div', { class: 'field' }, [el('label', {}, ['Gebühr €']), el('input', { type: 'number', step: '0.1', value: stufe.gebuehr, onchange: (e) => { stufe.gebuehr = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
         ]),
         el('div', { class: 'field' }, [
           el('label', {}, ['Brieftext']),
@@ -857,7 +914,14 @@ async function loadEinstellungen() {
   document.getElementById('set-theme').value = s.theme;
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
+  document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
+  document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
+  document.getElementById('set-mahngebuehrenAktiv').checked = Boolean(s.mahngebuehrenAktiv);
+  document.getElementById('mahngebuehr-felder').hidden = !s.mahngebuehrenAktiv;
+  document.getElementById('set-mahnGebuehrProTag').value = s.mahnGebuehrProTag;
+  document.getElementById('set-mahnGebuehrMax').value = s.mahnGebuehrMax;
+  document.getElementById('set-mahnKarenztage').value = s.mahnKarenztage;
   document.getElementById('set-absenderName').value = s.absenderName || '';
   document.getElementById('set-absenderAdresse').value = s.absenderAdresse || '';
   document.getElementById('set-absenderEmail').value = s.absenderEmail || '';
@@ -866,15 +930,56 @@ async function loadEinstellungen() {
   document.getElementById('set-mahnSchluss').value = s.mahnSchluss || '';
   zeigeLogoVorschau(s.mahnLogoDataUrl || '');
   renderMahnstufen();
+  renderMedArtFristen();
+}
+
+/** Abweichende Fristen je Medienart – kleine Liste direkt in den Einstellungen, kein eigener Bereich nötig. */
+function renderMedArtFristen() {
+  const box = document.getElementById('medart-fristen-liste');
+  box.replaceChildren();
+  const arten = state.stammdaten.MedArt || [];
+  if (!arten.length) {
+    box.appendChild(el('p', { class: 'hint' }, ['Keine Medienarten vorhanden (erst nach einem Import).']));
+    return;
+  }
+  for (const art of arten) {
+    const speichern = debounce(async () => {
+      await api.medart.fristSpeichern({
+        medArtKb: art.MedArtKb,
+        frist: document.getElementById(`medart-frist-${art.MedArtKb}`).value,
+        fristVerl: document.getElementById(`medart-fristverl-${art.MedArtKb}`).value,
+      });
+      toast(`Frist für „${art.MedArtBz}“ gespeichert.`);
+    }, 400);
+    box.appendChild(
+      el('div', { class: 'field-row', style: { alignItems: 'flex-end' } }, [
+        el('div', { class: 'field' }, [el('label', {}, [art.MedArtBz || art.MedArtKb])]),
+        el('div', { class: 'field' }, [
+          el('label', {}, ['Leihfrist (Tage)']),
+          el('input', { id: `medart-frist-${art.MedArtKb}`, type: 'number', min: '0', max: '365', value: art.Frist ?? '', placeholder: 'Vorgabe', onchange: speichern }),
+        ]),
+        el('div', { class: 'field' }, [
+          el('label', {}, ['Verlängerung (Tage)']),
+          el('input', { id: `medart-fristverl-${art.MedArtKb}`, type: 'number', min: '0', max: '365', value: art.FristVerl ?? '', placeholder: 'Vorgabe', onchange: speichern }),
+        ]),
+      ])
+    );
+  }
 }
 
 const speichereEinstellungenFormular = debounce(async () => {
   const patch = {
     uiStyle: document.getElementById('set-uiStyle').value,
     theme: document.getElementById('set-theme').value,
-    leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 28,
+    leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
+    verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
+    verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
+    mahngebuehrenAktiv: document.getElementById('set-mahngebuehrenAktiv').checked,
+    mahnGebuehrProTag: Number(document.getElementById('set-mahnGebuehrProTag').value) || 0,
+    mahnGebuehrMax: Number(document.getElementById('set-mahnGebuehrMax').value) || 0,
+    mahnKarenztage: Number(document.getElementById('set-mahnKarenztage').value) || 0,
     absenderName: document.getElementById('set-absenderName').value,
     absenderAdresse: document.getElementById('set-absenderAdresse').value,
     absenderEmail: document.getElementById('set-absenderEmail').value,

@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('inga', {
   stammdaten: {
     get: () => ipcRenderer.invoke('stammdaten:get'),
   },
+  medart: {
+    fristSpeichern: (payload) => ipcRenderer.invoke('medart:frist-speichern', payload),
+  },
   kennzahlen: () => ipcRenderer.invoke('kennzahlen:get'),
 
   bestand: {

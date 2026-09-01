@@ -14,6 +14,9 @@ const require = createRequire(import.meta.url);
 const { openDatabase, TABLES } = require('../src/main/db.js');
 const { importZip, exportZip } = require('../src/main/csvio.js');
 const repo = require('../src/main/repo.js');
+const { DEFAULT_SETTINGS } = require('../src/main/store.js');
+
+const einstellungen = { ...DEFAULT_SETTINGS, leihfristTage: 28, maxVerlaengerung: 2 };
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'inga-test-'));
@@ -72,15 +75,15 @@ test('Ausleihen, Verlängern, Rückgabe und Mahnung – der volle Kreislauf', ()
   const status1 = repo.exemplarStatus(db, medienNi);
   assert.equal(status1.verliehen, false);
 
-  const result = repo.ausleihen(db, { medienNi, leserNi, leihfristTageVorgabe: 28 });
+  const result = repo.ausleihen(db, { medienNi, leserNi, einstellungen });
   assert.ok(result.id);
 
-  assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, leihfristTageVorgabe: 28 }), /bereits ausgeliehen/);
+  assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, einstellungen }), /bereits ausgeliehen/);
 
   const status2 = repo.exemplarStatus(db, medienNi);
   assert.equal(status2.verliehen, true);
 
-  repo.verlaengern(db, result.id, 2);
+  repo.verlaengern(db, result.id, einstellungen);
   const offen = repo.offeneAusleihenVonLeser(db, leserNi);
   assert.equal(offen.length, 1);
   assert.equal(offen[0].AnzVerl, 1);
@@ -109,6 +112,6 @@ test('Gesperrte Nutzer dürfen nicht ausleihen', () => {
   const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'T-0002' });
   const leserNi = repo.saveLeser(db, { Nachname: 'Gesperrt', Vorname: 'Peter', SperrungNi: sperrungNi });
 
-  assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, leihfristTageVorgabe: 28 }), /Gebühren offen/);
+  assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, einstellungen }), /Gebühren offen/);
   db.close();
 });
