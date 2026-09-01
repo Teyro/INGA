@@ -92,6 +92,17 @@ test('Ausleihen, Verlängern, Rückgabe und Mahnung – der volle Kreislauf', ()
   const status3 = repo.exemplarStatus(db, medienNi);
   assert.equal(status3.verliehen, false);
 
+  // Regressionstest: alleOffenenAusleihen() (Rückgabe-Liste, Überfälligkeits-
+  // Ermittlung, Umlaufliste) filterte nicht nach "Rueckgabe IS NULL" – eine
+  // zurückgegebene Ausleihe blieb dadurch für immer in der Rückgabe-Ansicht
+  // stehen und konnte, sobald ihre ursprüngliche Frist in der Vergangenheit
+  // lag, sogar dauerhaft als "überfällig" auftauchen.
+  assert.equal(
+    repo.alleOffenenAusleihen(db).some((a) => a.id === result.id),
+    false,
+    'eine zurückgegebene Ausleihe darf nicht mehr unter den offenen Ausleihen erscheinen'
+  );
+
   repo.mahnungEintragen(db, { medienNi, leserNi, auslDatum: '2020-01-01 00:00:00.000', gebuehr: 1.5 });
   const historie = repo.mahnhistorieVonLeser(db, leserNi);
   assert.equal(historie.length, 1);

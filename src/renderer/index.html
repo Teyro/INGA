@@ -32,6 +32,7 @@
         <div class="nav-item" data-view="ausleihe"><span class="icon">➡️</span><span class="label">Ausleihen</span></div>
         <div class="nav-item" data-view="rueckgabe"><span class="icon">⬅️</span><span class="label">Rückgabe</span><span class="nav-count" id="count-offen"></span></div>
         <div class="nav-item" data-view="mahnungen"><span class="icon">✉️</span><span class="label">Mahnungen</span><span class="nav-count nav-count-danger" id="count-mahn"></span></div>
+        <div class="nav-item" data-view="umlauf"><span class="icon">🔁</span><span class="label">Im Umlauf</span></div>
       </div>
       <div class="nav-section">
         <h4>System</h4>
@@ -59,6 +60,7 @@
             <button class="quick-btn" data-view="rueckgabe"><span class="icon">⬅️</span><span>Rückgabe</span></button>
             <button class="quick-btn" data-action="neuer-titel"><span class="icon">📖</span><span>Neuer Titel</span></button>
             <button class="quick-btn" data-view="mahnungen"><span class="icon">✉️</span><span>Mahnungen</span></button>
+            <button class="quick-btn" data-view="umlauf"><span class="icon">🔁</span><span>Im Umlauf drucken</span></button>
           </div>
 
           <div class="dash-grid">
@@ -203,12 +205,49 @@
           <div class="searchbar"><span class="icon">🔎</span><input type="search" id="mahnungen-suche" placeholder="Name oder Titel filtern" /></div>
           <select class="filter-select" id="mahnungen-filter-stufe"><option value="">Alle Stufen</option></select>
           <div class="spacer"></div>
+          <button class="button" id="mahnungen-im-umlauf">Im Umlauf …</button>
           <button class="button primary" id="mahnungen-drucken">Ausgewählte mahnen &amp; drucken</button>
         </div>
         <div class="view">
           <table>
             <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Titel</th><th>Nutzer</th><th>Fällig seit</th><th>Tage</th><th>Stufe</th><th class="num" id="mahn-gebuehr-head">Gebühr</th></tr></thead>
             <tbody id="mahnungen-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- Im Umlauf -->
+      <section class="view" id="view-umlauf" hidden>
+        <div class="toolbar">
+          <h1>Im Umlauf</h1>
+          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="umlauf-suche" placeholder="Titel, Autor oder Name filtern" /></div>
+          <select class="filter-select" id="umlauf-gruppierung">
+            <option value="keine">Keine Gruppierung</option>
+            <option value="klasse">Gruppiert nach Klasse</option>
+            <option value="kind">Gruppiert nach Kind</option>
+          </select>
+          <select class="filter-select" id="umlauf-sortierung">
+            <option value="titel">Sortieren: Titel</option>
+            <option value="kind">Sortieren: Kind</option>
+            <option value="klasse">Sortieren: Klasse</option>
+            <option value="auslDatum">Sortieren: Ausleihdatum</option>
+            <option value="ueberfaellig">Sortieren: Tage überfällig</option>
+          </select>
+          <div class="spacer"></div>
+          <button class="button" id="umlauf-csv">CSV</button>
+          <button class="button" id="umlauf-xlsx">Excel</button>
+          <button class="button primary" id="umlauf-drucken">Drucken / PDF …</button>
+        </div>
+        <div class="view">
+          <p class="hint" id="umlauf-treffer"></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Buchtitel</th><th>Autor</th><th>Signatur/Barcode</th><th>Kind</th><th>Klasse</th>
+                <th>Ausgeliehen am</th><th>Rückgabe bis</th><th class="num">Tage überfällig</th><th class="num">Verlängerungen</th>
+              </tr>
+            </thead>
+            <tbody id="umlauf-tbody"></tbody>
           </table>
         </div>
       </section>

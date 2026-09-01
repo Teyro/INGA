@@ -84,6 +84,18 @@ Ferienschließzeit.
 - Rückgabe-Liste mit Volltextsuche, „Nur überfällige“-Filter und
   Status-Badge pro Zeile
 
+### Im Umlauf
+
+„Was ist gerade unterwegs?“ – alle offenen Ausleihen auf einen Blick:
+Buchtitel, Autor, Signatur/Barcode, Kind, Klasse, Ausleih-/Rückgabedatum,
+Tage überfällig und Anzahl Verlängerungen. Filterbar per Freitext,
+gruppierbar nach Klasse oder nach Kind (praktisch, um die Liste klassenweise
+auszudrucken), Export als CSV (Excel-freundlich: Semikolon, UTF-8-BOM) und
+als XLSX (Kopfzeile fett, Autofilter, passende Spaltenbreiten) sowie
+Direktdruck/PDF im Querformat mit Kopf- (Schulname, Datum, Filter) und
+Fußzeile (Seitenzahl). Schnellzugriff über die Startseite und die
+Mahnliste.
+
 ### Mahnwesen (JÖRN)
 
 - Beliebig viele Mahnstufen, sortier- und löschbar, jede mit eigener Gebühr

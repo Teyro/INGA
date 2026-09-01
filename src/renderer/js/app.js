@@ -51,6 +51,7 @@ async function boot() {
   wireAusleihe();
   wireRueckgabe();
   wireMahnungen();
+  wireUmlauf();
   wireBestand();
   wireEinstellungen();
   wireSheet();
@@ -96,6 +97,7 @@ function showView(name) {
   else if (name === 'leser') loadLeser();
   else if (name === 'rueckgabe') loadRueckgabe();
   else if (name === 'mahnungen') { fuelleMahnstufenFilter(); loadMahnungen(); }
+  else if (name === 'umlauf') loadUmlauf();
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
 }
@@ -777,6 +779,153 @@ async function loadMahnungen() {
       ])
     );
   }
+}
+
+/* ----------------------------------------------------------- Im Umlauf */
+
+/** Für Export (CSV/XLSX) UND Druckvorschau identisch – Spaltenreihenfolge/-titel an einer Stelle. */
+const UMLAUF_SPALTEN = [
+  { schluessel: 'Titel', titel: 'Buchtitel' },
+  { schluessel: 'Autor', titel: 'Autor' },
+  { schluessel: 'MedienEtik', titel: 'Signatur/Barcode' },
+  { schluessel: 'Kind', titel: 'Kind' },
+  { schluessel: 'Jahrgang', titel: 'Klasse' },
+  { schluessel: 'AuslDatumFmt', titel: 'Ausgeliehen am' },
+  { schluessel: 'faelligAmFmt', titel: 'Rückgabe bis' },
+  { schluessel: 'tageUeberfaellig', titel: 'Tage überfällig' },
+  { schluessel: 'AnzVerl', titel: 'Verlängerungen' },
+];
+
+let umlaufDaten = [];
+
+function wireUmlauf() {
+  document.getElementById('umlauf-suche').addEventListener('input', debounce(renderUmlaufAktuell, 200));
+  document.getElementById('umlauf-gruppierung').addEventListener('change', renderUmlaufAktuell);
+  document.getElementById('umlauf-sortierung').addEventListener('change', renderUmlaufAktuell);
+  document.getElementById('umlauf-csv').addEventListener('click', () => umlaufExport('csv'));
+  document.getElementById('umlauf-xlsx').addEventListener('click', () => umlaufExport('xlsx'));
+  document.getElementById('umlauf-drucken').addEventListener('click', umlaufDrucken);
+  document.getElementById('mahnungen-im-umlauf').addEventListener('click', () => showView('umlauf'));
+}
+
+async function loadUmlauf() {
+  umlaufDaten = await api.ausleihe.umlaufliste();
+  renderUmlaufAktuell();
+}
+
+function umlaufGefiltert() {
+  const suche = document.getElementById('umlauf-suche').value.trim().toLowerCase();
+  if (!suche) return umlaufDaten;
+  return umlaufDaten.filter((z) => `${z.Titel} ${z.Autor} ${z.Nachname} ${z.Vorname} ${z.MedienEtik}`.toLowerCase().includes(suche));
+}
+
+const UMLAUF_VERGLEICHE = {
+  titel: (a, b) => (a.Titel || '').localeCompare(b.Titel || ''),
+  kind: (a, b) => `${a.Nachname},${a.Vorname}`.localeCompare(`${b.Nachname},${b.Vorname}`),
+  klasse: (a, b) => (a.Jahrgang || '').localeCompare(b.Jahrgang || ''),
+  auslDatum: (a, b) => (a.AuslDatum || '').localeCompare(b.AuslDatum || ''),
+  ueberfaellig: (a, b) => (b.tageUeberfaellig || 0) - (a.tageUeberfaellig || 0),
+};
+
+function umlaufSortiert(zeilen) {
+  const modus = document.getElementById('umlauf-sortierung').value;
+  return [...zeilen].sort(UMLAUF_VERGLEICHE[modus] || UMLAUF_VERGLEICHE.titel);
+}
+
+/** Ohne Gruppierung eine einzige namenlose Gruppe – so behandeln Druck/Export/Anzeige beide Fälle gleich. */
+function umlaufGruppiert(zeilen) {
+  const modus = document.getElementById('umlauf-gruppierung').value;
+  if (modus === 'keine') return [{ titel: null, zeilen }];
+  const schluesselFn = modus === 'klasse' ? (z) => z.Jahrgang || '(ohne Klasse)' : (z) => `${z.Nachname}, ${z.Vorname}`;
+  const gruppen = new Map();
+  for (const z of zeilen) {
+    const schluessel = schluesselFn(z);
+    if (!gruppen.has(schluessel)) gruppen.set(schluessel, []);
+    gruppen.get(schluessel).push(z);
+  }
+  return [...gruppen.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([titel, zeilen]) => ({ titel, zeilen }));
+}
+
+/** Kurzbeschreibung der aktiven Filter/Gruppierung – erscheint als Kopfzeile beim Druck/PDF. */
+function umlaufFilterBeschreibung() {
+  const teile = [];
+  const suche = document.getElementById('umlauf-suche').value.trim();
+  if (suche) teile.push(`Suche: „${suche}“`);
+  const gruppierung = document.getElementById('umlauf-gruppierung');
+  if (gruppierung.value !== 'keine') teile.push(gruppierung.selectedOptions[0].textContent);
+  return teile.join(' · ') || 'Alle offenen Ausleihen';
+}
+
+function renderUmlaufAktuell() {
+  const sortiert = umlaufSortiert(umlaufGefiltert());
+  const gruppen = umlaufGruppiert(sortiert);
+
+  document.getElementById('umlauf-treffer').textContent = `${sortiert.length} von ${umlaufDaten.length} offenen Ausleihen`;
+
+  const tbody = document.getElementById('umlauf-tbody');
+  tbody.replaceChildren();
+  if (!sortiert.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 9 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['🔁']), 'Nichts im Umlauf.'])])]));
+    return;
+  }
+  for (const gruppe of gruppen) {
+    if (gruppe.titel) {
+      tbody.appendChild(el('tr', { class: 'gruppe-kopf' }, [el('td', { colSpan: 9 }, [`${gruppe.titel} (${gruppe.zeilen.length})`])]));
+    }
+    for (const z of gruppe.zeilen) {
+      tbody.appendChild(
+        el('tr', { class: z.tageUeberfaellig > 0 ? 'row-overdue' : '' }, [
+          el('td', {}, [z.Titel || '']),
+          el('td', {}, [z.Autor || '']),
+          el('td', {}, [z.MedienEtik || '']),
+          el('td', {}, [`${z.Nachname || ''}, ${z.Vorname || ''}`]),
+          el('td', {}, [z.Jahrgang || '']),
+          el('td', {}, [fmtDatum(z.AuslDatum)]),
+          el('td', { title: z.fristHinweise?.length ? z.fristHinweise.join(', ') : undefined }, [fmtDatum(z.faelligAm)]),
+          el('td', { class: 'num' }, [z.tageUeberfaellig > 0 ? String(z.tageUeberfaellig) : '']),
+          el('td', { class: 'num' }, [String(z.AnzVerl || 0)]),
+        ])
+      );
+    }
+  }
+}
+
+/** Dieselbe gefilterte/sortierte/gruppierte Reihenfolge wie die Anzeige – Export/Druck zeigen also immer genau das, was gerade auf dem Bildschirm steht. */
+function umlaufFuerExport() {
+  const zeilen = [];
+  for (const gruppe of umlaufGruppiert(umlaufSortiert(umlaufGefiltert()))) {
+    for (const z of gruppe.zeilen) {
+      zeilen.push({
+        Titel: z.Titel || '',
+        Autor: z.Autor || '',
+        MedienEtik: z.MedienEtik || '',
+        Kind: `${z.Nachname || ''}, ${z.Vorname || ''}`,
+        Jahrgang: z.Jahrgang || '',
+        AuslDatumFmt: fmtDatum(z.AuslDatum),
+        faelligAmFmt: fmtDatum(z.faelligAm),
+        tageUeberfaellig: z.tageUeberfaellig || 0,
+        AnzVerl: z.AnzVerl || 0,
+      });
+    }
+  }
+  return zeilen;
+}
+
+async function umlaufExport(art) {
+  const zeilen = umlaufFuerExport();
+  if (!zeilen.length) { toast('Nichts zu exportieren.', 'error'); return; }
+  const dateiname = `im_umlauf_${new Date().toISOString().slice(0, 10)}`;
+  const pfad =
+    art === 'xlsx'
+      ? await api.export.xlsx({ dateiname, blattname: 'Im Umlauf', spalten: UMLAUF_SPALTEN, zeilen })
+      : await api.export.csv({ dateiname, spalten: UMLAUF_SPALTEN, zeilen });
+  if (pfad) toast(`Exportiert nach ${pfad}`);
+}
+
+async function umlaufDrucken() {
+  const gruppen = umlaufGruppiert(umlaufSortiert(umlaufGefiltert()));
+  if (!gruppen.some((g) => g.zeilen.length)) { toast('Nichts zu drucken.', 'error'); return; }
+  await api.umlauf.drucken({ titel: 'Im Umlauf – was ist gerade unterwegs?', filterBeschreibung: umlaufFilterBeschreibung(), gruppen });
 }
 
 /* --------------------------------------------------------------- Bestand */

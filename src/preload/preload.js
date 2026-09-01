@@ -47,6 +47,16 @@ contextBridge.exposeInMainWorld('inga', {
     verlaengern: (id) => ipcRenderer.invoke('ausleihe:verlaengern', id),
     verschiebenAlle: (tage) => ipcRenderer.invoke('ausleihe:verschieben-alle', tage),
     ferienVorschau: () => ipcRenderer.invoke('ausleihe:ferien-vorschau'),
+    umlaufliste: () => ipcRenderer.invoke('ausleihe:umlaufliste'),
+  },
+
+  umlauf: {
+    drucken: (payload) => ipcRenderer.invoke('umlauf:drucken', payload),
+  },
+
+  export: {
+    csv: (angaben) => ipcRenderer.invoke('export:csv', angaben),
+    xlsx: (angaben) => ipcRenderer.invoke('export:xlsx', angaben),
   },
 
   mahnung: {
@@ -88,7 +98,7 @@ contextBridge.exposeInMainWorld('inga', {
   },
 
   print: {
-    now: () => ipcRenderer.invoke('print:now'),
+    now: (options) => ipcRenderer.invoke('print:now', options),
     pdf: (options) => ipcRenderer.invoke('print:pdf', options),
   },
 

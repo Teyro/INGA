@@ -14,12 +14,20 @@ const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden } = require('./backup');
+const { alsExcelCsv } = require('./export');
+const { schreibeXlsx } = require('./xlsx');
+
+/** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
+function sichererDateiname(name) {
+  return String(name || 'Export').replace(/[\\/:*?"<>|]/g, '_').trim() || 'Export';
+}
 
 const RENDERER = path.join(__dirname, '..', 'renderer');
 const WINDOW_ICON = process.platform === 'linux' ? path.join(__dirname, '..', '..', 'build', 'icon-256.png') : undefined;
 
 let mainWindow = null;
 let printWindow = null;
+let umlaufPrintWindow = null;
 let splashWindow = null;
 let store = null;
 let db = null;
@@ -315,6 +323,46 @@ async function openMahnungPrintWindow(briefe) {
   });
 }
 
+/* ---------------------------------------------------------- Umlaufliste drucken */
+
+async function openUmlaufPrintWindow(payload) {
+  const s = settings();
+  const data = { ...payload, settings: { ...s, os: platform.OS, ui: activeStyle } };
+
+  if (umlaufPrintWindow && !umlaufPrintWindow.isDestroyed()) {
+    umlaufPrintWindow.focus();
+    umlaufPrintWindow.webContents.send('print:data', data);
+    return;
+  }
+
+  umlaufPrintWindow = new BrowserWindow({
+    width: 1100,
+    height: 820,
+    minWidth: 640,
+    minHeight: 480,
+    title: 'Im Umlauf',
+    show: false,
+    ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
+    ...windowChrome('print'),
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  harden(umlaufPrintWindow);
+  umlaufPrintWindow.loadFile(path.join(RENDERER, 'umlauf-print.html'));
+  umlaufPrintWindow.webContents.once('did-finish-load', () => {
+    umlaufPrintWindow.webContents.send('print:data', data);
+    umlaufPrintWindow.show();
+  });
+  umlaufPrintWindow.on('closed', () => {
+    umlaufPrintWindow = null;
+  });
+}
+
 /* -------------------------------------------------------------------- IPC */
 
 function registerIpc() {
@@ -373,6 +421,38 @@ function registerIpc() {
   ipcMain.handle('ausleihe:verschieben-alle', (_e, tage) => {
     const anzahl = repo.verschiebeOffeneAusleihen(db, tage);
     return { anzahl };
+  });
+  ipcMain.handle('ausleihe:umlaufliste', () => repo.umlaufliste(db, settings()));
+
+  ipcMain.handle('umlauf:drucken', async (_e, payload) => {
+    await openUmlaufPrintWindow(payload);
+    return { ok: true };
+  });
+
+  /* ------------------------------------------------------- Allgemeiner Export */
+
+  ipcMain.handle('export:csv', async (event, { dateiname, spalten, zeilen }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Als CSV exportieren',
+      defaultPath: `${sichererDateiname(dateiname)}.csv`,
+      filters: [{ name: 'CSV (Excel, Semikolon-getrennt)', extensions: ['csv'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    await fs.writeFile(result.filePath, alsExcelCsv(spalten, zeilen), 'utf8');
+    return result.filePath;
+  });
+
+  ipcMain.handle('export:xlsx', async (event, { dateiname, blattname, spalten, zeilen }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Als Excel-Datei exportieren',
+      defaultPath: `${sichererDateiname(dateiname)}.xlsx`,
+      filters: [{ name: 'Excel-Arbeitsmappe', extensions: ['xlsx'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    schreibeXlsx(result.filePath, { blattname: blattname || dateiname, spalten, zeilen });
+    return result.filePath;
   });
 
   ipcMain.handle('mahnung:ueberfaellige', () => repo.ueberfaelligeMitStufe(db, settings()));
@@ -565,10 +645,12 @@ function registerIpc() {
     return result.filePath;
   });
 
-  ipcMain.handle('print:now', (event) => {
+  ipcMain.handle('print:now', (event, options = {}) => {
     const contents = event.sender;
     return new Promise((resolve) => {
-      contents.print({ silent: false, printBackground: true }, (success, reason) => resolve({ success, reason }));
+      contents.print({ silent: false, printBackground: true, landscape: Boolean(options.landscape) }, (success, reason) =>
+        resolve({ success, reason })
+      );
     });
   });
 
@@ -576,16 +658,25 @@ function registerIpc() {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showSaveDialog(win, {
       title: 'Als PDF sichern',
-      defaultPath: `${(options.name || 'Mahnungen').replace(/[\\/:*?"<>|]/g, '_')}.pdf`,
+      defaultPath: `${sichererDateiname(options.name || 'Mahnungen')}.pdf`,
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     });
     if (result.canceled || !result.filePath) return null;
-    const data = await event.sender.printToPDF({
-      printBackground: true,
-      pageSize: 'A4',
-      margins: { marginType: 'none' },
-      preferCSSPageSize: true,
-    });
+    const pdfOptions = { printBackground: true, pageSize: 'A4', landscape: Boolean(options.landscape) };
+    if (options.headerTemplate || options.footerTemplate) {
+      // Kopf-/Fußzeile (Schulname/Datum/Filterbeschreibung, Seitenzahl) brauchen
+      // echten Seitenrand, in den Chromium sie hineinrendert – anders als beim
+      // randlosen Mahnbrief (siehe else-Zweig), der sein eigenes Layout per CSS
+      // bis an den Rand zeichnet.
+      pdfOptions.displayHeaderFooter = true;
+      pdfOptions.headerTemplate = options.headerTemplate;
+      pdfOptions.footerTemplate = options.footerTemplate;
+      pdfOptions.margins = { top: 0.6, bottom: 0.6, left: 0.3, right: 0.3 };
+    } else {
+      pdfOptions.margins = { marginType: 'none' };
+      pdfOptions.preferCSSPageSize = true;
+    }
+    const data = await event.sender.printToPDF(pdfOptions);
     await fs.writeFile(result.filePath, data);
     return result.filePath;
   });

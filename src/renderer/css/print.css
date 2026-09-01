@@ -46,3 +46,32 @@ html, body { margin: 0; height: 100%; background: var(--window); }
   #paper { padding: 0; gap: 0; overflow: visible; height: auto; }
   .brief { box-shadow: none; width: auto; min-height: auto; page-break-after: always; }
 }
+
+/* ------------------------------------------------------- Im Umlauf (Liste) */
+
+.umlauf-blatt {
+  background: #fff;
+  color: #111;
+  width: 297mm;
+  min-height: 210mm;
+  padding: 14mm 12mm;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+  font-family: var(--font);
+  font-size: 10pt;
+  box-sizing: border-box;
+}
+.umlauf-kopf { margin-bottom: 14px; border-bottom: 1px solid #ccc; padding-bottom: 8px; }
+.umlauf-kopf-schule { font-size: 9pt; color: #555; }
+.umlauf-kopf h1 { font-size: 15pt; margin: 2px 0; }
+.umlauf-kopf-meta { display: flex; gap: 18px; font-size: 8.5pt; color: #666; }
+
+.umlauf-tabelle { width: 100%; border-collapse: collapse; }
+.umlauf-tabelle th, .umlauf-tabelle td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 9pt; }
+.umlauf-tabelle td.num, .umlauf-tabelle th.num { text-align: right; }
+.umlauf-tabelle thead { display: table-header-group; } /* wiederholt sich auf jeder gedruckten Seite */
+.umlauf-tabelle tr { page-break-inside: avoid; }
+.umlauf-tabelle tr.gruppe-kopf td { font-weight: 700; background: #f0f0f0; border-bottom: 1px solid #ccc; padding-top: 10px; }
+
+@media print {
+  .umlauf-blatt { box-shadow: none; width: auto; min-height: auto; padding: 0; }
+}

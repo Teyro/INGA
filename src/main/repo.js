@@ -270,15 +270,50 @@ function alleOffenenAusleihen(db) {
   return db
     .prepare(
       `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor",
-         ma."Frist" AS medArtFrist, ma."FristVerl" AS medArtFristVerl, l."Nachname", l."Vorname"
+         ma."Frist" AS medArtFrist, ma."FristVerl" AS medArtFristVerl,
+         l."Nachname", l."Vorname", l."Jahrgang"
        FROM "Ausleihe" a
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
        LEFT JOIN "MedArt" ma ON ma."MedArtKb" = k."MedArtKb"
        JOIN "Leser" l ON l."LeserNi" = a."LeserNi"
+       WHERE a."Rueckgabe" IS NULL
        ORDER BY a."AuslDatum"`
     )
     .all();
+}
+
+/**
+ * Umlaufliste ("Was ist gerade unterwegs?"): alle offenen Ausleihen mit
+ * allen Spalten, die die gedruckte/exportierte Liste braucht – Klasse
+ * (Jahrgang), Tage überfällig und Anzahl Verlängerungen inklusive. Nutzt
+ * dieselbe zentrale, ferienbewusste Fälligkeitsberechnung wie überall sonst
+ * (Ferienliste einmal geladen, nicht pro Zeile). Bewusst ohne eigene
+ * Pagination: die Liste ist für den Druck "auf einen Blick" gedacht und in
+ * einer Grundschulbibliothek realistisch immer klein genug (offene Ausleihen
+ * insgesamt, nicht der ganze Bestand).
+ */
+function umlaufliste(db, einstellungen) {
+  const offen = alleOffenenAusleihen(db);
+  const ferienListe = ferien.listeFerien(db);
+  const heute = heuteISO();
+  return offen.map((a) => {
+    const { datum: faelligAm, hinweise } = berechneRueckgabedatumAusRow(a, einstellungen, ferienListe);
+    return {
+      id: a.id,
+      Titel: a.Titel,
+      Autor: a.Autor,
+      MedienEtik: a.MedienEtik,
+      Nachname: a.Nachname,
+      Vorname: a.Vorname,
+      Jahrgang: a.Jahrgang || '',
+      AuslDatum: a.AuslDatum,
+      faelligAm,
+      tageUeberfaellig: Math.max(0, tageDifferenz(faelligAm, heute)),
+      AnzVerl: a.AnzVerl || 0,
+      fristHinweise: hinweise,
+    };
+  });
 }
 
 const addDays = addTage;
@@ -674,6 +709,7 @@ module.exports = {
   leserGesperrt,
   offeneAusleihenVonLeser,
   alleOffenenAusleihen,
+  umlaufliste,
   ausleihen,
   zurueckgeben,
   verlaengern,
