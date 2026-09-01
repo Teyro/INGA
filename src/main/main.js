@@ -2,7 +2,25 @@
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, systemPreferences } = require('electron');
 const path = require('node:path');
+const os = require('node:os');
 const fs = require('node:fs/promises');
+
+// Electrons Standard für app.getPath('userData') ist unter Linux
+// "~/.config/<Name>" – gängig, aber nicht der XDG-Basisverzeichnis-Vorgabe für
+// Nutzdaten (Datenbank, Backups) entsprechend. Vor jedem anderen app.*-Aufruf
+// auf "~/.local/share/<Name>" (bzw. $XDG_DATA_HOME) umbiegen, damit
+// Datenbank/Einstellungen/Backups/Logs unter allen drei Systemen im jeweils
+// betriebssystemüblichen Nutzdaten-Verzeichnis landen (Windows %APPDATA%,
+// macOS ~/Library/Application Support – Electrons Vorgabe dort passt bereits).
+if (process.platform === 'linux') {
+  const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  // Fester Name statt app.getName(): das läse im Entwicklungsbetrieb (npm
+  // start) den package.json-Feldnamen "inga", in einem fertigen Paket aber
+  // "INGA" (productName) – zwei unterschiedliche Ordner für dieselbe
+  // Installation wären selbst genau die Art Stolperfalle, die diese
+  // Umstellung eigentlich vermeiden soll.
+  app.setPath('userData', path.join(xdgDataHome, 'INGA'));
+}
 
 const platform = require('./platform');
 const { Store, DEFAULT_SETTINGS, defaultSettingsFor, sanitizeSettings } = require('./store');

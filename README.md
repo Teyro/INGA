@@ -184,13 +184,49 @@ Mahnungen entstehen als eigenes Fenster, das einen HTML-Brief pro Nutzer:in
 rendert – von dort aus entweder direkt über den System-Druckdialog
 (`webContents.print()`) oder als PDF (`webContents.printToPDF()`).
 
-## Entwicklung
+## Starten (ohne Installation aus dem Quellcode)
+
+Die einfachste Art, INGA zu benutzen: ein fertiges Programm für das eigene
+Betriebssystem aus [Releases](https://github.com/Teyro/INGA/releases)
+herunterladen (Windows-Installer/portable .exe, macOS .dmg, Linux
+AppImage/.deb/.rpm) und starten – keine weitere Installation nötig.
+
+## Aus dem Quellcode starten (für Entwicklung oder wenn kein fertiges Release passt)
+
+Voraussetzung: [Node.js](https://nodejs.org/) Version 22 oder neuer, auf
+allen drei Systemen gleich.
+
+**Windows 11:** `start.bat` doppelklicken (oder im Explorer ausführen).
+**macOS / Linux:** `./start.sh` im Terminal ausführen (einmalig
+`chmod +x start.sh`, falls "Permission denied").
+
+Beide Skripte prüfen, ob Node.js in einer passenden Version vorhanden ist,
+installieren beim allerersten Start automatisch die Abhängigkeiten und
+starten dann INGA – verständliche Meldung statt kryptischem Fehler, falls
+etwas fehlt.
+
+Von Hand (identisch auf allen drei Systemen):
 
 ```bash
 npm install
 npm start          # App starten (Splashscreen 1–3 s, dann Hauptfenster)
 npm test           # Kernlogik prüfen (Datenbank, Import/Export, Ausleihregeln)
 ```
+
+### Plattformunabhängigkeit im Detail
+
+- Datenbank, Einstellungen, Backups landen im betriebssystemüblichen
+  Nutzdaten-Verzeichnis, nie im Programmordner: Windows `%APPDATA%\INGA`,
+  macOS `~/Library/Application Support/INGA`, Linux `~/.local/share/INGA`
+  (bzw. `$XDG_DATA_HOME/INGA`).
+- Alle Datei-Ein-/Ausgaben (Import/Export, Ferien-ICS, CSV/Excel-Export)
+  erzwingen UTF-8 – Umlaute bleiben auf allen drei Systemen korrekt.
+- CSV-Exporte für Menschen (Umlaufliste, Katalog, Nutzer, Rückgabe) nutzen
+  Semikolon als Trennzeichen und eine UTF-8-BOM, damit deutsches Excel sie
+  ohne Umweg richtig öffnet.
+- Keine hartkodierten Pfade oder Backslashes im Code – durchgängig
+  `path.join()`; Zeilenenden im Repository sind über `.gitattributes` auf
+  LF normiert.
 
 ### Fehlerbehebung
 

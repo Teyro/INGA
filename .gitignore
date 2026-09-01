@@ -1,12 +1,16 @@
 node_modules/
 dist/
+out/
 *.log
+logs/
 .DS_Store
 Thumbs.db
 
-# lokale Laufzeitdaten (SQLite-Datenbank, Einstellungen) landen im
+# lokale Laufzeitdaten (SQLite-Datenbank, Einstellungen, Backups) landen im
 # Benutzerprofil (userData), nicht im Projekt – hier nur zur Sicherheit
 *.sqlite3
 *.sqlite3-journal
 *.sqlite3-wal
 *.sqlite3-shm
+backups/
+config/
