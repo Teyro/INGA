@@ -26,6 +26,7 @@
         <div class="nav-item active" data-view="dashboard"><span class="icon">🏠</span><span class="label">Übersicht</span></div>
         <div class="nav-item" data-view="katalog"><span class="icon">📖</span><span class="label">Katalog</span></div>
         <div class="nav-item" data-view="leser"><span class="icon">🧑‍🎓</span><span class="label">Nutzer</span></div>
+        <div class="nav-item" data-view="statistik"><span class="icon">📊</span><span class="label">Statistik</span></div>
       </div>
       <div class="nav-section">
         <h4>Verleih</h4>
@@ -180,6 +181,53 @@
               <button class="button small" id="leser-seite-zurueck">‹ Zurück</button>
               <button class="button small" id="leser-seite-vor">Weiter ›</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- Statistik -->
+      <section class="view" id="view-statistik" hidden>
+        <div class="toolbar"><h1>Statistik</h1></div>
+        <div class="view">
+          <div class="dash-grid">
+            <div class="card dash-panel">
+              <div class="section-title">Ausleihen pro Monat (letzte 12 Monate)</div>
+              <div id="statistik-monat"></div>
+            </div>
+            <div class="card dash-panel">
+              <div class="section-title">Ausleihen pro Klasse</div>
+              <table><tbody id="statistik-klasse-tbody"></tbody></table>
+            </div>
+            <div class="card dash-panel">
+              <div class="section-title">Ausleihen pro Kategorie</div>
+              <table><tbody id="statistik-kategorie-tbody"></tbody></table>
+            </div>
+          </div>
+
+          <div class="section-title" style="margin-top:20px">Ladenhüter</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div class="row-inline">
+              <label class="hint">Seit mindestens
+                <input type="number" id="statistik-ladenhueter-tage" value="365" min="30" style="max-width:90px; margin:0 6px" />
+                Tagen nicht (mehr) ausgeliehen
+              </label>
+              <button class="button small" id="statistik-ladenhueter-aktualisieren">Aktualisieren</button>
+              <div class="spacer"></div>
+              <button class="button small" id="statistik-ladenhueter-csv">CSV</button>
+            </div>
+            <table>
+              <thead><tr><th>Titel</th><th>Autor</th><th>Letzte Ausleihe</th></tr></thead>
+              <tbody id="statistik-ladenhueter-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="section-title">Verlustliste</div>
+          <div class="card" style="padding:18px">
+            <div class="row-inline"><div class="spacer"></div><button class="button small" id="statistik-verlust-csv">CSV</button></div>
+            <table>
+              <thead><tr><th>Titel</th><th>Autor</th><th>Signatur/Barcode</th><th>Grund</th></tr></thead>
+              <tbody id="statistik-verlust-tbody"></tbody>
+            </table>
           </div>
         </div>
       </section>

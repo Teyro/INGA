@@ -3,7 +3,7 @@
 /** Fachliche Datenzugriffe: Katalog, Exemplare, Leser, Ausleihe/Rückgabe, Mahnwesen. */
 
 const { upsert, nextId, quoteIdent, TABLES } = require('./db');
-const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz } = require('./date-utils');
+const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz, parseKalenderdatum } = require('./date-utils');
 const ferien = require('./ferien');
 
 // todayStr/nowStamp/addDays hießen früher so und rechneten über
@@ -794,6 +794,92 @@ function ausleihStatistikFuerKatalog(db, katalogNi) {
   return { gesamt: row?.gesamt || 0 };
 }
 
+/* ----------------------------------------------------------- Statistik */
+
+/** "YYYY-MM" für den Monat, der `n` Monate vor dem heutigen liegt (n=0 → laufender Monat). */
+function monatVorNMonaten(n) {
+  const heute = parseKalenderdatum(heuteISO());
+  const gesamtMonate = heute.getUTCFullYear() * 12 + heute.getUTCMonth() - n;
+  const jahr = Math.floor(gesamtMonate / 12);
+  const monat = ((gesamtMonate % 12) + 12) % 12;
+  return `${jahr}-${String(monat + 1).padStart(2, '0')}`;
+}
+
+/** Anzahl Ausleihen je Kalendermonat, die letzten `monate` Monate (Vorgabe: 12), auch Monate ohne Ausleihe mit 0. */
+function statistikAusleihenProMonat(db, monate = 12) {
+  const ab = monatVorNMonaten(monate - 1);
+  const rows = db
+    .prepare(`SELECT substr("AuslDatum", 1, 7) AS monat, COUNT(*) AS anzahl FROM "Ausleihe" WHERE substr("AuslDatum", 1, 7) >= ? GROUP BY monat`)
+    .all(ab);
+  const nachMonat = new Map(rows.map((r) => [r.monat, r.anzahl]));
+  const ergebnis = [];
+  for (let i = monate - 1; i >= 0; i--) {
+    const monat = monatVorNMonaten(i);
+    ergebnis.push({ monat, anzahl: nachMonat.get(monat) || 0 });
+  }
+  return ergebnis;
+}
+
+/** Anzahl Ausleihen je Klasse (Leser.Jahrgang – Freitextfeld, kein Stammdatum), absteigend. */
+function statistikAusleihenProKlasse(db) {
+  return db
+    .prepare(
+      `SELECT COALESCE(NULLIF(l."Jahrgang", ''), '(ohne Klasse)') AS klasse, COUNT(*) AS anzahl
+       FROM "Ausleihe" a JOIN "Leser" l ON l."LeserNi" = a."LeserNi"
+       GROUP BY klasse ORDER BY anzahl DESC`
+    )
+    .all();
+}
+
+/** Anzahl Ausleihen je Kategorie (Systematik), absteigend. */
+function statistikAusleihenProKategorie(db) {
+  return db
+    .prepare(
+      `SELECT COALESCE(s."SystemBz", '(ohne Kategorie)') AS kategorie, COUNT(*) AS anzahl
+       FROM "Ausleihe" a
+       JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
+       JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
+       LEFT JOIN "Systematik" s ON s."SystemId" = k."SystemId"
+       GROUP BY kategorie ORDER BY anzahl DESC`
+    )
+    .all();
+}
+
+/**
+ * Ladenhüter: Titel, deren letzte Ausleihe mindestens `seitTagen` zurückliegt
+ * (Vorgabe 365) – nie ausgeliehene Titel zählen mit ("letzte Ausleihe": nie).
+ * Nur Titel mit mindestens einem Exemplar (sonst tauchen auch längst
+ * ausgesonderte Karteileichen ohne Bestand auf).
+ */
+function ladenhueter(db, seitTagen = 365) {
+  const grenze = addTage(heuteISO(), -seitTagen);
+  return db
+    .prepare(
+      `SELECT k."KatalogNi", k."Titel", k."Autor", MAX(a."AuslDatum") AS letzteAusleihe
+       FROM "Katalog" k
+       JOIN "Medien" m ON m."KatalogNi" = k."KatalogNi"
+       LEFT JOIN "Ausleihe" a ON a."MedienNi" = m."MedienNi"
+       GROUP BY k."KatalogNi"
+       HAVING letzteAusleihe IS NULL OR letzteAusleihe < ?
+       ORDER BY letzteAusleihe IS NOT NULL, letzteAusleihe`
+    )
+    .all(grenze);
+}
+
+/** Verlustliste: alle Exemplare, die als "nicht verfügbar" markiert sind (z. B. vermisst, beschädigt – siehe Stammdaten "Nichtverf"). */
+function verlustliste(db) {
+  return db
+    .prepare(
+      `SELECT m."MedienNi", m."MedienEtik", k."Titel", k."Autor", nv."NichtVfBz" AS grund
+       FROM "Medien" m
+       JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
+       LEFT JOIN "Nichtverf" nv ON nv."NichtVfNi" = m."NichtVfNi"
+       WHERE m."NichtVfNi" IS NOT NULL
+       ORDER BY k."Titel"`
+    )
+    .all();
+}
+
 /* ------------------------------------------------------------- Cover */
 
 function coverInfo(db, katalogNi) {
@@ -885,6 +971,11 @@ module.exports = {
   mahnhistorieVonLeser,
   topAusgelieheneBuecher,
   ausleihStatistikFuerKatalog,
+  statistikAusleihenProMonat,
+  statistikAusleihenProKlasse,
+  statistikAusleihenProKategorie,
+  ladenhueter,
+  verlustliste,
   coverInfo,
   setCover,
   removeCover,

@@ -341,6 +341,14 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--accent-rgb) / 0.06)); }
 
+/* ------------------------------------------------------------------ Statistik */
+
+.stat-bar-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 0.82rem; }
+.stat-bar-label { width: 44px; flex-shrink: 0; color: var(--text-soft); }
+.stat-bar-track { flex: 1; height: 10px; background: rgb(var(--accent-rgb) / 0.1); border-radius: 5px; overflow: hidden; }
+.stat-bar-fill { height: 100%; background: rgb(var(--accent-rgb) / 0.7); border-radius: 5px; min-width: 2px; }
+.stat-bar-wert { width: 28px; text-align: right; flex-shrink: 0; }
+
 /* ------------------------------------------------------------ Filterleiste */
 
 .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 0; }

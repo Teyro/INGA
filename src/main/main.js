@@ -438,6 +438,12 @@ function registerIpc() {
   ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
   ipcMain.handle('katalog:isbn-nachschlagen', (_e, isbn) => holeBuchdaten(isbn));
 
+  ipcMain.handle('statistik:pro-monat', (_e, monate) => repo.statistikAusleihenProMonat(db, monate || 12));
+  ipcMain.handle('statistik:pro-klasse', () => repo.statistikAusleihenProKlasse(db));
+  ipcMain.handle('statistik:pro-kategorie', () => repo.statistikAusleihenProKategorie(db));
+  ipcMain.handle('statistik:ladenhueter', (_e, tage) => repo.ladenhueter(db, tage || 365));
+  ipcMain.handle('statistik:verlustliste', () => repo.verlustliste(db));
+
   ipcMain.handle('medium:save', sicher((_e, row) => repo.saveMedium(db, row)));
   ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi)));
   ipcMain.handle('medium:status', (_e, medienNi) => repo.exemplarStatus(db, medienNi));

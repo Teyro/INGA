@@ -52,6 +52,7 @@ async function boot() {
   wireRueckgabe();
   wireMahnungen();
   wireUmlauf();
+  wireStatistik();
   wireBestand();
   wireEinstellungen();
   wireSheet();
@@ -98,6 +99,7 @@ function showView(name) {
   else if (name === 'rueckgabe') loadRueckgabe();
   else if (name === 'mahnungen') { fuelleMahnstufenFilter(); loadMahnungen(); }
   else if (name === 'umlauf') loadUmlauf();
+  else if (name === 'statistik') loadStatistik();
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
 }
@@ -1333,6 +1335,114 @@ async function umlaufDrucken() {
     await api.umlauf.drucken({ titel: 'Im Umlauf – was ist gerade unterwegs?', filterBeschreibung: umlaufFilterBeschreibung(), gruppen });
   } catch (err) {
     toast(`Drucken fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+  }
+}
+
+/* ------------------------------------------------------------- Statistik */
+
+function wireStatistik() {
+  document.getElementById('statistik-ladenhueter-aktualisieren').addEventListener('click', loadLadenhueter);
+  document.getElementById('statistik-ladenhueter-csv').addEventListener('click', async () => {
+    const tage = Number(document.getElementById('statistik-ladenhueter-tage').value) || 365;
+    const rows = await api.statistik.ladenhueter(tage);
+    if (!rows.length) { toast('Nichts zu exportieren.', 'error'); return; }
+    const spalten = [
+      { schluessel: 'Titel', titel: 'Titel' },
+      { schluessel: 'Autor', titel: 'Autor' },
+      { schluessel: 'letzteAusleiheFmt', titel: 'Letzte Ausleihe' },
+    ];
+    const zeilen = rows.map((r) => ({ ...r, letzteAusleiheFmt: r.letzteAusleihe ? fmtDatum(r.letzteAusleihe) : 'nie' }));
+    const pfad = await api.export.csv({ dateiname: `ladenhueter_${heutigesDatumISO()}`, spalten, zeilen });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  });
+  document.getElementById('statistik-verlust-csv').addEventListener('click', async () => {
+    const rows = await api.statistik.verlustliste();
+    if (!rows.length) { toast('Nichts zu exportieren.', 'error'); return; }
+    const spalten = [
+      { schluessel: 'Titel', titel: 'Titel' },
+      { schluessel: 'Autor', titel: 'Autor' },
+      { schluessel: 'MedienEtik', titel: 'Signatur/Barcode' },
+      { schluessel: 'grund', titel: 'Grund' },
+    ];
+    const pfad = await api.export.csv({ dateiname: `verlustliste_${heutigesDatumISO()}`, spalten, zeilen: rows });
+    if (pfad) toast(`Exportiert nach ${pfad}`);
+  });
+}
+
+async function loadStatistik() {
+  const [proMonat, proKlasse, proKategorie] = await Promise.all([
+    api.statistik.proMonat(12),
+    api.statistik.proKlasse(),
+    api.statistik.proKategorie(),
+  ]);
+  renderStatistikMonat(proMonat);
+  renderStatistikTabelle('statistik-klasse-tbody', proKlasse, 'klasse');
+  renderStatistikTabelle('statistik-kategorie-tbody', proKategorie, 'kategorie');
+  await loadLadenhueter();
+  await loadVerlustliste();
+}
+
+function renderStatistikMonat(rows) {
+  const box = document.getElementById('statistik-monat');
+  box.replaceChildren();
+  const max = Math.max(1, ...rows.map((r) => r.anzahl));
+  const monatsnamen = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  for (const r of rows) {
+    const [jahr, monat] = r.monat.split('-');
+    box.appendChild(
+      el('div', { class: 'stat-bar-row' }, [
+        el('span', { class: 'stat-bar-label' }, [`${monatsnamen[Number(monat) - 1]} ${jahr.slice(2)}`]),
+        el('div', { class: 'stat-bar-track' }, [el('div', { class: 'stat-bar-fill', style: { width: `${(r.anzahl / max) * 100}%` } })]),
+        el('span', { class: 'stat-bar-wert' }, [String(r.anzahl)]),
+      ])
+    );
+  }
+}
+
+function renderStatistikTabelle(tbodyId, rows, schluesselFeld) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.replaceChildren();
+  if (!rows.length) {
+    tbody.appendChild(el('tr', {}, [el('td', {}, [el('p', { class: 'hint' }, ['Noch keine Daten.'])])]));
+    return;
+  }
+  for (const r of rows) {
+    tbody.appendChild(el('tr', {}, [el('td', {}, [r[schluesselFeld]]), el('td', { class: 'num' }, [String(r.anzahl)])]));
+  }
+}
+
+async function loadLadenhueter() {
+  const tage = Number(document.getElementById('statistik-ladenhueter-tage').value) || 365;
+  const rows = await api.statistik.ladenhueter(tage);
+  const tbody = document.getElementById('statistik-ladenhueter-tbody');
+  tbody.replaceChildren();
+  if (!rows.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 3 }, [el('div', { class: 'empty small' }, ['Keine Ladenhüter gefunden.'])])]));
+    return;
+  }
+  for (const r of rows) {
+    tbody.appendChild(
+      el('tr', { onclick: async () => openKatalogSheet(await api.katalog.get(r.KatalogNi)) }, [
+        el('td', {}, [r.Titel]),
+        el('td', {}, [r.Autor || '']),
+        el('td', {}, [r.letzteAusleihe ? fmtDatum(r.letzteAusleihe) : 'nie']),
+      ])
+    );
+  }
+}
+
+async function loadVerlustliste() {
+  const rows = await api.statistik.verlustliste();
+  const tbody = document.getElementById('statistik-verlust-tbody');
+  tbody.replaceChildren();
+  if (!rows.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 4 }, [el('div', { class: 'empty small' }, ['Keine als nicht verfügbar markierten Exemplare.'])])]));
+    return;
+  }
+  for (const r of rows) {
+    tbody.appendChild(
+      el('tr', {}, [el('td', {}, [r.Titel]), el('td', {}, [r.Autor || '']), el('td', {}, [r.MedienEtik || '']), el('td', {}, [r.grund || ''])])
+    );
   }
 }
 

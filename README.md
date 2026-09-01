@@ -150,6 +150,14 @@ Mahnliste.
   beliebigen Datei) direkt in den Einstellungen – Einspielen sichert vorher
   automatisch noch einmal den aktuellen Stand und startet INGA neu
 
+### Statistik
+
+Ausleihen pro Monat (letzte 12 Monate, als Balken), pro Klasse und pro
+Kategorie; **Ladenhüter** (Titel, die seit einer einstellbaren Anzahl Tage
+nicht oder nie ausgeliehen wurden); **Verlustliste** (alle als „nicht
+verfügbar“ markierten Exemplare mit Grund). Ladenhüter und Verlustliste
+je als CSV exportierbar.
+
 ### Import & Export im Perpustakaan-Format
 
 Ein Zip mit allen 65 Tabellen, Semikolon-getrennt, UTF-8. Tabellen, die INGA

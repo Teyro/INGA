@@ -92,6 +92,14 @@ contextBridge.exposeInMainWorld('inga', {
   },
   kennzahlen: () => ipcRenderer.invoke('kennzahlen:get'),
 
+  statistik: {
+    proMonat: (monate) => ipcRenderer.invoke('statistik:pro-monat', monate),
+    proKlasse: () => ipcRenderer.invoke('statistik:pro-klasse'),
+    proKategorie: () => ipcRenderer.invoke('statistik:pro-kategorie'),
+    ladenhueter: (tage) => ipcRenderer.invoke('statistik:ladenhueter', tage),
+    verlustliste: () => ipcRenderer.invoke('statistik:verlustliste'),
+  },
+
   ferien: {
     liste: () => ipcRenderer.invoke('ferien:liste'),
     speichern: (row) => ipcRenderer.invoke('ferien:speichern', row),
