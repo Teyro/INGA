@@ -9,6 +9,7 @@ const { Store, DEFAULT_SETTINGS, defaultSettingsFor, sanitizeSettings } = requir
 const { openDatabase } = require('./db');
 const repo = require('./repo');
 const { importZip, exportZip } = require('./csvio');
+const { sichereDatenbankSync, backupHeuteVorhanden } = require('./backup');
 
 const RENDERER = path.join(__dirname, '..', 'renderer');
 const WINDOW_ICON = process.platform === 'linux' ? path.join(__dirname, '..', '..', 'build', 'icon-256.png') : undefined;
@@ -552,10 +553,20 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    store = new Store(path.join(app.getPath('userData'), 'config'));
-    db = openDatabase(app.getPath('userData'));
-    coversDir = path.join(app.getPath('userData'), 'covers');
+    const userDataDir = app.getPath('userData');
+    store = new Store(path.join(userDataDir, 'config'));
+    db = openDatabase(userDataDir);
+    coversDir = path.join(userDataDir, 'covers');
     await fs.mkdir(coversDir, { recursive: true }).catch(() => {});
+
+    // Einmal täglich beim ersten Start ein Backup – zusätzlich zum
+    // automatischen Backup vor einer fälligen Migration (siehe db.js).
+    const dbFile = path.join(userDataDir, 'inga.sqlite3');
+    const backupDir = path.join(userDataDir, 'backups');
+    if (!backupHeuteVorhanden(backupDir, 'start')) {
+      sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
+    }
+
     registerIpc();
     buildMenu();
     createSplashWindow();

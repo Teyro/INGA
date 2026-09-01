@@ -526,9 +526,17 @@ async function openLeserSheet(row) {
 
 /* -------------------------------------------------------------- Ausleihe */
 
+/**
+ * Für die Ausleihe/Rückgabe per Scanner: nur ein GENAUER Treffer auf
+ * Ausweisnummer oder Kürzel zählt. Vorher fiel diese Funktion mangels
+ * exaktem Treffer auf das erste Ergebnis der unscharfen Namenssuche zurück –
+ * ein Barcode mit Tippfehler oder ein Kürzel, das zufällig zu einem anderen
+ * Namen passt, hätte dadurch stillschweigend einem falschen Kind zugeordnet
+ * werden können.
+ */
 async function findLeserByKennung(text) {
   const rows = await api.leser.search({ query: text });
-  return rows.find((r) => r.AusweisId === text || r.Kuerzel === text) || rows[0] || null;
+  return rows.find((r) => r.AusweisId === text || r.Kuerzel === text) || null;
 }
 
 function wireAusleihe() {
@@ -693,17 +701,25 @@ function aktualisiereCoverFortschritt(p) {
 
 function wireBestand() {
   document.getElementById('bestand-import').addEventListener('click', async () => {
-    const result = await api.bestand.importieren();
-    if (!result) return;
-    toast(`Import abgeschlossen: ${result.kennzahlen.titel} Titel, ${result.kennzahlen.leser} Nutzer.`);
-    state.stammdaten = await api.stammdaten.get();
-    fuelleAlleFilter();
-    await refreshKennzahlen();
+    try {
+      const result = await api.bestand.importieren();
+      if (!result) return;
+      toast(`Import abgeschlossen: ${result.kennzahlen.titel} Titel, ${result.kennzahlen.leser} Nutzer.`);
+      state.stammdaten = await api.stammdaten.get();
+      fuelleAlleFilter();
+      await refreshKennzahlen();
+    } catch (err) {
+      toast(`Import fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}. Ist die Datei ein gültiges Perpustakaan-Export-Zip?`, 'error');
+    }
   });
   document.getElementById('bestand-export').addEventListener('click', async () => {
-    const path = await api.bestand.exportieren();
-    if (!path) return;
-    toast(`Exportiert nach ${path}`);
+    try {
+      const path = await api.bestand.exportieren();
+      if (!path) return;
+      toast(`Exportiert nach ${path}`);
+    } catch (err) {
+      toast(`Export fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}.`, 'error');
+    }
   });
 
   const startBtn = document.getElementById('cover-download-start');

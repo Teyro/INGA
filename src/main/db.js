@@ -12,9 +12,11 @@
  * bleibt ein Perpustakaan-Bestand nach einem Ausflug durch INGA vollständig.
  */
 
+const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const TABLES = require('../schema/perpustakaan-tables.json');
+const { sichereDatenbankSync } = require('./backup');
 
 // Tabelle → Primärschlüssel-Spalte. Fehlt ein Eintrag, verwaltet SQLite die Zeile
 // über ihre eingebaute rowid (Ausleihe und Mahnung haben keinen natürlichen
@@ -115,12 +117,84 @@ function createSchema(db) {
   )`);
 }
 
+/**
+ * Schema-Migrationen für alles, was über die Basistabellen aus createSchema()
+ * hinausgeht (die per "CREATE TABLE IF NOT EXISTS" bereits selbst idempotent
+ * und für neue wie bestehende Datenbanken geeignet sind). SCHEMA_VERSION 1
+ * ist der Stand, den createSchema() abbildet; künftige Phasen hängen hier
+ * weitere Einträge an.
+ *
+ * Anforderungen an jede Migration:
+ *  - `up(db)` muss auf einer bereits befüllten, produktiven Datenbank sauber
+ *    laufen und darf nie Daten verwerfen (additiv: neue Tabellen/Spalten/
+ *    Indizes, keine DROP/DELETE auf bestehenden Fachdaten).
+ *  - Läuft in einer eigenen Transaktion – schlägt sie fehl, bleibt die
+ *    Datenbank auf dem vorherigen Versionsstand stehen statt halb migriert.
+ *  - Vor der ersten tatsächlich fälligen Migration sichert openDatabase()
+ *    automatisch die bisherige Datenbankdatei (siehe backup.js).
+ *
+ * Beispiel für eine künftige Phase:
+ *   { version: 2, beschreibung: 'Ferien-Tabelle', up(db) {
+ *       db.exec(`CREATE TABLE IF NOT EXISTS ferien ( ... )`);
+ *     } }
+ */
+const SCHEMA_VERSION = 1;
+const MIGRATIONS = [];
+
+function gespeicherteSchemaVersion(db) {
+  const row = db.prepare(`SELECT value FROM inga_meta WHERE key = 'schema_version'`).get();
+  return row ? Number(row.value) || 0 : 0;
+}
+
+function setzeSchemaVersion(db, version) {
+  db.prepare(
+    `INSERT INTO inga_meta (key, value) VALUES ('schema_version', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(String(version));
+}
+
+/**
+ * Führt alle noch nicht angewendeten Migrationen aus (aufsteigend nach
+ * Version), jede in ihrer eigenen Transaktion. `vorAllen` wird genau einmal
+ * VOR der ersten fälligen Migration aufgerufen – der Aufrufer hängt hier das
+ * automatische Backup ein. Auf einer frisch angelegten Datenbank (noch keine
+ * gespeicherte Version, aber auch keine fälligen Migrationen älter als
+ * SCHEMA_VERSION) wird nur der Versionsstand vermerkt, ohne Backup.
+ */
+function migriere(db, { vorAllen } = {}) {
+  const bisher = gespeicherteSchemaVersion(db);
+  const faellig = MIGRATIONS.filter((m) => m.version > bisher).sort((a, b) => a.version - b.version);
+  if (!faellig.length) {
+    if (bisher < SCHEMA_VERSION) setzeSchemaVersion(db, SCHEMA_VERSION);
+    return { bisher, angewendet: [] };
+  }
+  vorAllen?.();
+  const angewendet = [];
+  for (const m of faellig) {
+    const tx = db.transaction(() => {
+      m.up(db);
+      setzeSchemaVersion(db, m.version);
+    });
+    tx();
+    angewendet.push(m.version);
+  }
+  return { bisher, angewendet };
+}
+
 function openDatabase(userDataDir) {
   const file = path.join(userDataDir, 'inga.sqlite3');
+  const backupDir = path.join(userDataDir, 'backups');
+  const bestandVorher = fs.existsSync(file);
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createSchema(db);
+  // Backup nur, wenn vor dem Öffnen bereits eine Datenbank existierte und
+  // tatsächlich eine Migration ansteht – eine brandneue, leere Datenbank
+  // muss nicht gesichert werden.
+  migriere(db, {
+    vorAllen: bestandVorher ? () => sichereDatenbankSync(db, file, backupDir, { grund: 'migration' }) : undefined,
+  });
   return db;
 }
 
@@ -157,4 +231,8 @@ module.exports = {
   DERIVED_TABLES,
   LEGACY_TABLES,
   TABLES,
+  SCHEMA_VERSION,
+  MIGRATIONS,
+  migriere,
+  gespeicherteSchemaVersion,
 };

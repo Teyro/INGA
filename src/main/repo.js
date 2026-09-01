@@ -3,9 +3,15 @@
 /** Fachliche Datenzugriffe: Katalog, Exemplare, Leser, Ausleihe/Rückgabe, Mahnwesen. */
 
 const { upsert, nextId, quoteIdent, TABLES } = require('./db');
+const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz } = require('./date-utils');
 
-const todayStr = () => new Date().toISOString().slice(0, 10) + ' 00:00:00.000';
-const nowStamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ') + '.000';
+// todayStr/nowStamp/addDays hießen früher so und rechneten über
+// `new Date().toISOString()` – das liefert das UTC-Datum statt des lokalen
+// und verschiebt Fristen in Deutschland regelmäßig um einen Tag (siehe
+// date-utils.js). Beide Namen bleiben als dünne Weiterleitung erhalten, damit
+// hier nicht jede Fundstelle einzeln umbenannt werden muss.
+const todayStr = heuteStamp;
+const nowStamp = jetztStamp;
 
 /* ------------------------------------------------------------- Katalog */
 
@@ -214,11 +220,7 @@ function leihfristTageAusRow(row, fallbackTage, offsetTage = 0) {
   return basis + (Number(offsetTage) || 0);
 }
 
-function addDays(dateStr, days) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+const addDays = addTage;
 
 /**
  * Ausleihen: prüft Sperre und Doppelausleihe, legt den Datensatz an.
@@ -289,17 +291,17 @@ function verschiebeOffeneAusleihen(db, tage) {
  */
 function ueberfaelligeAusleihen(db, { leihfristTageVorgabe, leihfristOffsetTage = 0 } = {}) {
   const offen = alleOffenenAusleihen(db);
-  const heute = new Date();
+  const heute = heuteISO();
   const ergebnis = [];
   for (const a of offen) {
     // Kein DB-Zugriff je Zeile mehr (a.medArtFrist kommt schon aus dem JOIN
     // in alleOffenenAusleihen) – wichtig, weil diese Schleife bei jedem
     // Dashboard-/Listen-Aufruf über alle offenen Ausleihen läuft.
     const frist = leihfristTageAusRow(a, leihfristTageVorgabe, leihfristOffsetTage);
-    const faelligAm = new Date(addDays(a.AuslDatum, frist));
-    const tageUeberfaellig = Math.floor((heute - faelligAm) / (1000 * 60 * 60 * 24));
+    const faelligAm = addDays(a.AuslDatum, frist);
+    const tageUeberfaellig = tageDifferenz(faelligAm, heute);
     if (tageUeberfaellig <= 0) continue;
-    ergebnis.push({ ...a, tageUeberfaellig, faelligAm: faelligAm.toISOString().slice(0, 10) });
+    ergebnis.push({ ...a, tageUeberfaellig, faelligAm });
   }
   ergebnis.sort((x, y) => y.tageUeberfaellig - x.tageUeberfaellig);
   return ergebnis;
