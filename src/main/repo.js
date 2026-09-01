@@ -14,14 +14,70 @@ const ferien = require('./ferien');
 const todayStr = heuteStamp;
 const nowStamp = jetztStamp;
 
+/* ------------------------------------------------------------- Seitenweise Listen */
+
+const STANDARD_SEITENGROESSE = 50;
+// Deckelt eine "pro Seite"-Angabe aus dem Renderer, damit ein manipulierter
+// IPC-Aufruf nicht versehentlich die komplette Tabelle auf einmal anfordert.
+const MAX_SEITENGROESSE = 1000;
+
+/**
+ * Normalisiert Seite/Seitengröße für datenbankseitiges LIMIT/OFFSET.
+ * `proSeite: 'alle'` (oder <= 0) bedeutet "kein LIMIT" – für den Fall, dass
+ * eine Kollegin wirklich die komplette Liste auf einen Blick braucht (z. B.
+ * zum Drucken). Vormals hatten searchKatalog/searchLeser stattdessen ein
+ * festes, unveränderliches `LIMIT 300` OHNE jede Seitennavigation – das war
+ * der gemeldete Bug ("es werden immer nur begrenzt viele Bücher angezeigt"):
+ * ab dem 301. Treffer war ein Titel schlicht nicht mehr auffindbar, auch
+ * nicht über eine speziellere Suche, solange die ersten 300 Treffer bereits
+ * anders lauteten. Jetzt wird immer die komplette (gefilterte) Trefferzahl
+ * ermittelt und seitenweise nachgeladen, nicht mehr im Speicher abgeschnitten.
+ */
+function seitenGrenzen({ seite = 1, proSeite = STANDARD_SEITENGROESSE } = {}) {
+  const alle = proSeite === 'alle' || Number(proSeite) <= 0;
+  const groesse = alle ? null : Math.min(MAX_SEITENGROESSE, Math.max(1, Math.round(Number(proSeite)) || STANDARD_SEITENGROESSE));
+  const seiteNr = Math.max(1, Math.round(Number(seite)) || 1);
+  return { alle, groesse, offset: alle ? 0 : (seiteNr - 1) * groesse, seite: seiteNr };
+}
+
 /* ------------------------------------------------------------- Katalog */
 
 /**
- * Katalogsuche mit Filtern (Medienart, Verfügbarkeit). Liefert je Titel gleich
- * die Exemplarzahlen mit, damit die Liste nicht mehr pro Zeile einzeln
- * nachfragen muss.
+ * Katalogsuche mit Filtern (Medienart, Systematik, Verfügbarkeit) und echter
+ * Seitennavigation. Liefert je Titel gleich die Exemplarzahlen mit, damit die
+ * Liste nicht mehr pro Zeile einzeln nachfragen muss. Sowohl die Trefferzahl
+ * als auch die Verfügbarkeitsfilterung laufen vollständig in SQL (nicht mehr
+ * per Array.filter() NACH einem LIMIT) – sonst wäre die angezeigte
+ * Gesamtzahl bei aktivem Verfügbarkeitsfilter falsch bzw. eine Seite könnte
+ * nach dem Filtern weniger Zeilen zeigen, als sie eigentlich sollte.
  */
-function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, limit = 300) {
+function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, seitenOptionen = {}) {
+  const bedingungen = ['1=1'];
+  const params = [];
+  if (query) {
+    bedingungen.push(`(k."Titel" LIKE ? OR k."Autor" LIKE ? OR k."ISBN" LIKE ? OR k."EAN" LIKE ? OR k."Schlagwort" LIKE ?)`);
+    const like = `%${query}%`;
+    params.push(like, like, like, like, like);
+  }
+  if (medArtKb) { bedingungen.push(`k."MedArtKb" = ?`); params.push(medArtKb); }
+  if (systemId) { bedingungen.push(`k."SystemId" = ?`); params.push(systemId); }
+  if (verfuegbarkeit === 'verfuegbar') {
+    bedingungen.push(`EXISTS (
+      SELECT 1 FROM "Medien" mv WHERE mv."KatalogNi" = k."KatalogNi"
+        AND NOT EXISTS (SELECT 1 FROM "Ausleihe" av WHERE av."MedienNi" = mv."MedienNi" AND av."Rueckgabe" IS NULL)
+    )`);
+  } else if (verfuegbarkeit === 'verliehen') {
+    bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mv WHERE mv."KatalogNi" = k."KatalogNi")`);
+    bedingungen.push(`NOT EXISTS (
+      SELECT 1 FROM "Medien" mv2 WHERE mv2."KatalogNi" = k."KatalogNi"
+        AND NOT EXISTS (SELECT 1 FROM "Ausleihe" av2 WHERE av2."MedienNi" = mv2."MedienNi" AND av2."Rueckgabe" IS NULL)
+    )`);
+  }
+  const where = bedingungen.join(' AND ');
+
+  const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM "Katalog" k WHERE ${where}`).get(...params).n;
+
+  const { alle, groesse, offset, seite } = seitenGrenzen(seitenOptionen);
   let sql = `
     SELECT k.*,
       (SELECT COUNT(*) FROM "Medien" m WHERE m."KatalogNi" = k."KatalogNi") AS exemplareGesamt,
@@ -29,22 +85,15 @@ function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, l
         WHERE m."KatalogNi" = k."KatalogNi"
           AND NOT EXISTS (SELECT 1 FROM "Ausleihe" a WHERE a."MedienNi" = m."MedienNi" AND a."Rueckgabe" IS NULL)
       ) AS exemplareVerfuegbar
-    FROM "Katalog" k WHERE 1=1`;
-  const params = [];
-  if (query) {
-    sql += ` AND (k."Titel" LIKE ? OR k."Autor" LIKE ? OR k."ISBN" LIKE ? OR k."EAN" LIKE ? OR k."Schlagwort" LIKE ?)`;
-    const like = `%${query}%`;
-    params.push(like, like, like, like, like);
+    FROM "Katalog" k WHERE ${where}
+    ORDER BY k."Titel"`;
+  const abfrageParams = [...params];
+  if (!alle) {
+    sql += ` LIMIT ? OFFSET ?`;
+    abfrageParams.push(groesse, offset);
   }
-  if (medArtKb) { sql += ` AND k."MedArtKb" = ?`; params.push(medArtKb); }
-  if (systemId) { sql += ` AND k."SystemId" = ?`; params.push(systemId); }
-  sql += ` ORDER BY k."Titel" LIMIT ?`;
-  params.push(limit);
-
-  let rows = db.prepare(sql).all(...params);
-  if (verfuegbarkeit === 'verfuegbar') rows = rows.filter((r) => r.exemplareVerfuegbar > 0);
-  else if (verfuegbarkeit === 'verliehen') rows = rows.filter((r) => r.exemplareGesamt > 0 && r.exemplareVerfuegbar === 0);
-  return rows;
+  const rows = db.prepare(sql).all(...abfrageParams);
+  return { rows, gesamt, seite, proSeite: alle ? 'alle' : groesse };
 }
 
 function getKatalog(db, katalogNi) {
@@ -107,30 +156,63 @@ function exemplarStatus(db, medienNi) {
 /* --------------------------------------------------------------- Leser */
 
 /**
- * Nutzersuche mit Filtern (Gruppe, Zweig, gesperrt). Liefert die Anzahl
- * offener Ausleihen gleich mit, statt dass die Liste sie pro Zeile einzeln
- * nachfragen muss.
+ * Nutzersuche mit Filtern (Gruppe, Zweig, gesperrt) und echter
+ * Seitennavigation. Liefert die Anzahl offener Ausleihen gleich mit, statt
+ * dass die Liste sie pro Zeile einzeln nachfragen muss.
+ *
+ * `gesperrt`/`aktiv` bilden dieselbe Regel wie leserGesperrt() ab, aber als
+ * SQL-Bedingung (statt eines JS-Aufrufs je Zeile NACH einem festen LIMIT) –
+ * sonst wäre weder die Trefferzahl noch die Seitengröße bei aktivem Filter
+ * korrekt. `leserNiIn` filtert zusätzlich auf eine vorgegebene Liste von
+ * LeserNi (z. B. "mit Rückstand": die Überfälligkeits-Ermittlung hängt an der
+ * ferienbewussten Fristberechnung und lässt sich nicht sinnvoll noch einmal
+ * separat in SQL nachbilden – der Aufrufer ermittelt die betroffenen
+ * LeserNi einmal über ueberfaelligeAusleihen() und übergibt sie hier, damit
+ * Zählung und Seitennavigation trotzdem korrekt bleiben). Eine leere
+ * `leserNiIn`-Liste bedeutet "keine Treffer" statt "Filter ignorieren".
  */
-function searchLeser(db, { query, leserGruNi, zweigId, gesperrt } = {}, limit = 300) {
-  let sql = `
-    SELECT l.*,
-      (SELECT COUNT(*) FROM "Ausleihe" a WHERE a."LeserNi" = l."LeserNi" AND a."Rueckgabe" IS NULL) AS offeneAusleihen
-    FROM "Leser" l WHERE 1=1`;
+function searchLeser(db, { query, leserGruNi, zweigId, gesperrt, leserNiIn } = {}, seitenOptionen = {}) {
+  if (Array.isArray(leserNiIn) && leserNiIn.length === 0) {
+    const { alle, groesse, seite } = seitenGrenzen(seitenOptionen);
+    return { rows: [], gesamt: 0, seite, proSeite: alle ? 'alle' : groesse };
+  }
+
+  const bedingungen = ['1=1'];
   const params = [];
   if (query) {
-    sql += ` AND (l."Nachname" LIKE ? OR l."Vorname" LIKE ? OR l."AusweisId" LIKE ? OR l."Kuerzel" LIKE ?)`;
+    bedingungen.push(`(l."Nachname" LIKE ? OR l."Vorname" LIKE ? OR l."AusweisId" LIKE ? OR l."Kuerzel" LIKE ?)`);
     const like = `%${query}%`;
     params.push(like, like, like, like);
   }
-  if (leserGruNi) { sql += ` AND l."LeserGruNi" = ?`; params.push(leserGruNi); }
-  if (zweigId) { sql += ` AND l."ZweigId" = ?`; params.push(zweigId); }
-  sql += ` ORDER BY l."Nachname", l."Vorname" LIMIT ?`;
-  params.push(limit);
+  if (leserGruNi) { bedingungen.push(`l."LeserGruNi" = ?`); params.push(leserGruNi); }
+  if (zweigId) { bedingungen.push(`l."ZweigId" = ?`); params.push(zweigId); }
+  if (Array.isArray(leserNiIn)) {
+    bedingungen.push(`l."LeserNi" IN (${leserNiIn.map(() => '?').join(',')})`);
+    params.push(...leserNiIn);
+  }
+  const gesperrtAusdruck = `(
+    (l."SperrungNi" IS NOT NULL AND l."SperrungNi" != 0 AND EXISTS (SELECT 1 FROM "Sperrung" s WHERE s."SperrungNi" = l."SperrungNi"))
+    OR (l."AusleihBis" IS NOT NULL AND l."AusleihBis" != '' AND substr(l."AusleihBis", 1, 10) < ?)
+  )`;
+  if (gesperrt === 'gesperrt') { bedingungen.push(gesperrtAusdruck); params.push(todayStr().slice(0, 10)); }
+  else if (gesperrt === 'aktiv') { bedingungen.push(`NOT ${gesperrtAusdruck}`); params.push(todayStr().slice(0, 10)); }
+  const where = bedingungen.join(' AND ');
 
-  let rows = db.prepare(sql).all(...params);
-  if (gesperrt === 'gesperrt') rows = rows.filter((r) => leserGesperrt(db, r.LeserNi).gesperrt);
-  else if (gesperrt === 'aktiv') rows = rows.filter((r) => !leserGesperrt(db, r.LeserNi).gesperrt);
-  return rows;
+  const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM "Leser" l WHERE ${where}`).get(...params).n;
+
+  const { alle, groesse, offset, seite } = seitenGrenzen(seitenOptionen);
+  let sql = `
+    SELECT l.*,
+      (SELECT COUNT(*) FROM "Ausleihe" a WHERE a."LeserNi" = l."LeserNi" AND a."Rueckgabe" IS NULL) AS offeneAusleihen
+    FROM "Leser" l WHERE ${where}
+    ORDER BY l."Nachname", l."Vorname"`;
+  const abfrageParams = [...params];
+  if (!alle) {
+    sql += ` LIMIT ? OFFSET ?`;
+    abfrageParams.push(groesse, offset);
+  }
+  const rows = db.prepare(sql).all(...abfrageParams);
+  return { rows, gesamt, seite, proSeite: alle ? 'alle' : groesse };
 }
 
 function getLeser(db, leserNi) {

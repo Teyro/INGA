@@ -99,6 +99,22 @@
             <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
             <tbody id="katalog-tbody"></tbody>
           </table>
+          <div class="pagination-bar">
+            <span class="hint" id="katalog-treffer"></span>
+            <div class="row-inline">
+              <label class="hint">Pro Seite
+                <select id="katalog-pro-seite">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="alle">Alle</option>
+                </select>
+              </label>
+              <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
+              <button class="button small" id="katalog-seite-vor">Weiter ›</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -124,6 +140,22 @@
             <thead><tr><th>Name</th><th>Kürzel</th><th>Jahrgang</th><th>E-Mail</th><th class="num">Offene Ausleihen</th></tr></thead>
             <tbody id="leser-tbody"></tbody>
           </table>
+          <div class="pagination-bar">
+            <span class="hint" id="leser-treffer"></span>
+            <div class="row-inline">
+              <label class="hint">Pro Seite
+                <select id="leser-pro-seite">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="alle">Alle</option>
+                </select>
+              </label>
+              <button class="button small" id="leser-seite-zurueck">‹ Zurück</button>
+              <button class="button small" id="leser-seite-vor">Weiter ›</button>
+            </div>
+          </div>
         </div>
       </section>
 

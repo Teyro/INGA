@@ -336,6 +336,8 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .section-title { font-size: 0.86rem; font-weight: 700; color: var(--text-soft); margin: 20px 0 8px; text-transform: uppercase; letter-spacing: 0.03em; }
 .section-title:first-child { margin-top: 0; }
 .row-inline { display: flex; align-items: center; gap: 8px; }
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.pagination-bar select { margin-left: 6px; }
 
 .placeholder-legend code {
   font-family: var(--font-mono); font-size: 0.78rem;

@@ -138,7 +138,7 @@ function createSchema(db) {
  *       db.exec(`CREATE TABLE IF NOT EXISTS ferien ( ... )`);
  *     } }
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MIGRATIONS = [
   {
     version: 2,
@@ -155,6 +155,19 @@ const MIGRATIONS = [
         quelle TEXT NOT NULL DEFAULT 'manuell'
       )`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_ferien_zeitraum ON ferien (startdatum, enddatum)`);
+    },
+  },
+  {
+    version: 3,
+    beschreibung: 'Indizes für Katalog-/Nutzerfilter (Pagination-Fix: datenbankseitiges statt Im-Speicher-Filtern)',
+    up(db) {
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_katalog_titel ON "Katalog" ("Titel")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_katalog_medart ON "Katalog" ("MedArtKb")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_katalog_system ON "Katalog" ("SystemId")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_name ON "Leser" ("Nachname", "Vorname")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_gruppe ON "Leser" ("LeserGruNi")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_zweig ON "Leser" ("ZweigId")`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_sperrung ON "Leser" ("SperrungNi")`);
     },
   },
 ];

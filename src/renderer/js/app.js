@@ -1,7 +1,13 @@
 'use strict';
 
 const api = window.inga;
-const state = { view: 'dashboard', stammdaten: null, settings: null };
+const state = {
+  view: 'dashboard',
+  stammdaten: null,
+  settings: null,
+  katalogSeite: 1,
+  leserSeite: 1,
+};
 
 /**
  * Cover ändern sich selten, werden aber an mehreren Stellen in derselben
@@ -276,10 +282,29 @@ function fuelleAlleFilter() {
   zweig.replaceChildren(el('option', { value: '' }, ['Alle Zweige']), ...zweigOptions().map((o) => el('option', { value: o.value }, [o.label])));
 }
 
+/**
+ * Aktualisiert die einheitliche Paginierungsleiste (Katalog/Nutzer): Anzeige
+ * "x von y Treffern" inkl. Seitenzahl sowie Zurück/Weiter sperren, wenn es
+ * keine weitere Seite gibt. `prefix` ist "katalog" oder "leser".
+ */
+function aktualisierePaginierung(prefix, { seite, proSeite, gesamt, anzahlAngezeigt }) {
+  const gesamtSeiten = proSeite === 'alle' || !proSeite ? 1 : Math.max(1, Math.ceil(gesamt / proSeite));
+  const treffer = document.getElementById(`${prefix}-treffer`);
+  treffer.textContent = gesamt
+    ? `${anzahlAngezeigt} von ${gesamt} Treffer${gesamt === 1 ? '' : 'n'}${gesamtSeiten > 1 ? ` – Seite ${seite} von ${gesamtSeiten}` : ''}`
+    : 'Keine Treffer.';
+  document.getElementById(`${prefix}-seite-zurueck`).disabled = seite <= 1;
+  document.getElementById(`${prefix}-seite-vor`).disabled = seite >= gesamtSeiten;
+}
+
 function wireKatalog() {
-  document.getElementById('katalog-suche').addEventListener('input', debounce(loadKatalog, 200));
-  document.getElementById('katalog-filter-medienart').addEventListener('change', loadKatalog);
-  document.getElementById('katalog-filter-verfuegbar').addEventListener('change', loadKatalog);
+  const beiFilteraenderung = () => { state.katalogSeite = 1; loadKatalog(); };
+  document.getElementById('katalog-suche').addEventListener('input', debounce(beiFilteraenderung, 200));
+  document.getElementById('katalog-filter-medienart').addEventListener('change', beiFilteraenderung);
+  document.getElementById('katalog-filter-verfuegbar').addEventListener('change', beiFilteraenderung);
+  document.getElementById('katalog-pro-seite').addEventListener('change', beiFilteraenderung);
+  document.getElementById('katalog-seite-zurueck').addEventListener('click', () => { state.katalogSeite = Math.max(1, state.katalogSeite - 1); loadKatalog(); });
+  document.getElementById('katalog-seite-vor').addEventListener('click', () => { state.katalogSeite += 1; loadKatalog(); });
   document.getElementById('katalog-neu').addEventListener('click', () => openKatalogSheet(null));
 }
 
@@ -287,9 +312,15 @@ async function loadKatalog() {
   const query = document.getElementById('katalog-suche').value.trim();
   const medArtKb = document.getElementById('katalog-filter-medienart').value;
   const verfuegbarkeit = document.getElementById('katalog-filter-verfuegbar').value;
-  const rows = await api.katalog.search({ query, medArtKb, verfuegbarkeit });
+  const proSeiteWert = document.getElementById('katalog-pro-seite').value;
+  const { rows, gesamt, seite, proSeite } = await api.katalog.search(
+    { query, medArtKb, verfuegbarkeit },
+    { seite: state.katalogSeite, proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert) }
+  );
+  state.katalogSeite = seite;
   const tbody = document.getElementById('katalog-tbody');
   tbody.replaceChildren();
+  aktualisierePaginierung('katalog', { seite, proSeite, gesamt, anzahlAngezeigt: rows.length });
   if (!rows.length) {
     tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['📖']), 'Keine Titel gefunden.'])])]));
     return;
@@ -427,10 +458,14 @@ async function openKatalogSheet(row) {
 /* ---------------------------------------------------------------- Leser */
 
 function wireLeser() {
-  document.getElementById('leser-suche').addEventListener('input', debounce(loadLeser, 200));
-  document.getElementById('leser-filter-gruppe').addEventListener('change', loadLeser);
-  document.getElementById('leser-filter-zweig').addEventListener('change', loadLeser);
-  document.getElementById('leser-filter-status').addEventListener('change', loadLeser);
+  const beiFilteraenderung = () => { state.leserSeite = 1; loadLeser(); };
+  document.getElementById('leser-suche').addEventListener('input', debounce(beiFilteraenderung, 200));
+  document.getElementById('leser-filter-gruppe').addEventListener('change', beiFilteraenderung);
+  document.getElementById('leser-filter-zweig').addEventListener('change', beiFilteraenderung);
+  document.getElementById('leser-filter-status').addEventListener('change', beiFilteraenderung);
+  document.getElementById('leser-pro-seite').addEventListener('change', beiFilteraenderung);
+  document.getElementById('leser-seite-zurueck').addEventListener('click', () => { state.leserSeite = Math.max(1, state.leserSeite - 1); loadLeser(); });
+  document.getElementById('leser-seite-vor').addEventListener('click', () => { state.leserSeite += 1; loadLeser(); });
   document.getElementById('leser-neu').addEventListener('click', () => openLeserSheet(null));
 }
 
@@ -439,21 +474,34 @@ async function loadLeser() {
   const leserGruNi = document.getElementById('leser-filter-gruppe').value;
   const zweigId = document.getElementById('leser-filter-zweig').value;
   const status = document.getElementById('leser-filter-status').value;
+  const proSeiteWert = document.getElementById('leser-pro-seite').value;
 
-  const [rows, ueberfaellig] = await Promise.all([
-    api.leser.search({ query, leserGruNi, zweigId, gesperrt: status === 'gesperrt' || status === 'aktiv' ? status : undefined }),
-    api.ausleihe.ueberfaelligeAlle(),
-  ]);
+  // "Mit Rückstand" hängt an der ferienbewussten Fälligkeitsberechnung
+  // (siehe repo.js) und lässt sich nicht sinnvoll ein zweites Mal in SQL
+  // nachbilden – deshalb wird die Überfälligkeitsliste ohnehin für die rote
+  // Markierung gebraucht und bei diesem Status zusätzlich als LeserNi-Filter
+  // an die (weiterhin datenbankseitig seitenweise) Suche übergeben.
+  const ueberfaellig = await api.ausleihe.ueberfaelligeAlle();
   const ueberfaelligSet = new Set(ueberfaellig.map((r) => r.LeserNi));
-  const gefiltert = status === 'rueckstand' ? rows.filter((r) => ueberfaelligSet.has(r.LeserNi)) : rows;
+
+  const filter = { query, leserGruNi, zweigId };
+  if (status === 'gesperrt' || status === 'aktiv') filter.gesperrt = status;
+  else if (status === 'rueckstand') filter.leserNiIn = [...ueberfaelligSet];
+
+  const { rows, gesamt, seite, proSeite } = await api.leser.search(filter, {
+    seite: state.leserSeite,
+    proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert),
+  });
+  state.leserSeite = seite;
 
   const tbody = document.getElementById('leser-tbody');
   tbody.replaceChildren();
-  if (!gefiltert.length) {
+  aktualisierePaginierung('leser', { seite, proSeite, gesamt, anzahlAngezeigt: rows.length });
+  if (!rows.length) {
     tbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['🧑‍🎓']), 'Keine Nutzer gefunden.'])])]));
     return;
   }
-  for (const row of gefiltert) {
+  for (const row of rows) {
     tbody.appendChild(
       el('tr', { class: ueberfaelligSet.has(row.LeserNi) ? 'row-overdue' : '', onclick: () => openLeserSheet(row) }, [
         el('td', {}, [`${row.Nachname || ''}, ${row.Vorname || ''}`]),
@@ -535,7 +583,10 @@ async function openLeserSheet(row) {
  * werden können.
  */
 async function findLeserByKennung(text) {
-  const rows = await api.leser.search({ query: text });
+  // Muss die GESAMTE Datenbank durchsuchen, nicht nur eine Seite – deshalb
+  // ausdrücklich proSeite:'alle' (unabhängig von der Seitengröße, die die
+  // Nutzerliste in der Oberfläche gerade eingestellt hat).
+  const { rows } = await api.leser.search({ query: text }, { proSeite: 'alle' });
   return rows.find((r) => r.AusweisId === text || r.Kuerzel === text) || null;
 }
 
