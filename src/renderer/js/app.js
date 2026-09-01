@@ -44,7 +44,7 @@ async function boot() {
     item.addEventListener('click', () => showView(item.dataset.view));
   }
 
-  fuelleAlleFilter();
+  await fuelleAlleFilter();
   wireDashboard();
   wireKatalog();
   wireLeser();
@@ -269,19 +269,74 @@ function zweigOptions() {
 function leserGruppOptions() {
   return (state.stammdaten.LeserGrupp || []).map((g) => ({ value: g.LeserGruNi, label: g.LeserGruBz }));
 }
+function standortOptions() {
+  return (state.stammdaten.StandOrt || []).map((s) => ({ value: s.StOrtNi, label: s.StOrtBz }));
+}
 function medArtLabel(kb) {
   const treffer = (state.stammdaten.MedArt || []).find((m) => m.MedArtKb === kb);
   return treffer ? treffer.MedArtBz : kb || '–';
 }
 
 /** Füllt die Filter-Dropdowns in Katalog und Nutzer – beim Start und nach jedem Import. */
-function fuelleAlleFilter() {
+async function fuelleAlleFilter() {
   const medArt = document.getElementById('katalog-filter-medienart');
   medArt.replaceChildren(el('option', { value: '' }, ['Alle Medienarten']), ...medArtOptions().map((o) => el('option', { value: o.value }, [o.label])));
+  const kategorie = document.getElementById('katalog-filter-kategorie');
+  kategorie.replaceChildren(el('option', { value: '' }, ['Alle Kategorien']), ...systematikOptions().map((o) => el('option', { value: o.value }, [o.label])));
+  const standort = document.getElementById('katalog-filter-standort');
+  standort.replaceChildren(el('option', { value: '' }, ['Alle Standorte']), ...standortOptions().map((o) => el('option', { value: o.value }, [o.label])));
   const gruppe = document.getElementById('leser-filter-gruppe');
   gruppe.replaceChildren(el('option', { value: '' }, ['Alle Gruppen']), ...leserGruppOptions().map((o) => el('option', { value: o.value }, [o.label])));
   const zweig = document.getElementById('leser-filter-zweig');
   zweig.replaceChildren(el('option', { value: '' }, ['Alle Zweige']), ...zweigOptions().map((o) => el('option', { value: o.value }, [o.label])));
+
+  // Jahrgang/Klasse ist ein Freitextfeld ohne eigene Stammdaten-Tabelle –
+  // die Auswahlliste kommt deshalb aus den tatsächlich vergebenen Werten.
+  const jahrgaenge = await api.leser.jahrgaenge();
+  const klasseOptionen = jahrgaenge.map((j) => el('option', { value: j }, [j]));
+  document.getElementById('leser-filter-klasse').replaceChildren(el('option', { value: '' }, ['Alle Klassen']), ...klasseOptionen.map((o) => o.cloneNode(true)));
+  document.getElementById('rueckgabe-filter-klasse').replaceChildren(el('option', { value: '' }, ['Alle Klassen']), ...klasseOptionen);
+}
+
+/**
+ * Generische Filterleisten-Helfer: aktive Filter als entfernbare Chips plus
+ * "Alle Filter zurücksetzen" – von Katalog, Nutzer und Rückgabe gleich
+ * genutzt. `felder`: [{ istAktiv(), text(), zuruecksetzen() }].
+ */
+function renderFilterChips(containerId, felder) {
+  const box = document.getElementById(containerId);
+  box.replaceChildren();
+  const aktive = felder.filter((f) => f.istAktiv());
+  for (const f of aktive) {
+    box.appendChild(
+      el('span', { class: 'chip' }, [f.text(), el('button', { class: 'chip-remove', title: 'Filter entfernen', onclick: () => { f.zuruecksetzen(); f.neuLaden(); } }, ['✕'])])
+    );
+  }
+  box.hidden = !aktive.length;
+}
+
+function wireFilterReset(buttonId, felder, neuLaden) {
+  document.getElementById(buttonId).addEventListener('click', () => {
+    for (const f of felder) f.zuruecksetzen();
+    neuLaden();
+  });
+}
+
+/** Chip-Feld für ein <input>/<select> mit einfachem .value – deckt die meisten Fälle ab. */
+function feldChip(id, label, { anzeige, leerwert = '', neuLaden } = {}) {
+  const node = () => document.getElementById(id);
+  return {
+    istAktiv: () => Boolean(node().value),
+    text: () => `${label}: ${anzeige ? anzeige(node()) : node().tagName === 'SELECT' ? node().selectedOptions[0]?.textContent : node().value}`,
+    zuruecksetzen: () => { node().value = leerwert; },
+    neuLaden,
+  };
+}
+
+/** Chip-Feld für eine Checkbox. */
+function checkboxChip(id, label, neuLaden) {
+  const node = () => document.getElementById(id);
+  return { istAktiv: () => node().checked, text: () => label, zuruecksetzen: () => { node().checked = false; }, neuLaden };
 }
 
 /**
@@ -299,27 +354,62 @@ function aktualisierePaginierung(prefix, { seite, proSeite, gesamt, anzahlAngeze
   document.getElementById(`${prefix}-seite-vor`).disabled = seite >= gesamtSeiten;
 }
 
+const KATALOG_FILTER_FELDER = [
+  feldChip('katalog-suche', 'Suche', { anzeige: (n) => `„${n.value}“`, neuLaden: () => beiKatalogFilterAenderung() }),
+  feldChip('katalog-filter-medienart', 'Medienart', { neuLaden: () => beiKatalogFilterAenderung() }),
+  feldChip('katalog-filter-status', 'Status', { neuLaden: () => beiKatalogFilterAenderung() }),
+  feldChip('katalog-filter-kategorie', 'Kategorie', { neuLaden: () => beiKatalogFilterAenderung() }),
+  feldChip('katalog-filter-standort', 'Standort', { neuLaden: () => beiKatalogFilterAenderung() }),
+  feldChip('katalog-filter-klassenstufe', 'Klassenstufe', { neuLaden: () => beiKatalogFilterAenderung() }),
+];
+
+function beiKatalogFilterAenderung() {
+  state.katalogSeite = 1;
+  loadKatalog();
+}
+
 function wireKatalog() {
-  const beiFilteraenderung = () => { state.katalogSeite = 1; loadKatalog(); };
-  document.getElementById('katalog-suche').addEventListener('input', debounce(beiFilteraenderung, 200));
-  document.getElementById('katalog-filter-medienart').addEventListener('change', beiFilteraenderung);
-  document.getElementById('katalog-filter-verfuegbar').addEventListener('change', beiFilteraenderung);
-  document.getElementById('katalog-pro-seite').addEventListener('change', beiFilteraenderung);
+  document.getElementById('katalog-suche').addEventListener('input', debounce(beiKatalogFilterAenderung, 200));
+  for (const id of ['katalog-filter-medienart', 'katalog-filter-status', 'katalog-filter-kategorie', 'katalog-filter-standort']) {
+    document.getElementById(id).addEventListener('change', beiKatalogFilterAenderung);
+  }
+  document.getElementById('katalog-filter-klassenstufe').addEventListener('input', debounce(beiKatalogFilterAenderung, 200));
+  wireFilterReset('katalog-filter-reset', KATALOG_FILTER_FELDER, beiKatalogFilterAenderung);
+  document.getElementById('katalog-pro-seite').addEventListener('change', beiKatalogFilterAenderung);
   document.getElementById('katalog-seite-zurueck').addEventListener('click', () => { state.katalogSeite = Math.max(1, state.katalogSeite - 1); loadKatalog(); });
   document.getElementById('katalog-seite-vor').addEventListener('click', () => { state.katalogSeite += 1; loadKatalog(); });
   document.getElementById('katalog-neu').addEventListener('click', () => openKatalogSheet(null));
+  document.getElementById('katalog-csv').addEventListener('click', () => katalogExport('csv'));
+  document.getElementById('katalog-xlsx').addEventListener('click', () => katalogExport('xlsx'));
+}
+
+/** Aktueller Filter als Objekt für repo.searchKatalog – von Anzeige UND Export gleich genutzt, damit "der Filter auch für den Export gilt". */
+async function katalogAktuellerFilter() {
+  const status = document.getElementById('katalog-filter-status').value;
+  const filter = {
+    query: document.getElementById('katalog-suche').value.trim(),
+    medArtKb: document.getElementById('katalog-filter-medienart').value,
+    systemId: document.getElementById('katalog-filter-kategorie').value,
+    standortNi: document.getElementById('katalog-filter-standort').value,
+    klassenstufe: document.getElementById('katalog-filter-klassenstufe').value.trim(),
+  };
+  // "Überfällig" hängt an der ferienbewussten Fälligkeitsberechnung und wird
+  // deshalb nicht als eigener SQL-Ausdruck nachgebaut, sondern einmal
+  // zentral ermittelt (siehe repo.katalogNiMitUeberfaelligemExemplar).
+  if (status === 'ueberfaellig') filter.katalogNiIn = await api.katalog.ueberfaelligeNi();
+  else if (status) filter.verfuegbarkeit = status;
+  return filter;
 }
 
 async function loadKatalog() {
-  const query = document.getElementById('katalog-suche').value.trim();
-  const medArtKb = document.getElementById('katalog-filter-medienart').value;
-  const verfuegbarkeit = document.getElementById('katalog-filter-verfuegbar').value;
+  const filter = await katalogAktuellerFilter();
   const proSeiteWert = document.getElementById('katalog-pro-seite').value;
-  const { rows, gesamt, seite, proSeite } = await api.katalog.search(
-    { query, medArtKb, verfuegbarkeit },
-    { seite: state.katalogSeite, proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert) }
-  );
+  const { rows, gesamt, seite, proSeite } = await api.katalog.search(filter, {
+    seite: state.katalogSeite,
+    proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert),
+  });
   state.katalogSeite = seite;
+  renderFilterChips('katalog-filter-chips', KATALOG_FILTER_FELDER);
   const tbody = document.getElementById('katalog-tbody');
   tbody.replaceChildren();
   aktualisierePaginierung('katalog', { seite, proSeite, gesamt, anzahlAngezeigt: rows.length });
@@ -340,6 +430,36 @@ async function loadKatalog() {
       ])
     );
   }
+}
+
+const KATALOG_EXPORT_SPALTEN = [
+  { schluessel: 'Titel', titel: 'Titel' },
+  { schluessel: 'Autor', titel: 'Autor' },
+  { schluessel: 'Medienart', titel: 'Medienart' },
+  { schluessel: 'ISBN', titel: 'ISBN/EAN' },
+  { schluessel: 'ErschJahr', titel: 'Jahr' },
+  { schluessel: 'Exemplare', titel: 'Exemplare (verfügbar/gesamt)' },
+];
+
+/** Exportiert IMMER den aktuellen Filter (alle Seiten, nicht nur die angezeigte) – "der Filter gilt auch für den Export". */
+async function katalogExport(art) {
+  const filter = await katalogAktuellerFilter();
+  const { rows } = await api.katalog.search(filter, { proSeite: 'alle' });
+  if (!rows.length) { toast('Nichts zu exportieren.', 'error'); return; }
+  const zeilen = rows.map((r) => ({
+    Titel: r.Titel || '',
+    Autor: r.Autor || '',
+    Medienart: medArtLabel(r.MedArtKb),
+    ISBN: r.ISBN || r.EAN || '',
+    ErschJahr: r.ErschJahr || '',
+    Exemplare: `${r.exemplareVerfuegbar}/${r.exemplareGesamt}`,
+  }));
+  const dateiname = `katalog_${new Date().toISOString().slice(0, 10)}`;
+  const pfad =
+    art === 'xlsx'
+      ? await api.export.xlsx({ dateiname, blattname: 'Katalog', spalten: KATALOG_EXPORT_SPALTEN, zeilen })
+      : await api.export.csv({ dateiname, spalten: KATALOG_EXPORT_SPALTEN, zeilen });
+  if (pfad) toast(`Exportiert nach ${pfad}`);
 }
 
 /** Cover-Panel für die Buchdetailseite: Vorschau, Herunterladen (per ISBN), Hochladen, Entfernen. */
@@ -459,42 +579,70 @@ async function openKatalogSheet(row) {
 
 /* ---------------------------------------------------------------- Leser */
 
+const LESER_FILTER_FELDER = [
+  feldChip('leser-suche', 'Suche', { anzeige: (n) => `„${n.value}“`, neuLaden: () => beiLeserFilterAenderung() }),
+  feldChip('leser-filter-klasse', 'Klasse', { neuLaden: () => beiLeserFilterAenderung() }),
+  feldChip('leser-filter-status', 'Status', { neuLaden: () => beiLeserFilterAenderung() }),
+  feldChip('leser-filter-gruppe', 'Gruppe', { neuLaden: () => beiLeserFilterAenderung() }),
+  feldChip('leser-filter-zweig', 'Zweig', { neuLaden: () => beiLeserFilterAenderung() }),
+  feldChip('leser-filter-ausleihen', 'Ausleihen', { neuLaden: () => beiLeserFilterAenderung() }),
+];
+
+function beiLeserFilterAenderung() {
+  state.leserSeite = 1;
+  loadLeser();
+}
+
 function wireLeser() {
-  const beiFilteraenderung = () => { state.leserSeite = 1; loadLeser(); };
-  document.getElementById('leser-suche').addEventListener('input', debounce(beiFilteraenderung, 200));
-  document.getElementById('leser-filter-gruppe').addEventListener('change', beiFilteraenderung);
-  document.getElementById('leser-filter-zweig').addEventListener('change', beiFilteraenderung);
-  document.getElementById('leser-filter-status').addEventListener('change', beiFilteraenderung);
-  document.getElementById('leser-pro-seite').addEventListener('change', beiFilteraenderung);
+  document.getElementById('leser-suche').addEventListener('input', debounce(beiLeserFilterAenderung, 200));
+  for (const id of ['leser-filter-klasse', 'leser-filter-status', 'leser-filter-gruppe', 'leser-filter-zweig', 'leser-filter-ausleihen']) {
+    document.getElementById(id).addEventListener('change', beiLeserFilterAenderung);
+  }
+  wireFilterReset('leser-filter-reset', LESER_FILTER_FELDER, beiLeserFilterAenderung);
+  document.getElementById('leser-pro-seite').addEventListener('change', beiLeserFilterAenderung);
   document.getElementById('leser-seite-zurueck').addEventListener('click', () => { state.leserSeite = Math.max(1, state.leserSeite - 1); loadLeser(); });
   document.getElementById('leser-seite-vor').addEventListener('click', () => { state.leserSeite += 1; loadLeser(); });
   document.getElementById('leser-neu').addEventListener('click', () => openLeserSheet(null));
+  document.getElementById('leser-csv').addEventListener('click', () => leserExport('csv'));
+  document.getElementById('leser-xlsx').addEventListener('click', () => leserExport('xlsx'));
+}
+
+/**
+ * Aktueller Filter als Objekt für repo.searchLeser – von Anzeige UND Export
+ * gleich genutzt. `ueberfaelligSet` (LeserNi mit Rückstand) wird von
+ * loadLeser() ohnehin für die rote Markierung geladen und hier nur
+ * durchgereicht, statt ein zweites Mal abgefragt zu werden.
+ */
+function leserAktuellerFilter(ueberfaelligSet) {
+  const status = document.getElementById('leser-filter-status').value;
+  const filter = {
+    query: document.getElementById('leser-suche').value.trim(),
+    leserGruNi: document.getElementById('leser-filter-gruppe').value,
+    zweigId: document.getElementById('leser-filter-zweig').value,
+    jahrgang: document.getElementById('leser-filter-klasse').value,
+    aktiveAusleihen: document.getElementById('leser-filter-ausleihen').value,
+  };
+  if (status === 'gesperrt' || status === 'aktiv') filter.gesperrt = status;
+  // "Mit Rückstand" hängt an der ferienbewussten Fälligkeitsberechnung
+  // (siehe repo.js) und wird deshalb nicht zweimal in SQL nachgebaut.
+  else if (status === 'rueckstand') filter.leserNiIn = [...ueberfaelligSet];
+  return filter;
 }
 
 async function loadLeser() {
-  const query = document.getElementById('leser-suche').value.trim();
-  const leserGruNi = document.getElementById('leser-filter-gruppe').value;
-  const zweigId = document.getElementById('leser-filter-zweig').value;
-  const status = document.getElementById('leser-filter-status').value;
-  const proSeiteWert = document.getElementById('leser-pro-seite').value;
-
-  // "Mit Rückstand" hängt an der ferienbewussten Fälligkeitsberechnung
-  // (siehe repo.js) und lässt sich nicht sinnvoll ein zweites Mal in SQL
-  // nachbilden – deshalb wird die Überfälligkeitsliste ohnehin für die rote
-  // Markierung gebraucht und bei diesem Status zusätzlich als LeserNi-Filter
-  // an die (weiterhin datenbankseitig seitenweise) Suche übergeben.
+  // Für die rote Markierung überfälliger Nutzer wird die Liste ohnehin
+  // gebraucht, unabhängig vom aktuellen Statusfilter.
   const ueberfaellig = await api.ausleihe.ueberfaelligeAlle();
   const ueberfaelligSet = new Set(ueberfaellig.map((r) => r.LeserNi));
 
-  const filter = { query, leserGruNi, zweigId };
-  if (status === 'gesperrt' || status === 'aktiv') filter.gesperrt = status;
-  else if (status === 'rueckstand') filter.leserNiIn = [...ueberfaelligSet];
-
+  const filter = leserAktuellerFilter(ueberfaelligSet);
+  const proSeiteWert = document.getElementById('leser-pro-seite').value;
   const { rows, gesamt, seite, proSeite } = await api.leser.search(filter, {
     seite: state.leserSeite,
     proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert),
   });
   state.leserSeite = seite;
+  renderFilterChips('leser-filter-chips', LESER_FILTER_FELDER);
 
   const tbody = document.getElementById('leser-tbody');
   tbody.replaceChildren();
@@ -514,6 +662,34 @@ async function loadLeser() {
       ])
     );
   }
+}
+
+const LESER_EXPORT_SPALTEN = [
+  { schluessel: 'Name', titel: 'Name' },
+  { schluessel: 'Kuerzel', titel: 'Kürzel' },
+  { schluessel: 'Klasse', titel: 'Klasse/Jahrgang' },
+  { schluessel: 'EMail', titel: 'E-Mail' },
+  { schluessel: 'OffeneAusleihen', titel: 'Offene Ausleihen' },
+];
+
+async function leserExport(art) {
+  const ueberfaellig = await api.ausleihe.ueberfaelligeAlle();
+  const filter = leserAktuellerFilter(new Set(ueberfaellig.map((r) => r.LeserNi)));
+  const { rows } = await api.leser.search(filter, { proSeite: 'alle' });
+  if (!rows.length) { toast('Nichts zu exportieren.', 'error'); return; }
+  const zeilen = rows.map((r) => ({
+    Name: `${r.Nachname || ''}, ${r.Vorname || ''}`,
+    Kuerzel: r.Kuerzel || '',
+    Klasse: r.Jahrgang || '',
+    EMail: r.emailPriv || '',
+    OffeneAusleihen: r.offeneAusleihen || 0,
+  }));
+  const dateiname = `nutzer_${new Date().toISOString().slice(0, 10)}`;
+  const pfad =
+    art === 'xlsx'
+      ? await api.export.xlsx({ dateiname, blattname: 'Nutzer', spalten: LESER_EXPORT_SPALTEN, zeilen })
+      : await api.export.csv({ dateiname, spalten: LESER_EXPORT_SPALTEN, zeilen });
+  if (pfad) toast(`Exportiert nach ${pfad}`);
 }
 
 async function openLeserSheet(row) {
@@ -639,6 +815,15 @@ function wireRueckgabe() {
   });
   document.getElementById('rueckgabe-suche').addEventListener('input', debounce(loadRueckgabe, 200));
   document.getElementById('rueckgabe-nur-ueberfaellig').addEventListener('change', loadRueckgabe);
+  for (const id of ['rueckgabe-filter-klasse', 'rueckgabe-filter-verlaengert']) {
+    document.getElementById(id).addEventListener('change', loadRueckgabe);
+  }
+  for (const id of ['rueckgabe-filter-von', 'rueckgabe-filter-bis', 'rueckgabe-filter-tage']) {
+    document.getElementById(id).addEventListener('input', debounce(loadRueckgabe, 200));
+  }
+  wireFilterReset('rueckgabe-filter-reset', RUECKGABE_FILTER_FELDER, loadRueckgabe);
+  document.getElementById('rueckgabe-csv').addEventListener('click', () => rueckgabeExport('csv'));
+  document.getElementById('rueckgabe-xlsx').addEventListener('click', () => rueckgabeExport('xlsx'));
   document.getElementById('rueckgabe-alle').addEventListener('change', (e) => {
     for (const cb of document.querySelectorAll('#rueckgabe-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
   });
@@ -662,15 +847,43 @@ function wireRueckgabe() {
   });
 }
 
-async function loadRueckgabe() {
-  const [rows, ueberfaellig] = await Promise.all([api.ausleihe.alleOffen(), api.ausleihe.ueberfaelligeAlle()]);
-  const ueberfMap = new Map(ueberfaellig.map((r) => [r.id, r]));
+const RUECKGABE_FILTER_FELDER = [
+  feldChip('rueckgabe-suche', 'Suche', { anzeige: (n) => `„${n.value}“`, neuLaden: loadRueckgabe }),
+  checkboxChip('rueckgabe-nur-ueberfaellig', 'Nur überfällige', loadRueckgabe),
+  feldChip('rueckgabe-filter-klasse', 'Klasse', { neuLaden: loadRueckgabe }),
+  feldChip('rueckgabe-filter-verlaengert', 'Verlängert', { neuLaden: loadRueckgabe }),
+  feldChip('rueckgabe-filter-von', 'Ausgeliehen ab', { anzeige: (n) => fmtDatum(n.value), neuLaden: loadRueckgabe }),
+  feldChip('rueckgabe-filter-bis', 'Ausgeliehen bis', { anzeige: (n) => fmtDatum(n.value), neuLaden: loadRueckgabe }),
+  feldChip('rueckgabe-filter-tage', 'Überfällig ab', { anzeige: (n) => `${n.value} Tagen`, neuLaden: loadRueckgabe }),
+];
+
+/** Filtert die (vollständig geladenen, nicht paginierten) offenen Ausleihen anhand der aktuellen Formularwerte – von Anzeige UND Export gleich genutzt. */
+function rueckgabeGefiltert(rows, ueberfMap) {
   const suche = document.getElementById('rueckgabe-suche').value.trim().toLowerCase();
   const nurUeberfaellig = document.getElementById('rueckgabe-nur-ueberfaellig').checked;
+  const klasse = document.getElementById('rueckgabe-filter-klasse').value;
+  const verlaengert = document.getElementById('rueckgabe-filter-verlaengert').value;
+  const von = document.getElementById('rueckgabe-filter-von').value;
+  const bis = document.getElementById('rueckgabe-filter-bis').value;
+  const tageAb = Number(document.getElementById('rueckgabe-filter-tage').value) || 0;
 
   let gefiltert = rows;
   if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
   if (nurUeberfaellig) gefiltert = gefiltert.filter((r) => ueberfMap.has(r.id));
+  if (klasse) gefiltert = gefiltert.filter((r) => (r.Jahrgang || '') === klasse);
+  if (verlaengert === 'ja') gefiltert = gefiltert.filter((r) => (r.AnzVerl || 0) > 0);
+  else if (verlaengert === 'nein') gefiltert = gefiltert.filter((r) => !(r.AnzVerl > 0));
+  if (von) gefiltert = gefiltert.filter((r) => String(r.AuslDatum).slice(0, 10) >= von);
+  if (bis) gefiltert = gefiltert.filter((r) => String(r.AuslDatum).slice(0, 10) <= bis);
+  if (tageAb > 0) gefiltert = gefiltert.filter((r) => (ueberfMap.get(r.id)?.tageUeberfaellig || 0) >= tageAb);
+  return gefiltert;
+}
+
+async function loadRueckgabe() {
+  const [rows, ueberfaellig] = await Promise.all([api.ausleihe.alleOffen(), api.ausleihe.ueberfaelligeAlle()]);
+  const ueberfMap = new Map(ueberfaellig.map((r) => [r.id, r]));
+  const gefiltert = rueckgabeGefiltert(rows, ueberfMap);
+  renderFilterChips('rueckgabe-filter-chips', RUECKGABE_FILTER_FELDER);
 
   const tbody = document.getElementById('rueckgabe-tbody');
   tbody.replaceChildren();
@@ -711,6 +924,42 @@ async function loadRueckgabe() {
       ])
     );
   }
+}
+
+const RUECKGABE_EXPORT_SPALTEN = [
+  { schluessel: 'Titel', titel: 'Titel' },
+  { schluessel: 'Nutzer', titel: 'Nutzer' },
+  { schluessel: 'Klasse', titel: 'Klasse' },
+  { schluessel: 'AuslDatumFmt', titel: 'Ausgeliehen am' },
+  { schluessel: 'FaelligFmt', titel: 'Fällig am' },
+  { schluessel: 'TageUeberfaellig', titel: 'Tage überfällig' },
+  { schluessel: 'AnzVerl', titel: 'Verlängerungen' },
+];
+
+/** Exportiert genau die aktuell gefilterte Liste (dieselbe Funktion wie die Anzeige) – "der Filter gilt auch für den Export". */
+async function rueckgabeExport(art) {
+  const [rows, ueberfaellig] = await Promise.all([api.ausleihe.alleOffen(), api.ausleihe.ueberfaelligeAlle()]);
+  const ueberfMap = new Map(ueberfaellig.map((r) => [r.id, r]));
+  const gefiltert = rueckgabeGefiltert(rows, ueberfMap);
+  if (!gefiltert.length) { toast('Nichts zu exportieren.', 'error'); return; }
+  const zeilen = gefiltert.map((r) => {
+    const ueb = ueberfMap.get(r.id);
+    return {
+      Titel: `${r.Titel} – ${r.MedienEtik || ''}`,
+      Nutzer: `${r.Nachname}, ${r.Vorname}`,
+      Klasse: r.Jahrgang || '',
+      AuslDatumFmt: fmtDatum(r.AuslDatum),
+      FaelligFmt: ueb ? fmtDatum(ueb.faelligAm) : '',
+      TageUeberfaellig: ueb?.tageUeberfaellig || 0,
+      AnzVerl: r.AnzVerl || 0,
+    };
+  });
+  const dateiname = `rueckgabe_${new Date().toISOString().slice(0, 10)}`;
+  const pfad =
+    art === 'xlsx'
+      ? await api.export.xlsx({ dateiname, blattname: 'Rückgabe', spalten: RUECKGABE_EXPORT_SPALTEN, zeilen })
+      : await api.export.csv({ dateiname, spalten: RUECKGABE_EXPORT_SPALTEN, zeilen });
+  if (pfad) toast(`Exportiert nach ${pfad}`);
 }
 
 /* ------------------------------------------------------------- Mahnungen */
@@ -946,7 +1195,7 @@ function wireBestand() {
       if (!result) return;
       toast(`Import abgeschlossen: ${result.kennzahlen.titel} Titel, ${result.kennzahlen.leser} Nutzer.`);
       state.stammdaten = await api.stammdaten.get();
-      fuelleAlleFilter();
+      await fuelleAlleFilter();
       await refreshKennzahlen();
     } catch (err) {
       toast(`Import fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}. Ist die Datei ein gültiges Perpustakaan-Export-Zip?`, 'error');

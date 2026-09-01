@@ -60,7 +60,13 @@ Ferienschließzeit.
 
 ### Katalog & Buchdetail (NELE)
 
-- Titel anlegen, durchsuchen, filtern nach Medienart und Verfügbarkeit
+- Titel anlegen, durchsuchen, filtern nach Medienart, Kategorie,
+  Klassenstufe, Standort und Status (verfügbar / ausgeliehen / überfällig /
+  nicht verfügbar) – echte Seitennavigation (25/50/100/250/Alle) statt einer
+  festen Höchstzahl, aktive Filter als entfernbare Chips, Export der
+  gefilterten Liste als CSV/Excel
+- Freitextsuche deckt Titel, Autor, Verlag, ISBN/EAN, Schlagwort UND die
+  Signatur/den Barcode einzelner Exemplare ab
 - Exemplare mit Barcode/Etikett verwalten, Ausleihstatus pro Exemplar
 - **Buchcover**: automatischer Download per ISBN/EAN von
   [Open Library](https://openlibrary.org/dev/docs/api/covers) (frei, ohne
@@ -73,16 +79,18 @@ Ferienschließzeit.
 
 - Schüler:innen und Lehrkräfte, Gruppen, Zweige, Sperrungen,
   Ausleihberechtigung mit Ablaufdatum
-- Filter nach Gruppe, Zweig und Status (aktiv / gesperrt / **mit
-  Rückstand**)
+- Filter nach Klasse, Gruppe, Zweig, Status (aktiv / gesperrt / **mit
+  Rückstand**) und Anzahl aktiver Ausleihen – echte Seitennavigation, Filter
+  als Chips, Export als CSV/Excel
 - Nutzer mit überfälligen Ausleihen sind in der Liste rot markiert
 
 ### Ausleihe & Rückgabe
 
 - Ausleihe per Barcode-Scanner oder Tastatur
 - Leihfrist je Medienart, konfigurierbare Verlängerung
-- Rückgabe-Liste mit Volltextsuche, „Nur überfällige“-Filter und
-  Status-Badge pro Zeile
+- Rückgabe-Liste mit Volltextsuche, Filtern (nur überfällige,
+  Überfälligkeit ab X Tagen, verlängert ja/nein, Klasse,
+  Ausleihdatum-Zeitraum), Status-Badge pro Zeile und Export als CSV/Excel
 
 ### Im Umlauf
 

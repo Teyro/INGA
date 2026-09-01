@@ -86,16 +86,27 @@
       <section class="view" id="view-katalog" hidden>
         <div class="toolbar">
           <h1>Katalog</h1>
-          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="katalog-suche" placeholder="Titel, Autor, ISBN …" /></div>
+          <div class="searchbar"><span class="icon">🔎</span><input type="search" id="katalog-suche" placeholder="Titel, Autor, Verlag, ISBN, Signatur …" /></div>
           <select class="filter-select" id="katalog-filter-medienart"><option value="">Alle Medienarten</option></select>
-          <select class="filter-select" id="katalog-filter-verfuegbar">
-            <option value="">Alle</option>
+          <select class="filter-select" id="katalog-filter-status">
+            <option value="">Alle Status</option>
             <option value="verfuegbar">Verfügbar</option>
-            <option value="verliehen">Komplett verliehen</option>
+            <option value="verliehen">Ausgeliehen</option>
+            <option value="ueberfaellig">Überfällig</option>
+            <option value="nicht_verfuegbar">Nicht verfügbar (z.&nbsp;B. vermisst)</option>
           </select>
           <div class="spacer"></div>
+          <button class="button" id="katalog-csv">CSV</button>
+          <button class="button" id="katalog-xlsx">Excel</button>
           <button class="button primary" id="katalog-neu">+ Neuer Titel</button>
         </div>
+        <div class="filter-row">
+          <select class="filter-select" id="katalog-filter-kategorie"><option value="">Alle Kategorien</option></select>
+          <select class="filter-select" id="katalog-filter-standort"><option value="">Alle Standorte</option></select>
+          <label class="field-inline">Klassenstufe <input type="text" id="katalog-filter-klassenstufe" placeholder="z. B. 2" /></label>
+          <button class="button ghost small" id="katalog-filter-reset">Alle Filter zurücksetzen</button>
+        </div>
+        <div class="filter-chips" id="katalog-filter-chips" hidden></div>
         <div class="view">
           <table>
             <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
@@ -125,8 +136,7 @@
         <div class="toolbar">
           <h1>Nutzer</h1>
           <div class="searchbar"><span class="icon">🔎</span><input type="search" id="leser-suche" placeholder="Name, Ausweis, Kürzel …" /></div>
-          <select class="filter-select" id="leser-filter-gruppe"><option value="">Alle Gruppen</option></select>
-          <select class="filter-select" id="leser-filter-zweig"><option value="">Alle Zweige</option></select>
+          <select class="filter-select" id="leser-filter-klasse"><option value="">Alle Klassen</option></select>
           <select class="filter-select" id="leser-filter-status">
             <option value="">Alle</option>
             <option value="rueckstand">Mit Rückstand</option>
@@ -134,8 +144,21 @@
             <option value="aktiv">Aktiv</option>
           </select>
           <div class="spacer"></div>
+          <button class="button" id="leser-csv">CSV</button>
+          <button class="button" id="leser-xlsx">Excel</button>
           <button class="button primary" id="leser-neu">+ Neuer Nutzer</button>
         </div>
+        <div class="filter-row">
+          <select class="filter-select" id="leser-filter-gruppe"><option value="">Alle Gruppen</option></select>
+          <select class="filter-select" id="leser-filter-zweig"><option value="">Alle Zweige</option></select>
+          <select class="filter-select" id="leser-filter-ausleihen">
+            <option value="">Alle (egal wie viele Ausleihen)</option>
+            <option value="0">Keine offenen Ausleihen</option>
+            <option value="1+">Mind. 1 offene Ausleihe</option>
+          </select>
+          <button class="button ghost small" id="leser-filter-reset">Alle Filter zurücksetzen</button>
+        </div>
+        <div class="filter-chips" id="leser-filter-chips" hidden></div>
         <div class="view">
           <p class="hint legend-hint"><span class="legend-dot"></span> Rot markiert: aktuell überfällige Ausleihen.</p>
           <table>
@@ -188,8 +211,23 @@
           <div class="searchbar"><span class="icon">🔍</span><input type="search" id="rueckgabe-suche" placeholder="Nach Name oder Titel filtern" /></div>
           <label class="checkbox-label"><input type="checkbox" id="rueckgabe-nur-ueberfaellig" /> Nur überfällige</label>
           <div class="spacer"></div>
+          <button class="button" id="rueckgabe-csv">CSV</button>
+          <button class="button" id="rueckgabe-xlsx">Excel</button>
           <button class="button" id="rueckgabe-verlaengern-mehrere">Ausgewählte verlängern</button>
         </div>
+        <div class="filter-row">
+          <select class="filter-select" id="rueckgabe-filter-klasse"><option value="">Alle Klassen</option></select>
+          <select class="filter-select" id="rueckgabe-filter-verlaengert">
+            <option value="">Verlängert: egal</option>
+            <option value="ja">Nur verlängerte</option>
+            <option value="nein">Nur nicht verlängerte</option>
+          </select>
+          <label class="field-inline">Ausgeliehen von <input type="date" id="rueckgabe-filter-von" /></label>
+          <label class="field-inline">bis <input type="date" id="rueckgabe-filter-bis" /></label>
+          <label class="field-inline">Überfällig ab <input type="number" id="rueckgabe-filter-tage" min="0" placeholder="Tage" /></label>
+          <button class="button ghost small" id="rueckgabe-filter-reset">Alle Filter zurücksetzen</button>
+        </div>
+        <div class="filter-chips" id="rueckgabe-filter-chips" hidden></div>
         <div class="view">
           <table>
             <thead><tr><th style="width:30px"><input type="checkbox" id="rueckgabe-alle" /></th><th>Titel</th><th>Nutzer</th><th>Ausgeliehen am</th><th>Status</th><th>Verlängerungen</th><th class="actions"></th></tr></thead>

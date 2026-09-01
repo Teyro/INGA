@@ -341,6 +341,25 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--accent-rgb) / 0.06)); }
 
+/* ------------------------------------------------------------ Filterleiste */
+
+.filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 0; }
+.filter-row .field-inline { display: flex; align-items: center; gap: 5px; font-size: 0.82rem; color: var(--text-soft); }
+.filter-row .field-inline input { width: 92px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0; }
+.filter-chips[hidden] { display: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgb(var(--accent-rgb) / 0.12); color: var(--text);
+  border-radius: 999px; padding: 3px 6px 3px 12px; font-size: 0.78rem;
+}
+.chip-remove {
+  border: none; background: rgb(var(--accent-rgb) / 0.22); color: inherit;
+  width: 18px; height: 18px; border-radius: 50%; cursor: pointer; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem;
+}
+.chip-remove:hover { background: rgb(var(--accent-rgb) / 0.35); }
+
 .placeholder-legend code {
   font-family: var(--font-mono); font-size: 0.78rem;
   background: var(--fill); padding: 1px 5px; border-radius: 4px; margin: 0 1px;
