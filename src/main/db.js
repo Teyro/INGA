@@ -42,6 +42,12 @@ const NATIVE_TABLES = {
   Mandant: 'MandantNi',
   Benutzer: 'BenutzerNi',
   Fachber: 'FachberNi',
+  // Ursprünglich reine Legacy-Passthrough-Tabellen (INGA "verstand" sie
+  // nicht, reichte sie nur unverändert durch) – seit dem Standort- und dem
+  // erweiterten Status-Filter (Abschnitt 5) braucht INGA sie aktiv als
+  // Stammdaten, siehe Migration Version 4 in MIGRATIONS unten.
+  StandOrt: 'StOrtNi',
+  Nichtverf: 'NichtVfNi',
 };
 
 // StatMedien ist im Original eine abgeleitete Momentaufnahme der laufenden
@@ -138,7 +144,7 @@ function createSchema(db) {
  *       db.exec(`CREATE TABLE IF NOT EXISTS ferien ( ... )`);
  *     } }
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const MIGRATIONS = [
   {
     version: 2,
@@ -168,6 +174,46 @@ const MIGRATIONS = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_gruppe ON "Leser" ("LeserGruNi")`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_zweig ON "Leser" ("ZweigId")`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_leser_sperrung ON "Leser" ("SperrungNi")`);
+    },
+  },
+  {
+    version: 4,
+    beschreibung:
+      'StandOrt/Nichtverf werden echte Stammdaten-Tabellen statt nur Legacy-Passthrough (Standort- und erweiterter Status-Filter)',
+    up(db) {
+      // Beide Tabellen waren bisher reiner Legacy-Passthrough (INGA "verstand"
+      // sie nicht, reichte sie beim Import/Export nur unverändert als JSON in
+      // legacy_rows durch, siehe LEGACY_TABLES) – für den neuen Standort- und
+      // Status-Filter (Abschnitt 5) braucht INGA sie jetzt aktiv als
+      // Stammdaten, genau wie MedArt/Zweig/Systematik. createSchema() legt sie
+      // für neue Datenbanken über NATIVE_TABLES bereits an; hier zusätzlich
+      // idempotent (falls diese Migration vor einem createSchema-Update
+      // greift) UND mit Übernahme bereits vorhandener Altdaten.
+      for (const table of ['StandOrt', 'Nichtverf']) {
+        const pk = NATIVE_TABLES[table];
+        const columns = TABLES[table];
+        const defs = columns.map((col) => (col === pk ? `${quoteIdent(col)} INTEGER PRIMARY KEY` : quoteIdent(col)));
+        db.exec(`CREATE TABLE IF NOT EXISTS ${quoteIdent(table)} (${defs.join(', ')})`);
+
+        // Daten aus einem früheren Import (dort noch als opake JSON-Zeilen
+        // unter legacy_rows abgelegt) übernehmen, damit ein bereits
+        // bestehender Bestand nichts verliert.
+        const vorhandene = db.prepare(`SELECT data FROM legacy_rows WHERE table_name = ? ORDER BY seq`).all(table);
+        if (vorhandene.length) {
+          const stmt = db.prepare(
+            `INSERT OR IGNORE INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(', ')})
+             VALUES (${columns.map((c) => `@${c}`).join(', ')})`
+          );
+          for (const zeile of vorhandene) {
+            const parsed = JSON.parse(zeile.data);
+            const params = {};
+            for (const c of columns) params[c] = parsed[c] === '' || parsed[c] === undefined ? null : parsed[c];
+            stmt.run(params);
+          }
+          db.prepare(`DELETE FROM legacy_rows WHERE table_name = ?`).run(table);
+          db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
+        }
+      }
     },
   },
 ];

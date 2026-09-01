@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('inga', {
 
   katalog: {
     search: (filter, seitenOptionen) => ipcRenderer.invoke('katalog:search', filter, seitenOptionen),
+    ueberfaelligeNi: () => ipcRenderer.invoke('katalog:ueberfaellige-ni'),
     get: (katalogNi) => ipcRenderer.invoke('katalog:get', katalogNi),
     save: (row) => ipcRenderer.invoke('katalog:save', row),
     delete: (katalogNi) => ipcRenderer.invoke('katalog:delete', katalogNi),
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld('inga', {
 
   leser: {
     search: (filter, seitenOptionen) => ipcRenderer.invoke('leser:search', filter, seitenOptionen),
+    jahrgaenge: () => ipcRenderer.invoke('leser:jahrgaenge'),
     get: (leserNi) => ipcRenderer.invoke('leser:get', leserNi),
     save: (row) => ipcRenderer.invoke('leser:save', row),
     delete: (leserNi) => ipcRenderer.invoke('leser:delete', leserNi),

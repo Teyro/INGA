@@ -71,3 +71,32 @@ test('eine fällige Migration läuft, sichert vorher die Datenbank und verwirft 
     MIGRATIONS.pop(); // Testzustand nicht in andere Tests durchsickern lassen
   }
 });
+
+test('Migration Version 4: StandOrt-Altdaten aus legacy_rows (Perpustakaan-Import vor dieser Version) gehen beim Upgrade nicht verloren', () => {
+  const dir = tmpDir();
+
+  // Erster Start (aktuelle Version): legt die native StandOrt-Tabelle bereits
+  // leer an. Für den Test wird der Zustand einer ÄLTEREN INGA-Version
+  // nachgestellt, in der StandOrt noch reiner Legacy-Passthrough war: die
+  // native Tabelle leeren, den Altbestand stattdessen als JSON in
+  // legacy_rows ablegen (genau wie es ein Perpustakaan-Import vor Version 4
+  // getan hätte) und die gespeicherte Schema-Version auf 3 zurücksetzen.
+  let db = openDatabase(dir);
+  db.prepare(`DELETE FROM "StandOrt"`).run();
+  db.prepare(`INSERT INTO legacy_rows (table_name, seq, data) VALUES ('StandOrt', 0, ?)`).run(
+    JSON.stringify({ StOrtNi: '7', StOrtBz: 'Regal Sachbücher', position: '1' })
+  );
+  db.prepare(`UPDATE inga_meta SET value = '3' WHERE key = 'schema_version'`).run();
+  db.close();
+
+  // Zweiter Start: Migration Version 4 ist jetzt fällig und muss die
+  // Altdaten in die native Tabelle übernehmen.
+  db = openDatabase(dir);
+  assert.equal(gespeicherteSchemaVersion(db), SCHEMA_VERSION);
+  const standort = db.prepare(`SELECT * FROM "StandOrt" WHERE "StOrtNi" = 7`).get();
+  assert.ok(standort, 'StandOrt-Altdatensatz muss in die native Tabelle übernommen werden');
+  assert.equal(standort.StOrtBz, 'Regal Sachbücher');
+  const uebrig = db.prepare(`SELECT COUNT(*) AS n FROM legacy_rows WHERE table_name = 'StandOrt'`).get();
+  assert.equal(uebrig.n, 0, 'nach der Übernahme darf nichts mehr doppelt in legacy_rows stehen');
+  db.close();
+});

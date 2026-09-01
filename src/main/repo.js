@@ -51,16 +51,40 @@ function seitenGrenzen({ seite = 1, proSeite = STANDARD_SEITENGROESSE } = {}) {
  * Gesamtzahl bei aktivem Verfügbarkeitsfilter falsch bzw. eine Seite könnte
  * nach dem Filtern weniger Zeilen zeigen, als sie eigentlich sollte.
  */
-function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, seitenOptionen = {}) {
+function searchKatalog(
+  db,
+  { query, medArtKb, systemId, standortNi, klassenstufe, verfuegbarkeit, katalogNiIn } = {},
+  seitenOptionen = {}
+) {
+  if (Array.isArray(katalogNiIn) && katalogNiIn.length === 0) {
+    const { alle, groesse, seite } = seitenGrenzen(seitenOptionen);
+    return { rows: [], gesamt: 0, seite, proSeite: alle ? 'alle' : groesse };
+  }
+
   const bedingungen = ['1=1'];
   const params = [];
   if (query) {
-    bedingungen.push(`(k."Titel" LIKE ? OR k."Autor" LIKE ? OR k."ISBN" LIKE ? OR k."EAN" LIKE ? OR k."Schlagwort" LIKE ?)`);
+    // Deckt auch Verlag und die Signatur/den Barcode einzelner Exemplare ab
+    // (Perpustakaan hat kein Signaturfeld auf Katalogebene – das steht am
+    // Exemplar, siehe Medien.MedienEtik), nicht nur Titel/Autor/ISBN/Schlagwort.
+    bedingungen.push(`(
+      k."Titel" LIKE ? OR k."Autor" LIKE ? OR k."ISBN" LIKE ? OR k."EAN" LIKE ? OR k."Schlagwort" LIKE ? OR k."Verlag" LIKE ?
+      OR EXISTS (SELECT 1 FROM "Medien" mq WHERE mq."KatalogNi" = k."KatalogNi" AND mq."MedienEtik" LIKE ?)
+    )`);
     const like = `%${query}%`;
-    params.push(like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like);
   }
   if (medArtKb) { bedingungen.push(`k."MedArtKb" = ?`); params.push(medArtKb); }
   if (systemId) { bedingungen.push(`k."SystemId" = ?`); params.push(systemId); }
+  if (klassenstufe) { bedingungen.push(`k."Klassenstu" = ?`); params.push(klassenstufe); }
+  if (standortNi) {
+    bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mo WHERE mo."KatalogNi" = k."KatalogNi" AND mo."StOrtNi" = ?)`);
+    params.push(standortNi);
+  }
+  if (Array.isArray(katalogNiIn)) {
+    bedingungen.push(`k."KatalogNi" IN (${katalogNiIn.map(() => '?').join(',')})`);
+    params.push(...katalogNiIn);
+  }
   if (verfuegbarkeit === 'verfuegbar') {
     bedingungen.push(`EXISTS (
       SELECT 1 FROM "Medien" mv WHERE mv."KatalogNi" = k."KatalogNi"
@@ -72,7 +96,16 @@ function searchKatalog(db, { query, medArtKb, systemId, verfuegbarkeit } = {}, s
       SELECT 1 FROM "Medien" mv2 WHERE mv2."KatalogNi" = k."KatalogNi"
         AND NOT EXISTS (SELECT 1 FROM "Ausleihe" av2 WHERE av2."MedienNi" = mv2."MedienNi" AND av2."Rueckgabe" IS NULL)
     )`);
+  } else if (verfuegbarkeit === 'nicht_verfuegbar') {
+    // "Nicht verfügbar" (z. B. vermisst, in Reparatur – siehe Stammdaten-
+    // Tabelle Nichtverf): mindestens ein Exemplar mit gesetztem NichtVfNi.
+    bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mn WHERE mn."KatalogNi" = k."KatalogNi" AND mn."NichtVfNi" IS NOT NULL)`);
   }
+  // "überfällig" hängt an der ferienbewussten Fälligkeitsberechnung (siehe
+  // ueberfaelligeAusleihen) und lässt sich nicht sinnvoll ein zweites Mal in
+  // SQL nachbilden – der Aufrufer ermittelt die betroffenen KatalogNi einmal
+  // zentral und übergibt sie hier als katalogNiIn (siehe oben), genau wie bei
+  // searchLeser/leserNiIn.
   const where = bedingungen.join(' AND ');
 
   const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM "Katalog" k WHERE ${where}`).get(...params).n;
@@ -171,7 +204,7 @@ function exemplarStatus(db, medienNi) {
  * Zählung und Seitennavigation trotzdem korrekt bleiben). Eine leere
  * `leserNiIn`-Liste bedeutet "keine Treffer" statt "Filter ignorieren".
  */
-function searchLeser(db, { query, leserGruNi, zweigId, gesperrt, leserNiIn } = {}, seitenOptionen = {}) {
+function searchLeser(db, { query, leserGruNi, zweigId, jahrgang, aktiveAusleihen, gesperrt, leserNiIn } = {}, seitenOptionen = {}) {
   if (Array.isArray(leserNiIn) && leserNiIn.length === 0) {
     const { alle, groesse, seite } = seitenGrenzen(seitenOptionen);
     return { rows: [], gesamt: 0, seite, proSeite: alle ? 'alle' : groesse };
@@ -186,10 +219,14 @@ function searchLeser(db, { query, leserGruNi, zweigId, gesperrt, leserNiIn } = {
   }
   if (leserGruNi) { bedingungen.push(`l."LeserGruNi" = ?`); params.push(leserGruNi); }
   if (zweigId) { bedingungen.push(`l."ZweigId" = ?`); params.push(zweigId); }
+  if (jahrgang) { bedingungen.push(`l."Jahrgang" = ?`); params.push(jahrgang); }
   if (Array.isArray(leserNiIn)) {
     bedingungen.push(`l."LeserNi" IN (${leserNiIn.map(() => '?').join(',')})`);
     params.push(...leserNiIn);
   }
+  const offeneAusleihenAusdruck = `(SELECT COUNT(*) FROM "Ausleihe" ao WHERE ao."LeserNi" = l."LeserNi" AND ao."Rueckgabe" IS NULL)`;
+  if (aktiveAusleihen === '0') bedingungen.push(`${offeneAusleihenAusdruck} = 0`);
+  else if (aktiveAusleihen === '1+') bedingungen.push(`${offeneAusleihenAusdruck} > 0`);
   const gesperrtAusdruck = `(
     (l."SperrungNi" IS NOT NULL AND l."SperrungNi" != 0 AND EXISTS (SELECT 1 FROM "Sperrung" s WHERE s."SperrungNi" = l."SperrungNi"))
     OR (l."AusleihBis" IS NOT NULL AND l."AusleihBis" != '' AND substr(l."AusleihBis", 1, 10) < ?)
@@ -535,6 +572,11 @@ function ueberfaelligeAusleihen(db, einstellungen) {
   return ergebnis;
 }
 
+/** KatalogNi mit mindestens einem aktuell überfälligen Exemplar – für den Status-Filter "überfällig" in searchKatalog (siehe katalogNiIn dort). */
+function katalogNiMitUeberfaelligemExemplar(db, einstellungen) {
+  return [...new Set(ueberfaelligeAusleihen(db, einstellungen).map((a) => a.KatalogNi))];
+}
+
 /**
  * Überfällige Ausleihen mit der passenden Mahnstufe (nach Tagen überfällig).
  * Nutzt Mahnstufen aus den Einstellungen; Ausleihen, die noch keine Stufe
@@ -677,10 +719,18 @@ function medArtFristSpeichern(db, medArtKb, { frist, fristVerl }) {
 
 function stammdaten(db) {
   const out = {};
-  for (const table of ['MedArt', 'Zweig', 'Systematik', 'Sprache', 'Reihe', 'LeserGrupp', 'AuslGrupp', 'Sperrung', 'SperrKat', 'Fachber']) {
+  for (const table of ['MedArt', 'Zweig', 'Systematik', 'Sprache', 'Reihe', 'LeserGrupp', 'AuslGrupp', 'Sperrung', 'SperrKat', 'Fachber', 'StandOrt']) {
     out[table] = db.prepare(`SELECT * FROM ${quoteIdent(table)}`).all();
   }
   return out;
+}
+
+/** Distinkte, tatsächlich vergebene Klassen/Jahrgänge – für den Klassenfilter in der Nutzerliste (kein eigenes Stammdatum, Jahrgang ist ein Freitextfeld). */
+function distinctJahrgaenge(db) {
+  return db
+    .prepare(`SELECT DISTINCT "Jahrgang" AS jahrgang FROM "Leser" WHERE "Jahrgang" IS NOT NULL AND "Jahrgang" != '' ORDER BY "Jahrgang"`)
+    .all()
+    .map((r) => r.jahrgang);
 }
 
 function kennzahlen(db) {
@@ -716,6 +766,7 @@ module.exports = {
   verschiebeOffeneAusleihen,
   ueberfaelligeAusleihen,
   ueberfaelligeMitStufe,
+  katalogNiMitUeberfaelligemExemplar,
   vorschauFristenMitFerien,
   berechneRueckgabedatum,
   berechneRueckgabedatumAusRow,
@@ -728,6 +779,7 @@ module.exports = {
   setCover,
   removeCover,
   stammdaten,
+  distinctJahrgaenge,
   medArtFristSpeichern,
   kennzahlen,
 };

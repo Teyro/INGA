@@ -381,6 +381,7 @@ function registerIpc() {
   ipcMain.handle('settings:read', () => settings());
 
   ipcMain.handle('katalog:search', (_e, filter, seitenOptionen) => repo.searchKatalog(db, filter, seitenOptionen));
+  ipcMain.handle('katalog:ueberfaellige-ni', () => repo.katalogNiMitUeberfaelligemExemplar(db, settings()));
   ipcMain.handle('katalog:get', (_e, katalogNi) => repo.getKatalog(db, katalogNi));
   ipcMain.handle('katalog:save', (_e, row) => repo.saveKatalog(db, row));
   ipcMain.handle('katalog:delete', (_e, katalogNi) => repo.deleteKatalog(db, katalogNi));
@@ -395,6 +396,7 @@ function registerIpc() {
   ipcMain.handle('medium:find-etikett', (_e, etikett) => repo.findExemplarByEtikett(db, etikett));
 
   ipcMain.handle('leser:search', (_e, filter, seitenOptionen) => repo.searchLeser(db, filter, seitenOptionen));
+  ipcMain.handle('leser:jahrgaenge', () => repo.distinctJahrgaenge(db));
   ipcMain.handle('leser:get', (_e, leserNi) => repo.getLeser(db, leserNi));
   ipcMain.handle('leser:save', (_e, row) => repo.saveLeser(db, row));
   ipcMain.handle('leser:delete', (_e, leserNi) => repo.deleteLeser(db, leserNi));
