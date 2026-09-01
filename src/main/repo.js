@@ -4,6 +4,7 @@
 
 const { upsert, nextId, quoteIdent, TABLES } = require('./db');
 const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz } = require('./date-utils');
+const ferien = require('./ferien');
 
 // todayStr/nowStamp/addDays hießen früher so und rechneten über
 // `new Date().toISOString()` – das liefert das UTC-Datum statt des lokalen
@@ -229,13 +230,29 @@ function fristTageGesamt({ basisFristTage, verlaengerungFristTage, anzVerl = 0, 
 }
 
 /**
+ * Verschiebt ein rein aus der Frist errechnetes Datum ggf. auf den nächsten
+ * Schultag (siehe ferien.js) und hängt bei Bedarf einen nachvollziehbaren
+ * Hinweis an ("+12 Tage wegen Herbstferien"). `hinweise` wird nicht mutiert,
+ * sondern eine neue Liste zurückgegeben.
+ */
+function mitFerienverschiebung(naivesDatum, ferienListe, hinweise) {
+  const { datum, namen } = ferien.verschobenesDatumMitHinweis(naivesDatum, ferienListe);
+  if (!namen.length) return { datum, hinweise };
+  const verschobenTage = tageDifferenz(naivesDatum, datum);
+  const hinweisText = `+${verschobenTage} Tag${verschobenTage === 1 ? '' : 'e'} wegen ${namen.join(' und ')}`;
+  return { datum, hinweise: [...hinweise, hinweisText] };
+}
+
+/**
  * Zentrale Fälligkeitsberechnung: Basisfrist (Medienart, sonst die
  * Vorgabe aus den Einstellungen) + je Verlängerung die Verlängerungsdauer
- * (ebenfalls Medienart vor Vorgabe) + globale Fristverschiebung. Wird von
- * der Ausleihe, der Verlängerung und (ab der Ferienverwaltung) auch von der
- * feiertagsbewussten Verschiebung genutzt – nie an mehreren Stellen kopieren.
- * Für Einzelabfragen (ein DB-Zugriff für Katalog+Medienart); für Listen siehe
- * berechneRueckgabedatumAusRow, die ohne Zusatzabfrage auskommt.
+ * (ebenfalls Medienart vor Vorgabe) + globale Fristverschiebung, danach bei
+ * Bedarf auf den nächsten Schultag verschoben (Ferien/Feiertage/Wochenende,
+ * siehe ferien.js). Wird von der Ausleihe, der Verlängerung und der
+ * Überfälligkeits-Ermittlung genutzt – nie an mehreren Stellen kopieren.
+ * Für Einzelabfragen (DB-Zugriff für Katalog+Medienart+Ferienliste); für
+ * Listen siehe berechneRueckgabedatumAusRow, die ohne Zusatzabfrage je Zeile
+ * auskommt.
  */
 function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstellungen }) {
   const katalog = katalogNi ? getKatalog(db, katalogNi) : null;
@@ -246,18 +263,26 @@ function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstel
     anzVerl,
     offsetTage: einstellungen.leihfristOffsetTage,
   });
-  return { datum: addDays(auslDatum, gesamt), tageGesamt: gesamt, hinweise };
+  const naiv = addDays(auslDatum, gesamt);
+  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(naiv, ferien.listeFerien(db), hinweise);
+  return { datum, tageGesamt: gesamt, hinweise: hinweiseMitFerien };
 }
 
-/** Wie berechneRueckgabedatum, aber aus einer bereits geladenen Zeile von alleOffenenAusleihen – ohne DB-Zugriff. */
-function berechneRueckgabedatumAusRow(row, einstellungen) {
+/**
+ * Wie berechneRueckgabedatum, aber aus einer bereits geladenen Zeile von
+ * alleOffenenAusleihen – ohne DB-Zugriff je Aufruf. `ferienListe` einmal pro
+ * Listenaufruf laden (siehe ueberfaelligeAusleihen) statt pro Zeile neu.
+ */
+function berechneRueckgabedatumAusRow(row, einstellungen, ferienListe = []) {
   const { gesamt, hinweise } = fristTageGesamt({
     basisFristTage: istGesetzt(row.medArtFrist) ? row.medArtFrist : einstellungen.leihfristTage,
     verlaengerungFristTage: istGesetzt(row.medArtFristVerl) ? row.medArtFristVerl : einstellungen.verlaengerungDauerTage,
     anzVerl: row.AnzVerl,
     offsetTage: einstellungen.leihfristOffsetTage,
   });
-  return { datum: addDays(row.AuslDatum, gesamt), tageGesamt: gesamt, hinweise };
+  const naiv = addDays(row.AuslDatum, gesamt);
+  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(naiv, ferienListe, hinweise);
+  return { datum, tageGesamt: gesamt, hinweise: hinweiseMitFerien };
 }
 
 /**
@@ -370,15 +395,22 @@ function verschiebeOffeneAusleihen(db, tage) {
  */
 function ueberfaelligeAusleihen(db, einstellungen) {
   const offen = alleOffenenAusleihen(db);
+  const ferienListe = ferien.listeFerien(db);
   const heute = heuteISO();
   const ergebnis = [];
   for (const a of offen) {
     // Kein DB-Zugriff je Zeile mehr (a.medArtFrist/medArtFristVerl kommen
-    // schon aus dem JOIN in alleOffenenAusleihen) – wichtig, weil diese
-    // Schleife bei jedem Dashboard-/Listen-Aufruf über alle offenen
-    // Ausleihen läuft.
-    const { datum: faelligAm, hinweise } = berechneRueckgabedatumAusRow(a, einstellungen);
-    const tageUeberfaellig = tageDifferenz(faelligAm, heute);
+    // schon aus dem JOIN in alleOffenenAusleihen, ferienListe wird einmal für
+    // die ganze Liste geladen) – wichtig, weil diese Schleife bei jedem
+    // Dashboard-/Listen-Aufruf über alle offenen Ausleihen läuft.
+    const { datum: faelligAm, hinweise } = berechneRueckgabedatumAusRow(a, einstellungen, ferienListe);
+    // "Während der Ferien keine Überfälligkeit zählen": Ferientage (und
+    // Wochenenden) zwischen Fälligkeit und heute zählen dann nicht als
+    // Verzugstage – ein Kind, das wegen der Ferien nicht in die Bücherei
+    // kann, soll dafür nicht "bestraft" werden.
+    const tageUeberfaellig = einstellungen.ueberfaelligTageOhneFerien
+      ? ferien.schultageZwischen(faelligAm, heute, ferienListe)
+      : tageDifferenz(faelligAm, heute);
     if (tageUeberfaellig <= 0) continue;
     ergebnis.push({ ...a, tageUeberfaellig, faelligAm, fristHinweise: hinweise });
   }
@@ -404,6 +436,47 @@ function ueberfaelligeMitStufe(db, einstellungen) {
     });
     if (stufe) ergebnis.push({ ...a, stufe, stufeIndex, gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen) });
   }
+  return ergebnis;
+}
+
+/**
+ * Vorschau für den Button „Fristen anhand der Ferien neu berechnen“: für
+ * jede offene Ausleihe wird verglichen, welches Datum ohne Ferienlogik
+ * fällig wäre gegenüber dem tatsächlichen, ferienbewussten Fälligkeitsdatum.
+ * Nur Ausleihen, bei denen sich dadurch etwas ändert, tauchen in der Liste
+ * auf. Es wird bewusst NICHTS gespeichert: INGA berechnet Fälligkeiten immer
+ * live aus Ausleihdatum + Einstellungen + Ferienliste, es gibt kein
+ * gespeichertes "altes" Rückgabedatum, das aktualisiert werden müsste – neue
+ * oder geänderte Ferieneinträge wirken automatisch auf jede Anzeige. Diese
+ * Funktion dient allein dazu, den Kolleginnen die Auswirkung VOR dem
+ * nächsten Blick in die Rückgabe-/Mahnliste sichtbar zu machen.
+ */
+function vorschauFristenMitFerien(db, einstellungen) {
+  const offen = alleOffenenAusleihen(db);
+  const ferienListe = ferien.listeFerien(db);
+  const ergebnis = [];
+  for (const a of offen) {
+    const { gesamt } = fristTageGesamt({
+      basisFristTage: istGesetzt(a.medArtFrist) ? a.medArtFrist : einstellungen.leihfristTage,
+      verlaengerungFristTage: istGesetzt(a.medArtFristVerl) ? a.medArtFristVerl : einstellungen.verlaengerungDauerTage,
+      anzVerl: a.AnzVerl,
+      offsetTage: einstellungen.leihfristOffsetTage,
+    });
+    const ohneFerien = addDays(a.AuslDatum, gesamt);
+    const { datum: mitFerien, namen } = ferien.verschobenesDatumMitHinweis(ohneFerien, ferienListe);
+    if (mitFerien === ohneFerien) continue;
+    ergebnis.push({
+      id: a.id,
+      Titel: a.Titel,
+      Nachname: a.Nachname,
+      Vorname: a.Vorname,
+      faelligOhneFerien: ohneFerien,
+      faelligMitFerien: mitFerien,
+      differenzTage: tageDifferenz(ohneFerien, mitFerien),
+      grund: namen.join(' und '),
+    });
+  }
+  ergebnis.sort((x, y) => x.faelligMitFerien.localeCompare(y.faelligMitFerien));
   return ergebnis;
 }
 
@@ -525,6 +598,7 @@ module.exports = {
   verschiebeOffeneAusleihen,
   ueberfaelligeAusleihen,
   ueberfaelligeMitStufe,
+  vorschauFristenMitFerien,
   berechneRueckgabedatum,
   berechneRueckgabedatumAusRow,
   berechneMahngebuehr,

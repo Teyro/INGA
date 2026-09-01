@@ -48,8 +48,15 @@ test('berechneRueckgabedatum: globale Fristverschiebung wirkt und wird als Hinwe
     anzVerl: 0,
     einstellungen: { ...basisEinstellungen, leihfristOffsetTage: 12 },
   });
-  assert.equal(datum, '2026-10-31');
+  // 2026-10-12 + 7 + 12 = 2026-10-31, ein Samstag – die Ferienverwaltung
+  // verschiebt jede Fälligkeit zusätzlich vom Wochenende auf den nächsten
+  // Schultag (hier: Montag, 2026-11-02, weil auch der 1.11. ein Sonntag ist).
+  // Ohne eingetragene Ferien bleibt der bisherige Fristverschiebungs-Hinweis
+  // trotzdem erhalten, nur ohne zusätzlichen Ferien-Hinweis (siehe
+  // test/ferien.test.mjs für die Ferien-Hinweise selbst).
+  assert.equal(datum, '2026-11-02');
   assert.ok(hinweise.some((h) => h.includes('12 Tage')));
+  assert.ok(!hinweise.some((h) => h.includes('wegen')), 'reine Wochenendverschiebung braucht keinen Ferien-Hinweis');
   db.close();
 });
 

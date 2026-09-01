@@ -138,8 +138,26 @@ function createSchema(db) {
  *       db.exec(`CREATE TABLE IF NOT EXISTS ferien ( ... )`);
  *     } }
  */
-const SCHEMA_VERSION = 1;
-const MIGRATIONS = [];
+const SCHEMA_VERSION = 2;
+const MIGRATIONS = [
+  {
+    version: 2,
+    beschreibung: 'Ferien-Tabelle für die Ferienverwaltung (manuell, ICS-Import, API-Abruf)',
+    up(db) {
+      // Rein INGA-intern (kein Perpustakaan-Feld, siehe inga_covers) – deshalb
+      // eigene, sprechende Spaltennamen statt der Perpustakaan-Konvention.
+      db.exec(`CREATE TABLE IF NOT EXISTS ferien (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bezeichnung TEXT NOT NULL,
+        startdatum TEXT NOT NULL,
+        enddatum TEXT NOT NULL,
+        typ TEXT NOT NULL DEFAULT 'Ferien',
+        quelle TEXT NOT NULL DEFAULT 'manuell'
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_ferien_zeitraum ON ferien (startdatum, enddatum)`);
+    },
+  },
+];
 
 function gespeicherteSchemaVersion(db) {
   const row = db.prepare(`SELECT value FROM inga_meta WHERE key = 'schema_version'`).get();

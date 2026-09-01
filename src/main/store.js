@@ -123,6 +123,12 @@ const DEFAULT_SETTINGS = {
   // berechnete Fälligkeit – z. B. +14 für eine Ferienschließzeit. Betrifft
   // offene und künftige Ausleihen sofort, ohne AuslDatum zu verändern.
   leihfristOffsetTage: 0,
+  // Ferientage (und Wochenenden) zwischen Fälligkeit und heute zählen dann
+  // nicht als Verzugstage – siehe ferien.js/schultageZwischen(). Betrifft nur
+  // die ANZEIGE der Verzugstage (und damit Mahnstufen/-gebühren); die
+  // Fälligkeit selbst wird unabhängig davon immer schon auf den nächsten
+  // Schultag verschoben (siehe berechneRueckgabedatum).
+  ueberfaelligTageOhneFerien: false,
 
   // Mahnwesen
   mahnstufen: [
