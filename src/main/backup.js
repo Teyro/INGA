@@ -94,7 +94,4 @@ function listeBackups(backupDir) {
     });
 }
 
-// listeBackups() wird aktuell nirgends aufgerufen – vorgesehen für eine
-// "Backups verwalten"-Ansicht in den Einstellungen (noch nicht gebaut, siehe
-// Abschlussbericht), deshalb bewusst exportiert statt entfernt.
 module.exports = { sichereDatenbankSync, backupHeuteVorhanden, listeBackups };

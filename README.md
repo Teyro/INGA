@@ -134,6 +134,11 @@ Mahnliste.
   gefolgt von einem Feiertag). Der Grund erscheint als Hinweis in der
   Rückgabeliste ("+12 Tage wegen Herbstferien"). Zusätzlich abschaltbar:
   Ferientage als Verzugstage nicht mitzählen
+- **Datensicherung**: automatisches Backup einmal täglich beim Programmstart
+  und vor jeder Migration (Rotation: die letzten 10 bleiben erhalten), dazu
+  „Backup jetzt“ und „Sicherung einspielen“ (aus der Liste oder aus einer
+  beliebigen Datei) direkt in den Einstellungen – Einspielen sichert vorher
+  automatisch noch einmal den aktuellen Stand und startet INGA neu
 
 ### Import & Export im Perpustakaan-Format
 

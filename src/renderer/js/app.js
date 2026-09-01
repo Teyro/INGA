@@ -1333,6 +1333,7 @@ function wireEinstellungen() {
   });
 
   wireFerien();
+  wireBackup();
 }
 
 function zeigeLogoVorschau(dataUrl) {
@@ -1427,6 +1428,7 @@ async function loadEinstellungen() {
   renderMahnstufen();
   renderMedArtFristen();
   loadFerien();
+  loadBackups();
 }
 
 /** Abweichende Fristen je Medienart – kleine Liste direkt in den Einstellungen, kein eigener Bereich nötig. */
@@ -1672,6 +1674,74 @@ function renderFerienNeuberechnenErgebnis(liste) {
   ]);
   box.appendChild(el('p', { class: 'hint' }, [`${liste.length} offene Ausleihe(n) verschieben sich durch die aktuelle Ferienplanung:`]));
   box.appendChild(table);
+}
+
+/* ------------------------------------------------------------- Datensicherung */
+
+function wireBackup() {
+  document.getElementById('backup-jetzt').addEventListener('click', async () => {
+    try {
+      const { liste } = await api.backup.jetzt();
+      renderBackupListe(liste);
+      toast('Backup erstellt.');
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    }
+  });
+
+  document.getElementById('backup-einspielen-datei').addEventListener('click', async () => {
+    if (!confirm('Diese Sicherung über die aktuelle Datenbank kopieren und INGA neu starten? Der aktuelle Stand wird vorher noch einmal automatisch gesichert.')) return;
+    try {
+      await api.backup.einspielenDatei();
+      // Bei Erfolg beendet sich INGA selbst (app.relaunch()) – hier nichts
+      // mehr zu tun. Bei "Abbrechen" im Dateidialog kommt einfach nichts
+      // zurück, ohne Fehler.
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    }
+  });
+}
+
+async function loadBackups() {
+  const liste = await api.backup.liste();
+  renderBackupListe(liste);
+}
+
+function fmtGroesse(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderBackupListe(liste) {
+  const tbody = document.getElementById('backup-tbody');
+  tbody.replaceChildren();
+  if (!liste.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 4 }, [el('div', { class: 'empty small' }, ['Noch keine Sicherungen vorhanden.'])])]));
+    return;
+  }
+  for (const b of liste) {
+    tbody.appendChild(
+      el('tr', {}, [
+        el('td', {}, [b.datei]),
+        el('td', {}, [new Date(b.erstellt).toLocaleString('de-DE')]),
+        el('td', { class: 'num' }, [fmtGroesse(b.groesse)]),
+        el('td', { class: 'actions' }, [
+          el('button', {
+            class: 'button small',
+            onclick: async () => {
+              if (!confirm(`„${b.datei}“ über die aktuelle Datenbank kopieren und INGA neu starten? Der aktuelle Stand wird vorher noch einmal automatisch gesichert.`)) return;
+              try {
+                await api.backup.einspielen(b.datei);
+              } catch (err) {
+                toast(err.message || String(err), 'error');
+              }
+            },
+          }, ['Einspielen']),
+        ]),
+      ])
+    );
+  }
 }
 
 const speichereEinstellungenFormular = debounce(async () => {

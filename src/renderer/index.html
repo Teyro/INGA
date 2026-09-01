@@ -439,6 +439,19 @@
               </div>
             </div>
           </div>
+
+          <div class="section-title">Datensicherung</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“.</p>
+            <div class="row-inline" style="margin:10px 0">
+              <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
+              <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>
+            </div>
+            <table>
+              <thead><tr><th>Datei</th><th>Erstellt</th><th class="num">Größe</th><th class="actions"></th></tr></thead>
+              <tbody id="backup-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 

@@ -31,7 +31,7 @@ const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
-const { sichereDatenbankSync, backupHeuteVorhanden } = require('./backup');
+const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups } = require('./backup');
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
@@ -51,6 +51,8 @@ let splashWindow = null;
 let store = null;
 let db = null;
 let coversDir = null;
+let dbFile = null;
+let backupDir = null;
 let activeStyle = platform.nativeStyle();
 let coverBulkAbgebrochen = false;
 let coverBulkLaeuft = false;
@@ -384,6 +386,31 @@ async function openUmlaufPrintWindow(payload) {
 
 /* -------------------------------------------------------------------- IPC */
 
+/**
+ * Spielt eine Sicherung ein und startet INGA neu. Kopiert `quelle` ERST in
+ * eine temporäre Datei, SOLANGE die laufende Datenbank noch geöffnet ist –
+ * schlägt das fehl (Speicherplatz, Rechte), bleibt die App unberührt
+ * nutzbar und der Fehler kommt sauber über sicher() zurück, statt dass die
+ * Datenbank schon geschlossen wäre. Erst danach wird gesichert, die
+ * laufende Datenbank geschlossen und die temporäre Datei an ihre Stelle
+ * verschoben (ein Verschieben innerhalb desselben Ordners ist auf allen
+ * drei Systemen praktisch atomar). Etwaige WAL-/Journal-Reste der bisher
+ * laufenden Datenbank werden entfernt, damit sie nicht versehentlich auf
+ * die neu eingespielte Datei angewendet werden.
+ */
+async function einspielenUndNeustarten(quelle) {
+  const tmp = `${dbFile}.einspielen-tmp`;
+  await fs.copyFile(quelle, tmp);
+  sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-einspielen' });
+  db.close();
+  await fs.rename(tmp, dbFile);
+  for (const suffix of ['-wal', '-shm', '-journal']) {
+    await fs.unlink(`${dbFile}${suffix}`).catch(() => {});
+  }
+  app.relaunch();
+  app.exit(0);
+}
+
 function registerIpc() {
   ipcMain.handle('bootstrap', () => bootstrapPayload());
 
@@ -666,6 +693,43 @@ function registerIpc() {
     return result.filePath;
   }));
 
+  /* ------------------------------------------------------------ Backups */
+
+  ipcMain.handle('backup:liste', () => listeBackups(backupDir));
+
+  ipcMain.handle('backup:jetzt', sicher(async () => {
+    const pfad = sichereDatenbankSync(db, dbFile, backupDir, { grund: 'manuell' });
+    if (!pfad) throw new Error('Sicherung konnte nicht erstellt werden – bitte Speicherplatz und Schreibrechte prüfen.');
+    return { pfad, liste: listeBackups(backupDir) };
+  }));
+
+  /**
+   * Spielt eine Sicherung ein: sichert vorsorglich noch einmal den
+   * aktuellen Stand (falls die Auswahl ein Versehen war), kopiert die
+   * gewählte Datei über die laufende Datenbank und startet INGA neu – ein
+   * frischer openDatabase()-Aufruf prüft dabei automatisch die
+   * Schema-Version der eingespielten Datei und migriert sie bei Bedarf,
+   * genau wie bei jedem normalen Programmstart.
+   */
+  ipcMain.handle('backup:einspielen', sicher(async (_e, dateiname) => {
+    const quelle = path.join(backupDir, path.basename(String(dateiname || '')));
+    if (path.dirname(quelle) !== backupDir) throw new Error('Ungültige Sicherungsdatei.');
+    await fs.access(quelle).catch(() => {
+      throw new Error('Diese Sicherung wurde nicht gefunden – wurde sie inzwischen gelöscht?');
+    });
+    await einspielenUndNeustarten(quelle);
+  }));
+
+  ipcMain.handle('backup:einspielen-datei', sicher(async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Sicherung einspielen',
+      properties: ['openFile'],
+      filters: [{ name: 'INGA-Datenbank', extensions: ['sqlite3'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    await einspielenUndNeustarten(result.filePaths[0]);
+  }));
+
   ipcMain.handle('print:now', (event, options = {}) => {
     const contents = event.sender;
     return new Promise((resolve) => {
@@ -734,8 +798,8 @@ if (!gotLock) {
 
     // Einmal täglich beim ersten Start ein Backup – zusätzlich zum
     // automatischen Backup vor einer fälligen Migration (siehe db.js).
-    const dbFile = path.join(userDataDir, 'inga.sqlite3');
-    const backupDir = path.join(userDataDir, 'backups');
+    dbFile = path.join(userDataDir, 'inga.sqlite3');
+    backupDir = path.join(userDataDir, 'backups');
     if (!backupHeuteVorhanden(backupDir, 'start')) {
       sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
     }

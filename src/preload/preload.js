@@ -99,6 +99,13 @@ contextBridge.exposeInMainWorld('inga', {
     exportieren: () => ipcRenderer.invoke('bestand:export'),
   },
 
+  backup: {
+    liste: () => ipcRenderer.invoke('backup:liste'),
+    jetzt: () => ipcRenderer.invoke('backup:jetzt'),
+    einspielen: (dateiname) => ipcRenderer.invoke('backup:einspielen', dateiname),
+    einspielenDatei: () => ipcRenderer.invoke('backup:einspielen-datei'),
+  },
+
   print: {
     now: (options) => ipcRenderer.invoke('print:now', options),
     pdf: (options) => ipcRenderer.invoke('print:pdf', options),
