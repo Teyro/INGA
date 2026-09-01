@@ -483,12 +483,51 @@ async function katalogExport(art) {
 }
 
 /** Cover-Panel für die Buchdetailseite: Vorschau, Herunterladen (per ISBN), Hochladen, Entfernen. */
+/**
+ * ISBN-Nachschlagen (offene Quelle: Open Library) für neue UND bestehende
+ * Titel – füllt Titel/Autor/Verlag/Jahr direkt in die gerade offenen
+ * Sheet-Felder ein, speichert aber NICHTS von sich aus: erst ein
+ * anschließender Klick auf "Speichern" übernimmt die Werte wirklich
+ * (manuelle Bestätigung, wie im Auftrag verlangt).
+ */
+function buildIsbnLookupBlock() {
+  const eingabe = el('input', { type: 'text', placeholder: 'ISBN eingeben', style: { maxWidth: '160px' } });
+  const btn = el('button', { class: 'button small' }, ['Buchdaten übernehmen']);
+  const status = el('p', { class: 'hint', style: { marginTop: '4px' } }, []);
+  btn.addEventListener('click', async () => {
+    const isbnFeld = document.getElementById('f-ISBN');
+    const isbn = (eingabe.value.trim() || isbnFeld?.value.trim() || '');
+    if (!isbn) { status.textContent = 'Bitte eine ISBN eingeben.'; return; }
+    btn.disabled = true;
+    status.textContent = 'Suche …';
+    try {
+      const result = await api.katalog.isbnNachschlagen(isbn);
+      if (!result.ok) { status.textContent = `Keine Buchdaten gefunden (${result.grund || 'unbekannt'}).`; return; }
+      for (const [feld, wert] of Object.entries(result.daten)) {
+        if (!wert) continue;
+        const input = document.getElementById(`f-${feld}`);
+        if (input) input.value = wert;
+      }
+      if (isbnFeld && !isbnFeld.value) isbnFeld.value = isbn;
+      status.textContent = 'Übernommen – bitte prüfen und speichern.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return el('div', { class: 'isbn-lookup', style: { marginTop: '12px' } }, [
+    el('div', { class: 'section-title' }, ['Per ISBN nachschlagen']),
+    el('div', { class: 'row-inline' }, [eingabe, btn]),
+    status,
+  ]);
+}
+
 function buildCoverPanel(row) {
   const frame = el('div', { class: 'cover-frame' }, [el('span', { class: 'cover-placeholder' }, ['📕'])]);
   const panel = el('div', { class: 'cover-panel' }, [frame]);
 
   if (!row?.KatalogNi) {
     panel.appendChild(el('p', { class: 'hint' }, ['Erst speichern, dann lässt sich ein Cover laden.']));
+    panel.appendChild(buildIsbnLookupBlock());
     return panel;
   }
 
@@ -522,6 +561,7 @@ function buildCoverPanel(row) {
   });
 
   panel.appendChild(el('div', { class: 'cover-actions' }, [downloadBtn, uploadBtn, removeBtn]));
+  panel.appendChild(buildIsbnLookupBlock());
   refreshFrame();
   return panel;
 }

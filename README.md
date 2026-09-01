@@ -74,6 +74,10 @@ Ferienschließzeit.
   Sammel-Download für den ganzen Bestand (mit Fortschrittsanzeige, unter
   „Import / Export“)
 - Ausleihstatistik je Titel („insgesamt N× ausgeliehen“)
+- **Buchdaten per ISBN nachschlagen**: Titel/Untertitel/Autor/Verlag/Jahr
+  über [Open Library](https://openlibrary.org/dev/docs/api/books) laden –
+  füllt nur das gerade offene Formular, gespeichert wird erst durch
+  bewusstes Bestätigen (Klick auf „Speichern“)
 
 ### Nutzerverwaltung
 

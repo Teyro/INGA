@@ -35,6 +35,7 @@ const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups } = require('./
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
+const { holeBuchdaten } = require('./isbn');
 
 /** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
 function sichererDateiname(name) {
@@ -435,6 +436,7 @@ function registerIpc() {
   ipcMain.handle('katalog:exemplare-mit-status', (_e, katalogNi) => repo.exemplareMitStatusFuer(db, katalogNi));
   ipcMain.handle('katalog:top-ausgeliehen', (_e, limit) => repo.topAusgelieheneBuecher(db, limit || 10));
   ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
+  ipcMain.handle('katalog:isbn-nachschlagen', (_e, isbn) => holeBuchdaten(isbn));
 
   ipcMain.handle('medium:save', sicher((_e, row) => repo.saveMedium(db, row)));
   ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi)));

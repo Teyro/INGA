@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('inga', {
     exemplareMitStatus: (katalogNi) => ipcRenderer.invoke('katalog:exemplare-mit-status', katalogNi),
     topAusgeliehen: (limit) => ipcRenderer.invoke('katalog:top-ausgeliehen', limit),
     ausleihStatistik: (katalogNi) => ipcRenderer.invoke('katalog:ausleih-statistik', katalogNi),
+    isbnNachschlagen: (isbn) => ipcRenderer.invoke('katalog:isbn-nachschlagen', isbn),
   },
 
   medium: {
