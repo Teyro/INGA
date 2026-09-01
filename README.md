@@ -162,6 +162,41 @@ npm start          # App starten (Splashscreen 1–3 s, dann Hauptfenster)
 npm test           # Kernlogik prüfen (Datenbank, Import/Export, Ausleihregeln)
 ```
 
+### Fehlerbehebung
+
+**`npm install` schlägt bei better-sqlite3 mit Compiler-Fehlern fehl**
+(z. B. `no member named 'GetPrototype' in 'v8::Object'`): Das passiert mit
+sehr neuen Node-Versionen, für die better-sqlite3 kein vorgebautes Binary
+hat und deshalb aus dem Quellcode kompilieren muss – das schlägt dann gegen
+aktuelles V8 fehl. Ab better-sqlite3 v13 (siehe `package.json`) tritt das
+nicht mehr auf, da die Prebuilds N-API-basiert sind. Bei älteren Checkouts:
+`npm install better-sqlite3@latest`.
+
+**`npm start` bricht mit `Electron failed to install correctly, please
+delete node_modules/electron and try installing again` ab**: `npm install`
+lief zwar durch, aber Electrons eigenes `postinstall`-Skript hat das
+~100–150 MB große Electron-Binary nicht vollständig heruntergeladen
+(typisch bei instabiler Verbindung oder einem Netz/einer Firewall, die
+GitHub-Release-Downloads blockiert – z. B. manche Schul- oder
+Firmennetzwerke). Abhilfe:
+
+```bash
+rm -rf node_modules/electron
+npm install electron --no-save   # lädt das Binary erneut, zeigt den echten Fehler
+```
+
+Bricht der Download wieder ab, hilft oft ein anderes Netzwerk (z. B.
+Mobil-Hotspot) zum Testen, oder ein Mirror:
+
+```bash
+npm config set electron_mirror "https://npmmirror.com/mirrors/electron/"
+rm -rf node_modules/electron && npm install electron --no-save
+```
+
+Erfolg prüfen: `cat node_modules/electron/path.txt` muss einen Pfad wie
+`Electron.app/Contents/MacOS/Electron` ausgeben, und diese Datei muss
+existieren.
+
 ## Bauen
 
 ```bash
