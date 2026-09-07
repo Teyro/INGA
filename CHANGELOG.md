@@ -4,9 +4,24 @@ Alle nennenswerten Änderungen an INGA, neueste zuerst. Format angelehnt an
 [Keep a Changelog](https://keepachangelog.com/de/), aber auf Deutsch und mit
 Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
-## Unveröffentlicht (Branch `feature/ausbau-2026`)
+## Unveröffentlicht
 
 ### Neu
+- **Ausleihlimit**: neue Einstellung „Max. gleichzeitige Ausleihen pro
+  Person" (Vorgabe: 0 = unbegrenzt) unter Einstellungen → Ausleihe. Greift
+  beim Ausleihen mit einer klaren Fehlermeldung, unabhängig von Medienart
+  oder Klasse.
+- **Notizen-Feld je Nutzer:in**: freies Textfeld in der Nutzerakte, z. B. für
+  Sondervereinbarungen oder Hinweise für das Bibliotheksteam. Entspricht dem
+  `Notizen`-Feld im Perpustakaan-Format, war dort schon immer vorhanden, in
+  INGA aber bislang nicht editierbar.
+- **Mehrere Brieftext-Vorlagen im Mahnstufen-Editor**: 4 vorgefertigte Texte
+  zur Auswahl (Freundliche Erinnerung, Bestimmt/formell, sowie zwei in
+  einfacher Sprache – kurz und mit Erklärung), per Klick in den Brieftext
+  einer Stufe übernehmbar. Der bisherige freie Brieftext bleibt unverändert
+  erhalten, die Vorlagen sind nur ein Ausgangspunkt.
+- Rahmenlose Kopfleiste (GNOME): Minimieren- und Maximieren-Knopf ergänzt,
+  bislang war nur Schließen verdrahtet.
 - **Ferienverwaltung**: eigener Bereich „Ferien & Schließzeiten" in den
   Einstellungen – manuelle Pflege, ICS-Import (Datei/URL), automatischer
   Abruf der Hamburger Schulferien/Feiertage. Fällt eine berechnete

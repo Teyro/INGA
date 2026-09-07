@@ -82,7 +82,8 @@ Ferienschließzeit.
 ### Nutzerverwaltung
 
 - Schüler:innen und Lehrkräfte, Gruppen, Zweige, Sperrungen,
-  Ausleihberechtigung mit Ablaufdatum
+  Ausleihberechtigung mit Ablaufdatum, freies **Notizen**-Feld je Nutzer:in
+  (z. B. Sondervereinbarungen)
 - Filter nach Klasse, Gruppe, Zweig, Status (aktiv / gesperrt / **mit
   Rückstand**) und Anzahl aktiver Ausleihen – echte Seitennavigation, Filter
   als Chips, Export als CSV/Excel
@@ -92,6 +93,9 @@ Ferienschließzeit.
 
 - Ausleihe per Barcode-Scanner oder Tastatur
 - Leihfrist je Medienart, konfigurierbare Verlängerung
+- **Ausleihlimit**: maximale Anzahl gleichzeitig offener Ausleihen pro
+  Person, einstellbar unter Einstellungen → Ausleihe (Vorgabe: 0 =
+  unbegrenzt)
 - Rückgabe-Liste mit Volltextsuche, Filtern (nur überfällige,
   Überfälligkeit ab X Tagen, verlängert ja/nein, Klasse,
   Ausleihdatum-Zeitraum), Status-Badge pro Zeile und Export als CSV/Excel
@@ -119,7 +123,10 @@ Mahnliste.
 - Beliebig viele Mahnstufen, sortier- und löschbar, jede mit eigener Gebühr
   und eigenem **Brieftext** (Platzhalter: `{Vorname}` `{Nachname}` `{Titel}`
   `{Tage}` `{Gebuehr}` `{Datum}` `{Faellig}` `{Stufe}`, live Vorschau direkt
-  im Editor)
+  im Editor) – dazu 4 vorgefertigte **Textvorlagen** zur Auswahl (freundlich,
+  bestimmt/formell, sowie zwei in **einfacher Sprache** für Kinder oder
+  Nutzer:innen, denen der Standardtext schwerer verständlich ist), die den
+  Brieftext einer Stufe auf Wunsch ersetzen
 - Eigener Briefkopf: Absender, E-Mail, Telefon, Betreff-Vorlage,
   Schlusstext, Logo
 - Formeller Brief per **PDF-Export** oder **direktem Druckauftrag**

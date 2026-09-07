@@ -541,6 +541,14 @@ function ausleihen(db, { medienNi, leserNi, benutzer, einstellungen }) {
   const sperre = leserGesperrt(db, leserNi);
   if (sperre.gesperrt) throw new Error(`Ausleihe nicht möglich: ${sperre.grund}.`);
 
+  const ausleihLimit = Number(einstellungen?.ausleihLimit) || 0;
+  if (ausleihLimit > 0) {
+    const offeneAnzahl = db.prepare(`SELECT COUNT(*) AS n FROM "Ausleihe" WHERE "LeserNi" = ? AND "Rueckgabe" IS NULL`).get(leserNi).n;
+    if (offeneAnzahl >= ausleihLimit) {
+      throw new Error(`Ausleihe nicht möglich: Diese Person hat bereits ${offeneAnzahl} von maximal ${ausleihLimit} Medien gleichzeitig ausgeliehen.`);
+    }
+  }
+
   const auslDatum = todayStr();
   const stmt = db.prepare(
     `INSERT INTO "Ausleihe" ("MedienNi","LeserNi","AuslDatum","Rueckgabe","AnzVerl","ErfassAnw")

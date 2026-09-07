@@ -129,6 +129,12 @@ const DEFAULT_SETTINGS = {
   // Fälligkeit selbst wird unabhängig davon immer schon auf den nächsten
   // Schultag verschoben (siehe berechneRueckgabedatum).
   ueberfaelligTageOhneFerien: false,
+  // Maximale Anzahl gleichzeitig offener Ausleihen pro Person, 0 = unbegrenzt.
+  // Entspricht AusleihMax im Perpustakaan-Format (dort je Lesergruppe), hier
+  // bewusst als einzelne globale Vorgabe – einfacher zu pflegen und deckt den
+  // Alltag ab; wer unterschiedliche Limits je Gruppe braucht, kann das über
+  // eigene Lesergruppen mit jeweils passender Ausleihgrenze grob nachbilden.
+  ausleihLimit: 0,
 
   // Mahnwesen
   mahnstufen: [

@@ -830,6 +830,7 @@ async function openLeserSheet(row) {
     { name: 'emailPriv', label: 'E-Mail', type: 'email' },
     { name: 'FonPrivat', label: 'Telefon' },
     { name: 'AusleihBis', label: 'Ausleihberechtigt bis', type: 'date' },
+    { name: 'Notizen', label: 'Notizen', type: 'textarea' },
   ];
 
   let historyBox = null;
@@ -1519,7 +1520,7 @@ function wireEinstellungen() {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   for (const id of [
-    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage',
+    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit',
     'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
     'set-mahnBetreffVorlage', 'set-mahnSchluss',
@@ -1599,6 +1600,56 @@ function fuelleVorschauVorlage(vorlage, stufe) {
   return fuellePlatzhalter(vorlage, werte);
 }
 
+/**
+ * Vorgefertigte Brieftexte zur Auswahl im Mahnstufen-Editor – 2 in normaler
+ * Anrede (freundlich/formell), 2 in einfacher Sprache (kurze Sätze, aktive
+ * Verben, ein Gedanke pro Satz) für Kinder oder Nutzer:innen, denen der
+ * Standardtext schwerer verständlich ist. Ersetzen den Brieftext einer
+ * Stufe komplett, wenn übernommen – siehe renderMahnstufen().
+ */
+const MAHN_VORLAGEN = [
+  {
+    id: 'freundlich',
+    label: 'Freundliche Erinnerung',
+    text:
+      'Liebe/r {Vorname} {Nachname},\n\n' +
+      'vielleicht hast du „{Titel}" einfach vergessen: Das Buch ist seit {Tage} Tagen ' +
+      'überfällig (fällig war am {Faellig}). Bring es doch bitte bald zurück in die Bücherei – ' +
+      'dann können auch andere Kinder es lesen.\n\nDanke dir!',
+  },
+  {
+    id: 'bestimmt',
+    label: 'Bestimmt / formell',
+    text:
+      'Sehr geehrte/r {Vorname} {Nachname},\n\n' +
+      'hiermit weisen wir Sie darauf hin, dass „{Titel}" seit {Tage} Tagen überfällig ist ' +
+      '(Rückgabetermin war der {Faellig}). Wir bitten um unverzügliche Rückgabe des Mediums ' +
+      'an die Bibliothek.\n\nMit freundlichen Grüßen',
+  },
+  {
+    id: 'einfach_kurz',
+    label: 'Einfache Sprache – kurz',
+    text:
+      'Hallo {Vorname}!\n\n' +
+      'Du hast das Buch „{Titel}" ausgeliehen.\n' +
+      'Der Rückgabe-Termin war am {Faellig}.\n' +
+      'Das Buch ist jetzt {Tage} Tage überfällig.\n\n' +
+      'Bitte bring das Buch bald zur Bücherei zurück.\nDanke!',
+  },
+  {
+    id: 'einfach_ausfuehrlich',
+    label: 'Einfache Sprache – mit Erklärung',
+    text:
+      'Hallo {Vorname} {Nachname}!\n\n' +
+      'Du hast dir das Buch „{Titel}" in der Bücherei ausgeliehen.\n\n' +
+      'Jedes Buch hat eine Leih-Frist.\nDas ist der Tag, an dem du das Buch zurückbringen musst.\n' +
+      'Deine Leih-Frist war am {Faellig}.\n\n' +
+      'Das Buch ist jetzt schon {Tage} Tage überfällig.\nDas bedeutet: Die Zeit ist schon vorbei.\n\n' +
+      'Bitte bring das Buch bald zurück in die Bücherei.\nDann können auch andere Kinder das Buch lesen.\n\n' +
+      'Hast du Fragen? Dann komm einfach in die Bücherei.\nDanke, dass du das Buch zurückbringst!',
+  },
+];
+
 function renderMahnstufen() {
   const box = document.getElementById('mahnstufen-liste');
   box.replaceChildren();
@@ -1615,6 +1666,23 @@ function renderMahnstufen() {
     }, ['Vorschau']);
     const aktualisierePreview = () => { previewBox.textContent = fuelleVorschauVorlage(stufe.briefText, stufe); };
 
+    const textarea = el('textarea', { rows: 4, value: stufe.briefText || '', oninput: (e) => { stufe.briefText = e.target.value; aktualisierePreview(); }, onchange: () => speichereEinstellungenFormular() });
+    const vorlagenAuswahl = el('select', {}, MAHN_VORLAGEN.map((v) => el('option', { value: v.id }, [v.label])));
+    const vorlageUebernehmen = el('button', {
+      class: 'button small ghost',
+      type: 'button',
+      title: 'Ersetzt den Brieftext dieser Stufe durch die ausgewählte Vorlage',
+      onclick: () => {
+        const vorlage = MAHN_VORLAGEN.find((v) => v.id === vorlagenAuswahl.value);
+        if (!vorlage) return;
+        if (stufe.briefText?.trim() && !confirm('Aktuellen Brieftext durch die Vorlage ersetzen?')) return;
+        stufe.briefText = vorlage.text;
+        textarea.value = vorlage.text;
+        aktualisierePreview();
+        speichereEinstellungenFormular();
+      },
+    }, ['Vorlage übernehmen']);
+
     box.appendChild(
       el('div', { class: 'mahnstufe-card' }, [
         el('div', { class: 'mahnstufe-head' }, [
@@ -1629,8 +1697,11 @@ function renderMahnstufen() {
           el('div', { class: 'field' }, [el('label', {}, ['Tage überfällig']), el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
         ]),
         el('div', { class: 'field' }, [
-          el('label', {}, ['Brieftext']),
-          el('textarea', { rows: 4, value: stufe.briefText || '', oninput: (e) => { stufe.briefText = e.target.value; aktualisierePreview(); }, onchange: () => speichereEinstellungenFormular() }),
+          el('div', { class: 'row-inline', style: { justifyContent: 'space-between' } }, [
+            el('label', {}, ['Brieftext']),
+            el('div', { class: 'row-inline' }, [vorlagenAuswahl, vorlageUebernehmen]),
+          ]),
+          textarea,
         ]),
         previewToggle,
         previewBox,
@@ -1646,6 +1717,7 @@ async function loadEinstellungen() {
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
+  document.getElementById('set-ausleihLimit').value = s.ausleihLimit || 0;
   document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
   document.getElementById('set-ueberfaelligTageOhneFerien').checked = Boolean(s.ueberfaelligTageOhneFerien);
@@ -1987,6 +2059,7 @@ const speichereEinstellungenFormular = debounce(async () => {
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
+    ausleihLimit: Number(document.getElementById('set-ausleihLimit').value) || 0,
     verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
     ueberfaelligTageOhneFerien: document.getElementById('set-ueberfaelligTageOhneFerien').checked,

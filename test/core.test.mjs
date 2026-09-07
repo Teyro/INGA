@@ -126,3 +126,31 @@ test('Gesperrte Nutzer dürfen nicht ausleihen', () => {
   assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, einstellungen }), /Gebühren offen/);
   db.close();
 });
+
+test('Ausleihlimit: blockiert ab der eingestellten Anzahl gleichzeitiger Ausleihen, 0 bleibt unbegrenzt', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  importZip(db, path.join(import.meta.dirname, 'fixtures', 'perpustakaan_backup_2026-08-25_155205.zip'));
+
+  const leserNi = repo.saveLeser(db, { Nachname: 'Limit', Vorname: 'Lisa' });
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Limitbuch' });
+  const medien = Array.from({ length: 3 }, (_, i) =>
+    repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: `LIM-000${i + 1}` })
+  );
+
+  const mitLimit = { ...einstellungen, ausleihLimit: 2 };
+  repo.ausleihen(db, { medienNi: medien[0], leserNi, einstellungen: mitLimit });
+  repo.ausleihen(db, { medienNi: medien[1], leserNi, einstellungen: mitLimit });
+  assert.throws(
+    () => repo.ausleihen(db, { medienNi: medien[2], leserNi, einstellungen: mitLimit }),
+    /maximal 2 Medien/
+  );
+
+  // 0 (Vorgabe) bedeutet unbegrenzt – dieselbe Person darf trotz zweier
+  // offener Ausleihen ein drittes Medium ausleihen.
+  const ohneLimit = { ...einstellungen, ausleihLimit: 0 };
+  const result = repo.ausleihen(db, { medienNi: medien[2], leserNi, einstellungen: ohneLimit });
+  assert.ok(result.id);
+
+  db.close();
+});
