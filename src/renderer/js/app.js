@@ -1729,10 +1729,11 @@ function wireEinstellungen() {
     'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
     'set-mahnBetreffVorlage', 'set-mahnSchluss',
+    'set-matrixDomain', 'set-matrixHomeserver', 'set-matrixZugangstoken',
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien']) {
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
@@ -1776,6 +1777,45 @@ function wireEinstellungen() {
 
   wireFerien();
   wireBackup();
+  wireElement();
+}
+
+/** Element (Matrix): Anmelden tauscht Benutzername/Passwort einmalig gegen ein Zugangstoken, das Passwort selbst wird nirgends gespeichert. */
+function wireElement() {
+  document.getElementById('matrix-anmelden').addEventListener('click', async () => {
+    const benutzername = document.getElementById('matrix-benutzername').value.trim();
+    const passwort = document.getElementById('matrix-passwort').value;
+    if (!benutzername || !passwort) { toast('Bitte Benutzername und Passwort angeben.', 'error'); return; }
+    try {
+      state.settings = await api.element.anmelden({ benutzername, passwort });
+      document.getElementById('matrix-passwort').value = '';
+      document.getElementById('set-matrixZugangstoken').value = state.settings.matrixZugangstoken;
+      aktualisiereMatrixStatus();
+      toast('Angemeldet.');
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    }
+  });
+  document.getElementById('matrix-verbindung-testen').addEventListener('click', async () => {
+    try {
+      state.settings = await api.element.verbindungTesten();
+      aktualisiereMatrixStatus();
+      toast('Verbindung erfolgreich.');
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    }
+  });
+  document.getElementById('matrix-trennen').addEventListener('click', async () => {
+    state.settings = await api.element.trennen();
+    document.getElementById('set-matrixZugangstoken').value = '';
+    aktualisiereMatrixStatus();
+    toast('Verbindung getrennt.');
+  });
+}
+
+function aktualisiereMatrixStatus() {
+  const status = document.getElementById('matrix-versender-status');
+  status.textContent = state.settings.matrixVersenderId ? `Angemeldet als ${state.settings.matrixVersenderId}` : 'Nicht angemeldet.';
 }
 
 function zeigeLogoVorschau(dataUrl) {
@@ -1938,6 +1978,11 @@ async function loadEinstellungen() {
   document.getElementById('set-mahnBetreffVorlage').value = s.mahnBetreffVorlage || '';
   document.getElementById('set-mahnSchluss').value = s.mahnSchluss || '';
   zeigeLogoVorschau(s.mahnLogoDataUrl || '');
+  document.getElementById('set-matrixAktiv').checked = Boolean(s.matrixAktiv);
+  document.getElementById('set-matrixDomain').value = s.matrixDomain || '';
+  document.getElementById('set-matrixHomeserver').value = s.matrixHomeserver || '';
+  document.getElementById('set-matrixZugangstoken').value = s.matrixZugangstoken || '';
+  aktualisiereMatrixStatus();
   renderMahnstufen();
   renderMedArtFristen();
   loadFerien();
@@ -2280,6 +2325,10 @@ const speichereEinstellungenFormular = debounce(async () => {
     mahnSchluss: document.getElementById('set-mahnSchluss').value,
     mahnLogoDataUrl: state.settings.mahnLogoDataUrl || '',
     mahnstufen: state.settings.mahnstufen,
+    matrixAktiv: document.getElementById('set-matrixAktiv').checked,
+    matrixDomain: document.getElementById('set-matrixDomain').value,
+    matrixHomeserver: document.getElementById('set-matrixHomeserver').value,
+    matrixZugangstoken: document.getElementById('set-matrixZugangstoken').value,
   };
   state.settings = await api.settings.save(patch);
 }, 250);

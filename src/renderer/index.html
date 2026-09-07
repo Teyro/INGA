@@ -563,6 +563,39 @@
             </div>
           </div>
 
+          <div class="section-title">Element (Matrix) – Mahnungen als Nachricht</div>
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <label class="checkbox-label"><input type="checkbox" id="set-matrixAktiv" /> Mahnungen zusätzlich über Element verschicken können</label>
+            <p class="hint">Die Adresse der/des Angemahnten wird automatisch aus Vorname.Nachname und der Domain gebildet (z.&nbsp;B. „Anna Muster" + <code>soed.hamburg.de</code> → <code>@anna.muster:soed.hamburg.de</code>). Setzt voraus, dass die Schule Element-/Matrix-Konten nach diesem Muster vergibt – existiert kein passendes Konto, meldet INGA das beim Versand statt es einfach zu versuchen.</p>
+            <div class="field-row">
+              <div class="field"><label>Domain</label><input type="text" id="set-matrixDomain" placeholder="soed.hamburg.de" /></div>
+              <div class="field">
+                <label>Homeserver (optional)</label>
+                <input type="text" id="set-matrixHomeserver" placeholder="automatisch ermitteln" />
+                <p class="hint">Nur nötig, wenn die automatische Ermittlung über <code>.well-known/matrix/client</code> der Domain nicht funktioniert.</p>
+              </div>
+            </div>
+            <div class="field">
+              <label>Versender</label>
+              <p class="hint" id="matrix-versender-status">Nicht angemeldet.</p>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Benutzername</label><input type="text" id="matrix-benutzername" autocomplete="off" /></div>
+              <div class="field"><label>Passwort</label><input type="password" id="matrix-passwort" autocomplete="off" /></div>
+            </div>
+            <div class="row-inline">
+              <button class="button small" id="matrix-anmelden">Anmelden</button>
+              <button class="button small ghost" id="matrix-verbindung-testen">Verbindung testen</button>
+              <button class="button small ghost danger" id="matrix-trennen">Verbindung trennen</button>
+            </div>
+            <p class="hint" style="margin-top:10px">Das Passwort wird nur für die Anmeldung verwendet und nirgends gespeichert – INGA merkt sich danach nur das dabei ausgestellte Zugangstoken (wie bei einem Bot-Konto üblich).</p>
+            <details style="margin-top:10px">
+              <summary class="hint">Alternativ: Zugangstoken direkt eintragen (z.&nbsp;B. für ein eigenes Bot-Konto)</summary>
+              <div class="field" style="margin-top:8px"><label>Zugangstoken</label><input type="password" id="set-matrixZugangstoken" autocomplete="off" /></div>
+              <p class="hint">Danach oben auf „Verbindung testen" klicken, damit der Versender darunter angezeigt wird.</p>
+            </details>
+          </div>
+
           <div class="section-title">Datensicherung</div>
           <div class="card" style="padding:18px; margin-bottom:16px">
             <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“.</p>

@@ -158,6 +158,22 @@ const DEFAULT_SETTINGS = {
   mahnSchluss: 'Vielen Dank für die Rückgabe.\n\nMit freundlichen Grüßen\nDie Schulbibliothek',
   mahnLogoDataUrl: '',
 
+  // Mahnungen über Element (Matrix) verschicken – Adresse wird aus
+  // Vorname.Nachname der/des Angemahnten und der Domain gebildet, siehe
+  // matrix.js. Kein Passwort wird dauerhaft gespeichert: "Anmelden" tauscht
+  // Benutzername/Passwort einmalig gegen ein Zugangstoken, danach steht nur
+  // noch das Token hier (wie bei einem Bot-Zugang üblich).
+  matrixAktiv: false,
+  matrixDomain: 'soed.hamburg.de',
+  // Leer = Homeserver automatisch per .well-known/matrix/client von
+  // matrixDomain ermitteln (Matrix-Standardverfahren) – nur bei
+  // abweichender Konfiguration manuell setzen.
+  matrixHomeserver: '',
+  matrixZugangstoken: '',
+  // Nur zur Anzeige in den Einstellungen ("angemeldet als …"), stammt aus
+  // der Login-/whoami-Antwort, nicht redaktionell eingebbar.
+  matrixVersenderId: '',
+
   // Drucken
   printPaper: 'A4',
   lastExportReveal: false,
@@ -217,7 +233,7 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
         : previous;
       continue;
     }
-    if (key === 'mahnSchluss' || key === 'absenderAdresse') {
+    if (key === 'mahnSchluss' || key === 'absenderAdresse' || key === 'matrixZugangstoken') {
       clean[key] = typeof value === 'string' ? value.slice(0, 2000) : previous;
       continue;
     }

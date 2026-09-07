@@ -7,6 +7,19 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 ## Unveröffentlicht
 
 ### Neu
+- **Mahnungen über Element (Matrix) verschicken**: vierte Option neben
+  Druck/PDF/E-Mail im Mahnungen-Druckfenster. Adresse wird automatisch aus
+  Vorname.Nachname der/des Angemahnten und einer einstellbaren Domain
+  gebildet (Vorgabe `soed.hamburg.de`), vor dem Senden wird geprüft, ob
+  unter dieser Adresse überhaupt ein Konto existiert. Anmeldung per
+  Benutzername/Passwort in den Einstellungen – nur das dabei ausgestellte
+  Zugangstoken wird gespeichert, nie das Passwort selbst – oder direkt per
+  Zugangstoken für ein eigenes Bot-Konto. Homeserver wird automatisch per
+  `.well-known/matrix/client` ermittelt, mit manuellem Override. Direkt-
+  nachrichten-Raum wird beim ersten Kontakt angelegt und danach
+  wiederverwendet statt bei jeder Mahnung neu. Keine neue Abhängigkeit
+  (reines `fetch()` gegen die Matrix-Client-Server-API). Neue Tests
+  (`test/matrix.test.mjs`, gemocktes `fetch`).
 - **Easter Egg in der Kopfleiste**: neben „INGA" steht jetzt ein zufälliger
   Spruch (dieselbe Liste wie der Splashscreen, jetzt in `sprueche.js`
   gemeinsam genutzt) – ein Klick zeigt einen neuen, nie zweimal

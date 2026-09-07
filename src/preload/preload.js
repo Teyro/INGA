@@ -144,6 +144,13 @@ contextBridge.exposeInMainWorld('inga', {
     oeffnen: (payload) => ipcRenderer.invoke('mail:oeffnen', payload),
   },
 
+  element: {
+    anmelden: (payload) => ipcRenderer.invoke('element:anmelden', payload),
+    verbindungTesten: () => ipcRenderer.invoke('element:verbindung-testen'),
+    trennen: () => ipcRenderer.invoke('element:trennen'),
+    senden: (nachrichten) => ipcRenderer.invoke('element:senden', nachrichten),
+  },
+
   window: {
     close: () => ipcRenderer.invoke('window:close'),
     minimize: () => ipcRenderer.invoke('window:minimize'),

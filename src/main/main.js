@@ -36,6 +36,7 @@ const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
 const { holeBuchdaten } = require('./isbn');
+const matrix = require('./matrix');
 
 /** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
 function sichererDateiname(name) {
@@ -79,6 +80,18 @@ function windowChrome(kind = 'main') {
   activeStyle = platform.resolveStyle(s.uiStyle);
   const background = isDark() ? '#12151c' : '#e8ecf3';
   return platform.windowOptions({ settings: s, style: activeStyle, dark: isDark(), background, kind });
+}
+
+/** Merged+validiert einen Settings-Patch, speichert ihn und benachrichtigt das Hauptfenster – von settings:set UND den Element-Anmelde-Handlern genutzt. */
+function speichereSettingsPatch(patch) {
+  const merged = sanitizeSettings(patch, settings());
+  const next = { ...settings(), ...merged };
+  store.set('settings', next);
+  activeStyle = platform.resolveStyle(next.uiStyle);
+  const background = isDark() ? '#12151c' : '#e8ecf3';
+  if (mainWindow) platform.applyWindowMaterial(mainWindow, { settings: next, style: activeStyle, background, kind: 'main' });
+  mainWindow?.webContents.send('settings:updated', next);
+  return next;
 }
 
 function harden(win) {
@@ -456,16 +469,7 @@ async function einspielenUndNeustarten(quelle) {
 function registerIpc() {
   ipcMain.handle('bootstrap', () => bootstrapPayload());
 
-  ipcMain.handle('settings:set', (_e, patch) => {
-    const merged = sanitizeSettings(patch, settings());
-    const next = { ...settings(), ...merged };
-    store.set('settings', next);
-    activeStyle = platform.resolveStyle(next.uiStyle);
-    const background = isDark() ? '#12151c' : '#e8ecf3';
-    if (mainWindow) platform.applyWindowMaterial(mainWindow, { settings: next, style: activeStyle, background, kind: 'main' });
-    mainWindow?.webContents.send('settings:updated', next);
-    return next;
-  });
+  ipcMain.handle('settings:set', (_e, patch) => speichereSettingsPatch(patch));
   ipcMain.handle('settings:read', () => settings());
 
   ipcMain.handle('katalog:search', (_e, filter, seitenOptionen) => repo.searchKatalog(db, filter, seitenOptionen));
@@ -603,6 +607,40 @@ function registerIpc() {
     const url = `mailto:${to}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
     await shell.openExternal(url);
   }));
+
+  /* ------------------------------------------------------- Element (Matrix) */
+
+  ipcMain.handle('element:anmelden', sicher(async (_e, { benutzername, passwort }) => {
+    if (!benutzername || !passwort) throw new Error('Bitte Benutzername und Passwort angeben.');
+    const homeserver = await matrix.homeserverFuerEinstellungen(settings());
+    const { accessToken, userId } = await matrix.anmelden(homeserver, benutzername, passwort);
+    return speichereSettingsPatch({ matrixZugangstoken: accessToken, matrixVersenderId: userId });
+  }));
+
+  ipcMain.handle('element:verbindung-testen', sicher(async () => {
+    const s = settings();
+    const token = String(s.matrixZugangstoken || '').trim();
+    if (!token) throw new Error('Kein Zugangstoken hinterlegt – bitte zuerst anmelden.');
+    const homeserver = await matrix.homeserverFuerEinstellungen(s);
+    const userId = await matrix.werBinIch(homeserver, token);
+    return speichereSettingsPatch({ matrixVersenderId: userId });
+  }));
+
+  ipcMain.handle('element:trennen', () => speichereSettingsPatch({ matrixZugangstoken: '', matrixVersenderId: '' }));
+
+  ipcMain.handle('element:senden', async (_e, nachrichten) => {
+    const s = settings();
+    const ergebnisse = [];
+    for (const n of nachrichten) {
+      try {
+        const { zielId } = await matrix.sendeAnPerson(s, n);
+        ergebnisse.push({ ok: true, name: `${n.vorname} ${n.nachname}`, zielId });
+      } catch (err) {
+        ergebnisse.push({ ok: false, name: `${n.vorname} ${n.nachname}`, fehler: err.message });
+      }
+    }
+    return ergebnisse;
+  });
 
   ipcMain.handle('medart:frist-speichern', sicher((_e, { medArtKb, frist, fristVerl }) => {
     repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });

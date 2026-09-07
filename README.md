@@ -164,10 +164,16 @@ Mahnliste.
   Brieftext einer Stufe auf Wunsch ersetzen
 - Eigener Briefkopf: Absender, E-Mail, Telefon, Betreff-Vorlage,
   Schlusstext, Logo
-- Formeller Brief per **PDF-Export**, **direktem Druckauftrag** oder **per
+- Formeller Brief per **PDF-Export**, **direktem Druckauftrag**, **per
   E-Mail** (öffnet das auf dem Rechner eingerichtete Mailprogramm mit
   vorausgefülltem Betreff/Text – keine eigene Mailserver-Anbindung nötig,
-  eine Mail pro Empfänger:in mit hinterlegter Adresse)
+  eine Mail pro Empfänger:in mit hinterlegter Adresse) oder **über
+  [Element](https://element.io)** (Matrix-Messenger): die Adresse wird
+  automatisch aus Vorname.Nachname und einer einstellbaren Domain gebildet
+  (Vorgabe `soed.hamburg.de`), Anmeldung per Benutzername/Passwort (nur das
+  dabei ausgestellte Zugangstoken wird gespeichert, nie das Passwort) oder
+  direkt per Zugangstoken für ein Bot-Konto – siehe Einstellungen →
+  „Element (Matrix)"
 - Filter nach Stufe und Freitextsuche in der Mahnliste
 
 ### Einstellungen

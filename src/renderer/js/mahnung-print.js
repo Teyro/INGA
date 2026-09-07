@@ -120,6 +120,40 @@ function brieftextAlsEmail(brief) {
   };
 }
 
+/**
+ * Reintext-Fassung eines Briefs für Element (Matrix) – dieselbe
+ * Platzhalter-Füllung wie brieftextAlsEmail(), aber ohne Betreff (Matrix-
+ * Nachrichten haben keinen) und mit Vorname/Nachname statt einer Adresse:
+ * die eigentliche Element-Adresse bildet main.js/matrix.js erst aus den
+ * beiden plus der eingestellten Domain.
+ */
+function brieftextAlsElement(brief) {
+  const { leser, posten, summe, mahngebuehrenAktiv } = brief;
+  const stufe = massgeblicheStufe(posten);
+  const tageMax = Math.max(...posten.map((p) => p.tageUeberfaellig || 0));
+  const faelligMin = posten.map((p) => p.faelligAm).sort()[0];
+  const werte = {
+    Vorname: leser?.Vorname || '', Nachname: leser?.Nachname || '',
+    Titel: posten.map((p) => p.Titel).join(', '), Tage: String(tageMax),
+    Gebuehr: fmtGeld(summe), Datum: brief.datum, Faellig: fmtDatum(faelligMin), Stufe: stufe.text || 'Mahnung',
+  };
+  const betreff = fuellePlatzhalter(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung';
+  const zeilen = [
+    betreff,
+    '',
+    fuellePlatzhalter(stufe.briefText, werte),
+    '',
+    ...posten.map((p) => `- ${p.Titel} (ausgeliehen am ${fmtDatum(p.AuslDatum)}, ${p.tageUeberfaellig || 0} Tage überfällig${mahngebuehrenAktiv ? `, ${fmtGeld(p.gebuehr)}` : ''})`),
+    mahngebuehrenAktiv ? `\nGesamt: ${fmtGeld(summe)}` : '',
+    brief.mahnSchluss || '',
+  ];
+  return {
+    vorname: leser?.Vorname || '',
+    nachname: leser?.Nachname || '',
+    text: zeilen.filter((z) => z !== '').join('\n'),
+  };
+}
+
 document.getElementById('close').addEventListener('click', () => api.window.close());
 document.getElementById('print').addEventListener('click', () => api.print.now().catch((err) => alert(`Drucken fehlgeschlagen: ${err.message || err}`)));
 document.getElementById('pdf').addEventListener('click', () => api.print.pdf({ name: 'Mahnungen' }).catch((err) => alert(`PDF-Export fehlgeschlagen: ${err.message || err}`)));
@@ -130,4 +164,22 @@ document.getElementById('email').addEventListener('click', async () => {
     try { await api.mail.oeffnen(m); } catch (err) { alert(`E-Mail konnte nicht geöffnet werden: ${err.message || err}`); }
   }
   if (ohneAdresse) alert(`${ohneAdresse} von ${mails.length} Personen haben keine hinterlegte E-Mail-Adresse – für diese wurde nichts geöffnet.`);
+});
+document.getElementById('element').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  try {
+    const nachrichten = aktuelleBriefe.map(brieftextAlsElement);
+    const ergebnisse = await api.element.senden(nachrichten);
+    const erfolgreich = ergebnisse.filter((r) => r.ok);
+    const fehlgeschlagen = ergebnisse.filter((r) => !r.ok);
+    let meldung = `${erfolgreich.length} von ${ergebnisse.length} Nachrichten über Element gesendet.`;
+    if (fehlgeschlagen.length) {
+      meldung += `\n\nFehlgeschlagen:\n${fehlgeschlagen.map((r) => `- ${r.name}: ${r.fehler}`).join('\n')}`;
+    }
+    alert(meldung);
+  } catch (err) {
+    alert(`Element-Versand fehlgeschlagen: ${err.message || err}`);
+  } finally {
+    e.target.disabled = false;
+  }
 });
