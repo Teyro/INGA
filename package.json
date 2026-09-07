@@ -41,6 +41,7 @@
     "electron-winstaller": true
   },
   "build": {
+    "publish": null,
     "appId": "app.inga.bibliothek",
     "productName": "INGA",
     "directories": {
