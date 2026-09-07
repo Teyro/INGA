@@ -43,6 +43,7 @@ async function boot() {
   const maximizeButton = document.getElementById('win-maximize');
   maximizeButton.addEventListener('click', async () => setMaximizedState(await api.window.toggleMaximize()));
   api.on('window:state', ({ maximized }) => setMaximizedState(maximized));
+  wireSpruch();
 
   for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => showView(item.dataset.view));
@@ -77,6 +78,23 @@ function setMaximizedState(maximized) {
   const button = document.getElementById('win-maximize');
   button.textContent = maximized ? '❐' : '□';
   button.title = maximized ? 'Wiederherstellen' : 'Maximieren';
+}
+
+/**
+ * Easter Egg in der Kopfleiste: ein zufälliger Spruch aus SPRUECHE
+ * (sprueche.js, dieselbe Liste wie der Splashscreen), neuer bei jedem
+ * Klick – nie derselbe zweimal hintereinander.
+ */
+function wireSpruch() {
+  const spruchEl = document.getElementById('spruch');
+  const naechsterSpruch = () => {
+    let neu;
+    do { neu = SPRUECHE[Math.floor(Math.random() * SPRUECHE.length)]; } while (neu === spruchEl.dataset.aktuell && SPRUECHE.length > 1);
+    spruchEl.dataset.aktuell = neu;
+    spruchEl.textContent = `– ${neu}`;
+  };
+  spruchEl.addEventListener('click', naechsterSpruch);
+  naechsterSpruch();
 }
 
 function applyChrome(data) {

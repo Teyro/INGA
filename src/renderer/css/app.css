@@ -33,8 +33,22 @@ button { cursor: pointer; }
   padding-right: 12px;
 }
 
-.titlebar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; -webkit-app-region: no-drag; }
+.titlebar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; -webkit-app-region: no-drag; min-width: 0; }
 .titlebar .brand img { width: 20px; height: 20px; }
+/* Easter Egg: ein zufälliger Spruch aus sprueche.js, neuer bei jedem Klick (siehe app.js: wireSpruch). */
+.brand .spruch {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.brand .spruch:hover { color: var(--text); }
+.brand .spruch:active { transform: translateY(1px); }
 .titlebar .spacer { flex: 1; }
 .caption-space { -webkit-app-region: no-drag; }
 

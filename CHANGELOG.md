@@ -7,6 +7,10 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 ## Unveröffentlicht
 
 ### Neu
+- **Easter Egg in der Kopfleiste**: neben „INGA" steht jetzt ein zufälliger
+  Spruch (dieselbe Liste wie der Splashscreen, jetzt in `sprueche.js`
+  gemeinsam genutzt) – ein Klick zeigt einen neuen, nie zweimal
+  hintereinander denselben.
 - **Etikettendruck massiv ausgebaut**: eigener Bereich „Etiketten“ in der
   Seitenleiste (Titel suchen, mehrere ankreuzen, je Titel ein Etikett pro
   Exemplar) plus Schnellzugriff auf der Buchdetailseite (einzelnes Exemplar
