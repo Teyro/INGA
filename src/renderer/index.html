@@ -27,6 +27,7 @@
       <div class="nav-section">
         <div class="nav-item active" data-view="dashboard"><span class="icon">🏠</span><span class="label">Übersicht</span></div>
         <div class="nav-item" data-view="katalog"><span class="icon">📖</span><span class="label">Katalog</span></div>
+        <div class="nav-item" data-view="etiketten"><span class="icon">🏷️</span><span class="label">Etiketten</span></div>
         <div class="nav-item" data-view="leser"><span class="icon">🧑‍🎓</span><span class="label">Nutzer</span></div>
         <div class="nav-item" data-view="statistik"><span class="icon">📊</span><span class="label">Statistik</span></div>
       </div>
@@ -131,6 +132,46 @@
               <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
               <button class="button small" id="katalog-seite-vor">Weiter ›</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- Etiketten -->
+      <section class="view" id="view-etiketten" hidden>
+        <div class="toolbar"><h1>Etiketten</h1></div>
+        <div class="view">
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div class="section-title">Titel auswählen</div>
+            <p class="hint">Titel suchen und ankreuzen – gedruckt wird je Titel ein Etikett für <strong>jedes</strong> seiner Exemplare. Für ein einzelnes Exemplar/einen einzelnen Titel geht es schneller direkt über die Buchdetailseite im Katalog (🏷️-Knopf).</p>
+            <input type="text" id="etiketten-suche" placeholder="Titel, Autor, ISBN, Signatur …" style="margin-bottom:10px" />
+            <div class="row-inline" style="margin-bottom:10px">
+              <label class="checkbox-label"><input type="checkbox" id="etiketten-alle" /> Alle Treffer auswählen</label>
+              <div class="spacer"></div>
+              <span class="hint" id="etiketten-auswahl-info"></span>
+            </div>
+            <table>
+              <thead><tr><th></th><th>Titel</th><th>Autor</th><th>Exemplare</th></tr></thead>
+              <tbody id="etiketten-tbody"></tbody>
+            </table>
+          </div>
+          <div class="card" style="padding:18px; max-width:560px">
+            <div class="section-title">Format &amp; Druck</div>
+            <div class="field-row">
+              <div class="field">
+                <label>Etikettenformat</label>
+                <select id="etiketten-format">
+                  <option value="zweckform-3475">Zweckform 3475 – 70 × 36 mm, 24/Bogen</option>
+                  <option value="zweckform-l7160">Zweckform/Avery L7160 – 63,5 × 38,1 mm, 21/Bogen</option>
+                  <option value="zweckform-3651">Zweckform 3651 – 52,5 × 29,7 mm, 40/Bogen (kompakt)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Startposition auf dem Bogen</label>
+                <input type="number" id="etiketten-start" min="1" value="1" />
+                <p class="hint">Für angebrochene Bögen – 1 = oben links, zeilenweise.</p>
+              </div>
+            </div>
+            <button class="button primary" id="etiketten-drucken">Etiketten drucken</button>
           </div>
         </div>
       </section>

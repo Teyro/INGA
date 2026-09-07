@@ -58,6 +58,7 @@ async function boot() {
   wireUmlauf();
   wireStatistik();
   wireBestand();
+  wireEtiketten();
   wireEinstellungen();
   wireSheet();
 
@@ -301,6 +302,27 @@ function leserGruppOptions() {
 function standortOptions() {
   return (state.stammdaten.StandOrt || []).map((s) => ({ value: s.StOrtNi, label: s.StOrtBz }));
 }
+/* ------------------------------------------------------------ Etiketten */
+
+/** Baut das Etiketten-Datenobjekt aus einem Exemplar (Medien-Zeile) und seinem Titel (Katalog-Zeile). */
+function etikettAusExemplar(medium, katalog) {
+  return {
+    MedienEtik: medium.MedienEtik || '',
+    Titel: katalog.Titel || '',
+    Autor: katalog.Autor || '',
+    antolin: Boolean(String(katalog.KlasseAnto || '').trim()),
+  };
+}
+
+let letztesEtikettenFormat = 'zweckform-3475';
+
+/** Öffnet das Etiketten-Druckfenster – gemeinsam genutzt von Buchdetailseite und der Etiketten-Ansicht. */
+async function druckeEtiketten(labels, format = letztesEtikettenFormat, startPosition = 1) {
+  if (!labels.length) { toast('Keine Exemplare zum Etikettieren.', 'error'); return; }
+  letztesEtikettenFormat = format;
+  await api.etiketten.drucken({ labels, format, startPosition: Math.max(1, Number(startPosition) || 1) });
+}
+
 function medArtLabel(kb) {
   const treffer = (state.stammdaten.MedArt || []).find((m) => m.MedArtKb === kb);
   return treffer ? treffer.MedArtBz : kb || '–';
@@ -602,12 +624,28 @@ async function openKatalogSheet(row) {
       api.vormerkung.liste(row.KatalogNi),
     ]);
     extraBox = el('div', {}, [
-      el('div', { class: 'section-title' }, ['Exemplare']),
+      el('div', { class: 'row-inline' }, [
+        el('div', { class: 'section-title' }, ['Exemplare']),
+        el('div', { class: 'spacer' }),
+        exemplare.length
+          ? el('button', {
+              class: 'button small ghost',
+              type: 'button',
+              title: 'Ein Etikett je Exemplar dieses Titels',
+              onclick: () => druckeEtiketten(exemplare.map((m) => etikettAusExemplar(m, row))),
+            }, ['🏷️ Alle Etiketten drucken'])
+          : null,
+      ]),
       exemplare.length
         ? el('div', {}, exemplare.map((m) =>
             el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
               el('span', { class: 'badge' }, [m.MedienEtik || `#${m.MedienNi}`]),
               el('span', { class: `badge ${m.verliehen ? 'warn' : 'ok'}` }, [m.verliehen ? 'verliehen' : 'verfügbar']),
+              el('button', {
+                class: 'icon-button',
+                title: 'Etikett für dieses Exemplar drucken',
+                onclick: () => druckeEtiketten([etikettAusExemplar(m, row)]),
+              }, ['🏷️']),
             ])
           ))
         : el('p', { class: 'hint' }, ['Noch keine Exemplare.']),
@@ -699,6 +737,76 @@ async function openKatalogSheet(row) {
         }
       : null,
   });
+}
+
+/* ------------------------------------------------------- Etiketten-Ansicht */
+
+// KatalogNi -> { row, exemplare } der aktuell in der Etiketten-Ansicht
+// angezeigten Treffer, damit Ankreuzen ohne erneuten Serverzugriff auskommt.
+const etikettenTreffer = new Map();
+
+function wireEtiketten() {
+  document.getElementById('etiketten-suche').addEventListener('input', debounce(sucheEtiketten, 200));
+  document.getElementById('etiketten-alle').addEventListener('change', (e) => {
+    for (const cb of document.querySelectorAll('#etiketten-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+    aktualisiereEtikettenAuswahlInfo();
+  });
+  document.getElementById('etiketten-drucken').addEventListener('click', async () => {
+    const ausgewaehlt = [...document.querySelectorAll('#etiketten-tbody input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.katalogNi));
+    const labels = [];
+    for (const katalogNi of ausgewaehlt) {
+      const treffer = etikettenTreffer.get(katalogNi);
+      if (!treffer) continue;
+      for (const m of treffer.exemplare) labels.push(etikettAusExemplar(m, treffer.row));
+    }
+    if (!labels.length) { toast('Bitte mindestens einen Titel mit Exemplar auswählen.', 'error'); return; }
+    const format = document.getElementById('etiketten-format').value;
+    const start = document.getElementById('etiketten-start').value;
+    await druckeEtiketten(labels, format, start);
+  });
+}
+
+async function sucheEtiketten() {
+  const query = document.getElementById('etiketten-suche').value.trim();
+  const tbody = document.getElementById('etiketten-tbody');
+  tbody.replaceChildren();
+  etikettenTreffer.clear();
+  document.getElementById('etiketten-alle').checked = false;
+  if (!query) { aktualisiereEtikettenAuswahlInfo(); return; }
+
+  const { rows, gesamt } = await api.katalog.search({ query }, { proSeite: 100 });
+  if (!rows.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 4 }, [el('div', { class: 'empty small' }, ['Keine Titel gefunden.'])])]));
+    aktualisiereEtikettenAuswahlInfo();
+    return;
+  }
+  if (gesamt > rows.length) {
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 4 }, [el('div', { class: 'hint' }, [`Zeigt die ersten ${rows.length} von ${gesamt} Treffern – bitte die Suche eingrenzen, um weitere zu sehen.`])])]));
+  }
+  // Exemplare aller Treffer parallel nachladen – für die Anzahl in der Liste
+  // UND damit "Etiketten drucken" ohne weiteren Serverzugriff auskommt.
+  const exemplareJeTitel = await Promise.all(rows.map((r) => api.katalog.exemplare(r.KatalogNi)));
+  rows.forEach((row, i) => etikettenTreffer.set(row.KatalogNi, { row, exemplare: exemplareJeTitel[i] }));
+
+  for (const row of rows) {
+    const anzahl = etikettenTreffer.get(row.KatalogNi).exemplare.length;
+    tbody.appendChild(
+      el('tr', {}, [
+        el('td', {}, [el('input', { type: 'checkbox', 'data-katalog-ni': row.KatalogNi, onchange: aktualisiereEtikettenAuswahlInfo })]),
+        el('td', {}, [row.Titel || '']),
+        el('td', {}, [row.Autor || '']),
+        el('td', {}, [String(anzahl)]),
+      ])
+    );
+  }
+  aktualisiereEtikettenAuswahlInfo();
+}
+
+function aktualisiereEtikettenAuswahlInfo() {
+  const checked = [...document.querySelectorAll('#etiketten-tbody input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.katalogNi));
+  const anzahlEtiketten = checked.reduce((sum, ni) => sum + (etikettenTreffer.get(ni)?.exemplare.length || 0), 0);
+  const info = document.getElementById('etiketten-auswahl-info');
+  info.textContent = checked.length ? `${checked.length} Titel ausgewählt – ${anzahlEtiketten} Etikett${anzahlEtiketten === 1 ? '' : 'en'}` : '';
 }
 
 /* ---------------------------------------------------------------- Leser */

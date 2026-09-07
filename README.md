@@ -67,7 +67,8 @@ Ferienschließzeit.
   gefilterten Liste als CSV/Excel
 - Freitextsuche deckt Titel, Autor, Verlag, ISBN/EAN, Schlagwort UND die
   Signatur/den Barcode einzelner Exemplare ab
-- Exemplare mit Barcode/Etikett verwalten, Ausleihstatus pro Exemplar
+- Exemplare mit Barcode/Etikett verwalten, Ausleihstatus pro Exemplar –
+  Etiketten dafür direkt ausdrucken, siehe „Etiketten“ unten
 - **Buchcover**: automatischer Download per ISBN/EAN von
   [Open Library](https://openlibrary.org/dev/docs/api/covers) (frei, ohne
   Konto), alternativ manueller Upload – einzeln pro Titel oder als
@@ -80,6 +81,38 @@ Ferienschließzeit.
   über [Open Library](https://openlibrary.org/dev/docs/api/books) laden –
   füllt nur das gerade offene Formular, gespeichert wird erst durch
   bewusstes Bestätigen (Klick auf „Speichern“)
+
+### Etiketten
+
+Barcode-Etiketten für Exemplare, mit echten, physisch passenden
+Bogenformaten – eigener Bereich in der Seitenleiste, dazu Schnellzugriff
+direkt auf der Buchdetailseite (einzelnes Exemplar oder „Alle Etiketten
+drucken“ für den ganzen Titel).
+
+- **3 Etikettenformate**: Zweckform 3475 (70 × 36 mm, 24/Bogen), Zweckform/
+  Avery L7160 (63,5 × 38,1 mm, 21/Bogen) sowie Zweckform 3651 (52,5 × 29,7
+  mm, 40/Bogen, kompakt) – Rand und Rasterabstand aus den offiziellen
+  Produktmaßen, nicht nur der reinen Etikettengröße, damit der Ausdruck auf
+  einem echten Bogen sitzt
+- **Startposition**: für angebrochene Bögen – überspringt die angegebene
+  Anzahl bereits verbrauchter Etiketten, nur auf dem ersten Bogen
+- Jedes Etikett zeigt Titel, Autor, einen Strichcode (Code 128) der
+  Signatur/des Barcodes sowie eine kleine **„Antolin“-Kennzeichnung**, wenn
+  für den Titel eine Antolin-Klassenstufe hinterlegt ist (ein eigenes,
+  schlichtes Kennzeichen – nicht das Marken-Logo von Antolin, siehe
+  Hinweis unten)
+- Auswahl mehrerer Titel gleichzeitig (Freitextsuche, „Alle Treffer
+  auswählen“) – gedruckt wird je ausgewähltem Titel ein Etikett für jedes
+  seiner Exemplare
+- Vorschau am Bildschirm, danach Druck oder PDF-Export wie beim Mahnwesen
+
+*Da die Entwicklungsumgebung ohne Bildschirm auskommt (siehe
+[`docs/screenshots/README.md`](docs/screenshots/README.md)), war ein
+Testdruck hier nicht möglich – Rand-/Rastermaße sind aus offiziellen
+Produktangaben und der quelloffenen [glabels](https://github.com/samlown/glabels)-Etikettendatenbank
+abgeleitet und automatisiert geprüft (`test/etiketten.test.mjs`), aber
+vor dem ersten Bogen aus dem echten Etikettenpapier lohnt sich ein
+Probedruck auf normalem Papier gegen das Licht.*
 
 ### Nutzerverwaltung
 
@@ -211,7 +244,11 @@ Electron ohne Oberflächen-Framework (kein React/Vue – reines HTML/CSS/JS),
 SQLite über [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) als
 Datenhaltung. Die Tabellen, die INGA versteht, tragen exakt die Spaltennamen
 des Perpustakaan-Formats – dadurch braucht es keine Übersetzungsschicht beim
-Import/Export.
+Import/Export. Einzige Ausnahme vom Prinzip „keine Abhängigkeiten im
+Renderer“: [`JsBarcode`](https://github.com/lindell/JsBarcode) (MIT-Lizenz)
+liegt als einzelne Datei unter `src/renderer/js/vendor/` und wird per
+`<script>`-Tag eingebunden – für die Strichcodes auf den Etiketten, ohne
+Build-Schritt oder npm-Abhängigkeit im Renderer.
 
 ```
 src/

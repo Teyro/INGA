@@ -64,6 +64,10 @@ contextBridge.exposeInMainWorld('inga', {
     drucken: (payload) => ipcRenderer.invoke('umlauf:drucken', payload),
   },
 
+  etiketten: {
+    drucken: (payload) => ipcRenderer.invoke('etiketten:drucken', payload),
+  },
+
   export: {
     csv: (angaben) => ipcRenderer.invoke('export:csv', angaben),
     xlsx: (angaben) => ipcRenderer.invoke('export:xlsx', angaben),

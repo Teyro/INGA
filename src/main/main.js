@@ -48,6 +48,7 @@ const WINDOW_ICON = process.platform === 'linux' ? path.join(__dirname, '..', '.
 let mainWindow = null;
 let printWindow = null;
 let umlaufPrintWindow = null;
+let etikettenPrintWindow = null;
 let splashWindow = null;
 let store = null;
 let db = null;
@@ -387,6 +388,44 @@ async function openUmlaufPrintWindow(payload) {
   });
 }
 
+async function openEtikettenPrintWindow(payload) {
+  const s = settings();
+  const data = { ...payload, settings: { ...s, os: platform.OS, ui: activeStyle } };
+
+  if (etikettenPrintWindow && !etikettenPrintWindow.isDestroyed()) {
+    etikettenPrintWindow.focus();
+    etikettenPrintWindow.webContents.send('print:data', data);
+    return;
+  }
+
+  etikettenPrintWindow = new BrowserWindow({
+    width: 900,
+    height: 820,
+    minWidth: 640,
+    minHeight: 480,
+    title: 'Etiketten',
+    show: false,
+    ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
+    ...windowChrome('print'),
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  harden(etikettenPrintWindow);
+  etikettenPrintWindow.loadFile(path.join(RENDERER, 'etiketten-print.html'));
+  etikettenPrintWindow.webContents.once('did-finish-load', () => {
+    etikettenPrintWindow.webContents.send('print:data', data);
+    etikettenPrintWindow.show();
+  });
+  etikettenPrintWindow.on('closed', () => {
+    etikettenPrintWindow = null;
+  });
+}
+
 /* -------------------------------------------------------------------- IPC */
 
 /**
@@ -492,6 +531,11 @@ function registerIpc() {
 
   ipcMain.handle('umlauf:drucken', async (_e, payload) => {
     await openUmlaufPrintWindow(payload);
+    return { ok: true };
+  });
+
+  ipcMain.handle('etiketten:drucken', async (_e, payload) => {
+    await openEtikettenPrintWindow(payload);
     return { ok: true };
   });
 

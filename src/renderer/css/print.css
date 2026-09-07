@@ -75,3 +75,41 @@ html, body { margin: 0; height: 100%; background: var(--window); }
 @media print {
   .umlauf-blatt { box-shadow: none; width: auto; min-height: auto; padding: 0; }
 }
+
+/* ------------------------------------------------------------ Etiketten */
+
+.etiketten-blatt {
+  background: #fff;
+  width: 210mm;
+  height: 297mm;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+  box-sizing: border-box;
+  position: relative;
+  page-break-after: always;
+}
+.etikett {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 1.2mm 1.5mm;
+  color: #111;
+  font-family: var(--font);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.etikett .titel { font-size: 6.4pt; font-weight: 700; line-height: 1.15; max-height: 2.4em; overflow: hidden; }
+.etikett .autor { font-size: 5.4pt; color: #555; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.etikett .barcode { width: 100%; height: auto; margin-top: 0.6mm; }
+.etikett .barcode-text { font-size: 5.6pt; text-align: center; margin-top: -1mm; }
+.etikett .antolin-marke {
+  position: absolute; top: 0.8mm; right: 0.8mm;
+  font-size: 4.8pt; font-weight: 700; letter-spacing: 0.2px;
+  background: #2f6f4f; color: #fff; border-radius: 2px; padding: 0.5mm 1mm;
+}
+.etikett .leer { border: 1px dashed #ddd; }
+
+@media print {
+  .etiketten-blatt { box-shadow: none; }
+  .etikett .leer { border: none; }
+}

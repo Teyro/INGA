@@ -7,6 +7,16 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 ## Unveröffentlicht
 
 ### Neu
+- **Etikettendruck massiv ausgebaut**: eigener Bereich „Etiketten“ in der
+  Seitenleiste (Titel suchen, mehrere ankreuzen, je Titel ein Etikett pro
+  Exemplar) plus Schnellzugriff auf der Buchdetailseite (einzelnes Exemplar
+  oder „Alle Etiketten drucken“). 3 echte Zweckform-/Avery-Bogenformate
+  (3475, L7160, 3651) mit Rand-/Rasterabstand aus den offiziellen
+  Produktmaßen, Startposition für angebrochene Bögen, Code-128-Strichcode
+  je Etikett (`JsBarcode`, vendored, MIT-Lizenz) sowie eine kleine
+  „Antolin“-Kennzeichnung bei hinterlegter Antolin-Klassenstufe. Vorschau,
+  Druck und PDF-Export wie beim Mahnwesen. Neue Geometrie-Tests
+  (`test/etiketten.test.mjs`).
 - **Papierkorb für Nutzer:innen und Exemplare** (Datenbank-Migration Version
   6, Tabellen `LeserAbg`/`MedienAbg`): Löschen verschiebt die Zeile zunächst
   in den Papierkorb (neuer Bereich unter System) statt sie endgültig zu
