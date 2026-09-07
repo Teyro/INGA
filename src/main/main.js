@@ -447,7 +447,7 @@ function registerIpc() {
   ipcMain.handle('statistik:verlustliste', () => repo.verlustliste(db));
 
   ipcMain.handle('medium:save', sicher((_e, row) => repo.saveMedium(db, row)));
-  ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi)));
+  ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi, 'inga')));
   ipcMain.handle('medium:status', (_e, medienNi) => repo.exemplarStatus(db, medienNi));
   ipcMain.handle('medium:find-etikett', (_e, etikett) => repo.findExemplarByEtikett(db, etikett));
 
@@ -455,7 +455,7 @@ function registerIpc() {
   ipcMain.handle('leser:jahrgaenge', () => repo.distinctJahrgaenge(db));
   ipcMain.handle('leser:get', (_e, leserNi) => repo.getLeser(db, leserNi));
   ipcMain.handle('leser:save', sicher((_e, row) => repo.saveLeser(db, row)));
-  ipcMain.handle('leser:delete', sicher((_e, leserNi) => repo.deleteLeser(db, leserNi)));
+  ipcMain.handle('leser:delete', sicher((_e, leserNi) => repo.deleteLeser(db, leserNi, 'inga')));
   ipcMain.handle('leser:offene-ausleihen', (_e, leserNi) => repo.offeneAusleihenVonLeser(db, leserNi));
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
   ipcMain.handle('leser:vormerkungen', (_e, leserNi) => repo.vormerkungenVonLeser(db, leserNi));
@@ -550,6 +550,15 @@ function registerIpc() {
     await openMahnungPrintWindow(briefe);
     return { anzahl: briefe.length };
   });
+
+  // Keine eigene SMTP-Anbindung (kein Konto/Passwort, das INGA verwalten
+  // müsste) – öffnet stattdessen das auf dem Rechner eingerichtete
+  // E-Mail-Programm mit vorausgefülltem Brief, ganz ohne neue Abhängigkeit.
+  ipcMain.handle('mail:oeffnen', sicher(async (_e, { to, subject, body }) => {
+    if (!to) throw new Error('Keine E-Mail-Adresse hinterlegt.');
+    const url = `mailto:${to}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+    await shell.openExternal(url);
+  }));
 
   ipcMain.handle('medart:frist-speichern', sicher((_e, { medArtKb, frist, fristVerl }) => {
     repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });
@@ -747,6 +756,13 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return null;
     await einspielenUndNeustarten(result.filePaths[0]);
   }));
+
+  ipcMain.handle('papierkorb:leser-liste', () => repo.papierkorbLeserListe(db));
+  ipcMain.handle('papierkorb:medien-liste', () => repo.papierkorbMedienListe(db));
+  ipcMain.handle('papierkorb:leser-wiederherstellen', sicher((_e, id) => repo.leserWiederherstellen(db, id)));
+  ipcMain.handle('papierkorb:medien-wiederherstellen', sicher((_e, id) => repo.medienWiederherstellen(db, id)));
+  ipcMain.handle('papierkorb:leser-endgueltig-loeschen', sicher((_e, id) => repo.leserEndgueltigLoeschen(db, id)));
+  ipcMain.handle('papierkorb:medien-endgueltig-loeschen', sicher((_e, id) => repo.medienEndgueltigLoeschen(db, id)));
 
   ipcMain.handle('print:now', (event, options = {}) => {
     const contents = event.sender;

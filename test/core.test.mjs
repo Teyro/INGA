@@ -154,3 +154,63 @@ test('Ausleihlimit: blockiert ab der eingestellten Anzahl gleichzeitiger Ausleih
 
   db.close();
 });
+
+test('Papierkorb: gelöschte Nutzer:innen und Exemplare landen dort und lassen sich wiederherstellen', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  importZip(db, path.join(import.meta.dirname, 'fixtures', 'perpustakaan_backup_2026-08-25_155205.zip'));
+
+  const leserNi = repo.saveLeser(db, { Nachname: 'Papier', Vorname: 'Korbina', Jahrgang: '3a' });
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Papierkorbbuch', Autor: 'Anna Autorin' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'PK-0001' });
+
+  repo.deleteLeser(db, leserNi, 'testuser');
+  assert.equal(repo.getLeser(db, leserNi), undefined, 'Leser sollte aus der Live-Tabelle verschwunden sein');
+  let leserPapierkorb = repo.papierkorbLeserListe(db);
+  assert.equal(leserPapierkorb.length, 1);
+  assert.equal(leserPapierkorb[0].Nachname, 'Papier');
+  assert.equal(leserPapierkorb[0].LoeschAnw, 'testuser');
+
+  repo.deleteMedium(db, medienNi, 'testuser');
+  let medienPapierkorb = repo.papierkorbMedienListe(db);
+  assert.equal(medienPapierkorb.length, 1);
+  assert.equal(medienPapierkorb[0].Titel, 'Papierkorbbuch', 'Katalogdaten des Titels müssen mit in den Papierkorb übernommen werden');
+  assert.equal(medienPapierkorb[0].MedienEtik, 'PK-0001', 'Exemplar-eigene Felder dürfen nicht von den Katalogdaten überschrieben werden');
+
+  // Wiederherstellen: dieselbe LeserNi/MedienNi wie vor dem Löschen, Papierkorb-Eintrag verschwindet.
+  const wiederhergestellteLeserNi = repo.leserWiederherstellen(db, leserPapierkorb[0].id);
+  assert.equal(wiederhergestellteLeserNi, leserNi);
+  assert.ok(repo.getLeser(db, leserNi), 'Leser sollte wieder in der Live-Tabelle stehen');
+  assert.equal(repo.papierkorbLeserListe(db).length, 0);
+
+  const wiederhergestellteMedienNi = repo.medienWiederherstellen(db, medienPapierkorb[0].id);
+  assert.equal(wiederhergestellteMedienNi, medienNi);
+  assert.equal(repo.exemplarStatus(db, medienNi).verliehen, false);
+  assert.equal(repo.papierkorbMedienListe(db).length, 0);
+
+  // Endgültig löschen: Papierkorb-Eintrag verschwindet, ohne die Live-Tabelle zu berühren.
+  repo.deleteMedium(db, medienNi, 'testuser');
+  medienPapierkorb = repo.papierkorbMedienListe(db);
+  repo.medienEndgueltigLoeschen(db, medienPapierkorb[0].id);
+  assert.equal(repo.papierkorbMedienListe(db).length, 0);
+
+  db.close();
+});
+
+test('Papierkorb: Exemplar lässt sich nicht wiederherstellen, wenn der Titel inzwischen gelöscht wurde', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  importZip(db, path.join(import.meta.dirname, 'fixtures', 'perpustakaan_backup_2026-08-25_155205.zip'));
+
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Verwaistes Buch' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'PK-0002' });
+  repo.deleteMedium(db, medienNi, 'testuser');
+  const eintrag = repo.papierkorbMedienListe(db)[0];
+
+  // deleteKatalog löscht den Titel samt (noch vorhandener) Exemplare – hier
+  // manuell simuliert, weil das Exemplar selbst schon im Papierkorb liegt.
+  db.prepare(`DELETE FROM "Katalog" WHERE "KatalogNi" = ?`).run(katalogNi);
+
+  assert.throws(() => repo.medienWiederherstellen(db, eintrag.id), /Titel wurde inzwischen gelöscht/);
+  db.close();
+});

@@ -198,10 +198,26 @@ function saveMedium(db, row) {
   return upsert(db, 'Medien', clean);
 }
 
-/** Löscht ein Exemplar – nicht, solange es ausgeliehen ist (siehe deleteKatalog für die Begründung). */
-function deleteMedium(db, medienNi) {
+/**
+ * Löscht ein Exemplar – nicht, solange es ausgeliehen ist (siehe deleteKatalog
+ * für die Begründung). Landet zuvor im Papierkorb (Tabelle "MedienAbg", siehe
+ * verschiebeInPapierkorb) statt endgültig verloren zu gehen – Perpustakaan
+ * Professional bietet das ("Papierkorb für Medien und Leser mit
+ * Wiederherstellungsmöglichkeit"), INGA bislang nicht. Die Momentaufnahme
+ * enthält zusätzlich die Katalogdaten des Titels (Titel/Autor/…), damit der
+ * Papierkorb auch dann lesbar bleibt, wenn der Titel danach separat gelöscht
+ * wird – deshalb erst Katalog, dann (überschreibend) Medien einmischen: bei
+ * überschneidenden Spalten (KatalogNi, ErfassDat, ErfassAnw) gewinnt das
+ * Exemplar, genau wie im Perpustakaan-Format vorgesehen.
+ */
+function deleteMedium(db, medienNi, benutzer) {
   if (exemplarStatus(db, medienNi).verliehen) {
     throw new Error('Dieses Exemplar ist noch ausgeliehen. Bitte erst zurückgeben, dann löschen.');
+  }
+  const medium = db.prepare(`SELECT * FROM "Medien" WHERE "MedienNi" = ?`).get(medienNi);
+  if (medium) {
+    const katalog = db.prepare(`SELECT * FROM "Katalog" WHERE "KatalogNi" = ?`).get(medium.KatalogNi) || {};
+    verschiebeInPapierkorb(db, 'MedienAbg', { ...katalog, ...medium }, benutzer);
   }
   db.prepare(`DELETE FROM "Medien" WHERE "MedienNi" = ?`).run(medienNi);
 }
@@ -292,11 +308,17 @@ function saveLeser(db, row) {
   return upsert(db, 'Leser', clean);
 }
 
-/** Löscht einen Nutzer – nicht, solange er noch offene Ausleihen hat (siehe deleteKatalog für die Begründung). */
-function deleteLeser(db, leserNi) {
+/**
+ * Löscht einen Nutzer – nicht, solange er noch offene Ausleihen hat (siehe
+ * deleteKatalog für die Begründung). Landet zuvor im Papierkorb (Tabelle
+ * "LeserAbg", siehe verschiebeInPapierkorb und deleteMedium).
+ */
+function deleteLeser(db, leserNi, benutzer) {
   if (offeneAusleihenVonLeser(db, leserNi).length) {
     throw new Error('Dieser Nutzer hat noch offene Ausleihen. Bitte erst alle Bücher zurückgeben, dann löschen.');
   }
+  const leser = getLeser(db, leserNi);
+  if (leser) verschiebeInPapierkorb(db, 'LeserAbg', leser, benutzer);
   db.prepare(`DELETE FROM "Leser" WHERE "LeserNi" = ?`).run(leserNi);
 }
 
@@ -933,6 +955,82 @@ function distinctJahrgaenge(db) {
     .map((r) => r.jahrgang);
 }
 
+/* ---------------------------------------------------------- Papierkorb */
+
+/**
+ * Schreibt eine Momentaufnahme von `row` in eine Papierkorb-Tabelle
+ * (LeserAbg/MedienAbg) – nur Spalten, die diese Tabelle laut Referenzschema
+ * tatsächlich kennt, Rest wird ignoriert. LoeschDat/LoeschAnw kommen immer
+ * dazu. Nutzt bewusst kein upsert() (kein *Ni-Einzelschlüssel, siehe
+ * ID_BASIERTE_TABELLEN) – jeder Löschvorgang bekommt eine neue Papierkorb-Zeile
+ * (eigene id), auch wenn dieselbe Person/dasselbe Exemplar zuvor schon einmal
+ * gelöscht und wiederhergestellt wurde.
+ */
+function verschiebeInPapierkorb(db, abgTable, row, benutzer) {
+  const spalten = TABLES[abgTable].filter((c) => c !== 'LoeschDat' && c !== 'LoeschAnw');
+  const cols = ['LoeschDat', 'LoeschAnw', ...spalten];
+  const eintrag = { LoeschDat: nowStamp(), LoeschAnw: benutzer || 'inga' };
+  for (const spalte of spalten) eintrag[spalte] = Object.hasOwn(row, spalte) ? row[spalte] : null;
+  db.prepare(
+    `INSERT INTO ${quoteIdent(abgTable)} (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
+  ).run(eintrag);
+}
+
+function papierkorbLeserListe(db) {
+  return db.prepare(`SELECT * FROM "LeserAbg" ORDER BY "LoeschDat" DESC`).all();
+}
+
+function papierkorbMedienListe(db) {
+  return db.prepare(`SELECT * FROM "MedienAbg" ORDER BY "LoeschDat" DESC`).all();
+}
+
+/** Holt eine Papierkorb-Zeile per id, wirft einen verständlichen Fehler statt still nichts zu tun. */
+function papierkorbEintrag(db, table, id) {
+  const row = db.prepare(`SELECT * FROM ${quoteIdent(table)} WHERE id = ?`).get(id);
+  if (!row) throw new Error('Dieser Papierkorb-Eintrag existiert nicht (mehr) – Liste bitte neu laden.');
+  return row;
+}
+
+/** Stellt einen gelöschten Nutzer wieder her (gleiche LeserNi wie vor dem Löschen) und entfernt den Papierkorb-Eintrag. */
+function leserWiederherstellen(db, id) {
+  const eintrag = papierkorbEintrag(db, 'LeserAbg', id);
+  const spalten = TABLES.Leser;
+  const row = {};
+  for (const s of spalten) row[s] = eintrag[s];
+  upsert(db, 'Leser', row);
+  db.prepare(`DELETE FROM "LeserAbg" WHERE id = ?`).run(id);
+  return row.LeserNi;
+}
+
+/**
+ * Stellt ein gelöschtes Exemplar wieder her (gleiche MedienNi wie vor dem
+ * Löschen) – nur, wenn der zugehörige Titel noch existiert, sonst würde ein
+ * verwaistes Exemplar entstehen (siehe deleteKatalog: ein Titel nimmt beim
+ * Löschen alle seine Exemplare mit, ohne sie einzeln in den Papierkorb zu
+ * legen).
+ */
+function medienWiederherstellen(db, id) {
+  const eintrag = papierkorbEintrag(db, 'MedienAbg', id);
+  const katalog = db.prepare(`SELECT "KatalogNi" FROM "Katalog" WHERE "KatalogNi" = ?`).get(eintrag.KatalogNi);
+  if (!katalog) throw new Error('Der zugehörige Titel wurde inzwischen gelöscht – Exemplar kann nicht ohne Titel wiederhergestellt werden.');
+  const spalten = TABLES.Medien;
+  const row = {};
+  for (const s of spalten) row[s] = eintrag[s];
+  const doppelt = db.prepare(`SELECT "MedienNi" FROM "Medien" WHERE "MedienEtik" = ?`).get(row.MedienEtik);
+  if (doppelt) throw new Error(`Das Etikett/der Barcode „${row.MedienEtik}“ wird bereits von einem anderen Exemplar verwendet – bitte dort erst ändern.`);
+  upsert(db, 'Medien', row);
+  db.prepare(`DELETE FROM "MedienAbg" WHERE id = ?`).run(id);
+  return row.MedienNi;
+}
+
+function leserEndgueltigLoeschen(db, id) {
+  db.prepare(`DELETE FROM "LeserAbg" WHERE id = ?`).run(id);
+}
+
+function medienEndgueltigLoeschen(db, id) {
+  db.prepare(`DELETE FROM "MedienAbg" WHERE id = ?`).run(id);
+}
+
 function kennzahlen(db) {
   const titel = db.prepare(`SELECT COUNT(*) AS n FROM "Katalog"`).get().n;
   const exemplare = db.prepare(`SELECT COUNT(*) AS n FROM "Medien"`).get().n;
@@ -991,4 +1089,10 @@ module.exports = {
   distinctJahrgaenge,
   medArtFristSpeichern,
   kennzahlen,
+  papierkorbLeserListe,
+  papierkorbMedienListe,
+  leserWiederherstellen,
+  medienWiederherstellen,
+  leserEndgueltigLoeschen,
+  medienEndgueltigLoeschen,
 };

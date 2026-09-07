@@ -74,6 +74,8 @@ Ferienschließzeit.
   Sammel-Download für den ganzen Bestand (mit Fortschrittsanzeige, unter
   „Import / Export“)
 - Ausleihstatistik je Titel („insgesamt N× ausgeliehen“)
+- **Antolin-Klassenstufe** je Titel (freies Feld) für Titel mit
+  Antolin-Lesequiz
 - **Buchdaten per ISBN nachschlagen**: Titel/Untertitel/Autor/Verlag/Jahr
   über [Open Library](https://openlibrary.org/dev/docs/api/books) laden –
   füllt nur das gerade offene Formular, gespeichert wird erst durch
@@ -129,7 +131,10 @@ Mahnliste.
   Brieftext einer Stufe auf Wunsch ersetzen
 - Eigener Briefkopf: Absender, E-Mail, Telefon, Betreff-Vorlage,
   Schlusstext, Logo
-- Formeller Brief per **PDF-Export** oder **direktem Druckauftrag**
+- Formeller Brief per **PDF-Export**, **direktem Druckauftrag** oder **per
+  E-Mail** (öffnet das auf dem Rechner eingerichtete Mailprogramm mit
+  vorausgefülltem Betreff/Text – keine eigene Mailserver-Anbindung nötig,
+  eine Mail pro Empfänger:in mit hinterlegter Adresse)
 - Filter nach Stufe und Freitextsuche in der Mahnliste
 
 ### Einstellungen
@@ -156,6 +161,16 @@ Mahnliste.
   „Backup jetzt“ und „Sicherung einspielen“ (aus der Liste oder aus einer
   beliebigen Datei) direkt in den Einstellungen – Einspielen sichert vorher
   automatisch noch einmal den aktuellen Stand und startet INGA neu
+
+### Papierkorb
+
+Gelöschte Nutzer:innen und Exemplare landen zunächst im Papierkorb statt
+endgültig verloren zu gehen – mit **Wiederherstellen** (dieselbe LeserNi/
+MedienNi wie vor dem Löschen) oder **Endgültig löschen**. Ein Exemplar lässt
+sich nur wiederherstellen, solange der zugehörige Titel noch existiert. Kein
+automatisches Aufräumen – Einträge bleiben, bis sie bewusst entfernt werden.
+(Titel selbst haben keinen Papierkorb: Löschen eines Titels nimmt alle seine
+Exemplare unwiderruflich mit, siehe Warnhinweis beim Löschen.)
 
 ### Statistik
 

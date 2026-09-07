@@ -40,6 +40,7 @@
       <div class="nav-section">
         <h4>System</h4>
         <div class="nav-item" data-view="bestand"><span class="icon">🔄</span><span class="label">Import / Export</span></div>
+        <div class="nav-item" data-view="papierkorb"><span class="icon">🗑️</span><span class="label">Papierkorb</span></div>
         <div class="nav-item" data-view="einstellungen"><span class="icon">⚙️</span><span class="label">Einstellungen</span></div>
       </div>
     </nav>
@@ -366,6 +367,28 @@
             </div>
             <div class="progress-track" id="cover-progress-track" hidden><div class="progress-fill" id="cover-progress-fill"></div></div>
             <p class="hint" id="cover-download-status" style="margin-top:8px"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- Papierkorb -->
+      <section class="view" id="view-papierkorb" hidden>
+        <div class="toolbar"><h1>Papierkorb</h1></div>
+        <div class="view">
+          <div class="card" style="padding:18px; margin-bottom:16px">
+            <div class="section-title">Gelöschte Nutzer:innen</div>
+            <p class="hint">Gelöschte Einträge bleiben hier, bis sie wiederhergestellt oder endgültig entfernt werden – kein automatisches Aufräumen.</p>
+            <table>
+              <thead><tr><th>Name</th><th>Klasse/Jahrgang</th><th>Gelöscht am</th><th>Von</th><th></th></tr></thead>
+              <tbody id="papierkorb-leser-tbody"></tbody>
+            </table>
+          </div>
+          <div class="card" style="padding:18px">
+            <div class="section-title">Gelöschte Exemplare</div>
+            <table>
+              <thead><tr><th>Titel</th><th>Autor</th><th>Signatur/Barcode</th><th>Gelöscht am</th><th>Von</th><th></th></tr></thead>
+              <tbody id="papierkorb-medien-tbody"></tbody>
+            </table>
           </div>
         </div>
       </section>

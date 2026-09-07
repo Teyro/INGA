@@ -7,6 +7,24 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 ## Unveröffentlicht
 
 ### Neu
+- **Papierkorb für Nutzer:innen und Exemplare** (Datenbank-Migration Version
+  6, Tabellen `LeserAbg`/`MedienAbg`): Löschen verschiebt die Zeile zunächst
+  in den Papierkorb (neuer Bereich unter System) statt sie endgültig zu
+  entfernen – „Wiederherstellen" (gleiche LeserNi/MedienNi wie vorher) oder
+  „Endgültig löschen". Ein Exemplar lässt sich nur wiederherstellen, solange
+  der zugehörige Titel noch existiert. Entspricht der von Perpustakaan
+  Professional beworbenen Funktion „Papierkorb für Medien und Leser mit
+  Wiederherstellungsmöglichkeit" (in Perpustakaan Light nicht enthalten).
+- **Mahnungen per E-Mail**: dritte Option neben Druck/PDF im
+  Mahnungen-Druckfenster – öffnet für jede Person mit hinterlegter
+  E-Mail-Adresse das Standard-Mailprogramm mit vorausgefülltem Betreff und
+  Brieftext. Keine eigene Mailserver-Anbindung (kein Konto/Passwort in
+  INGA), entspricht sinngemäß „Mahn-Emails" aus Perpustakaan Professional.
+- **Antolin-Klassenstufe** je Titel (Katalog-Feld `KlasseAnto`) – sinngemäß
+  „Antolin-Unterstützung" aus Perpustakaan Professional; das Pendant auf
+  Exemplarebene (`AntolinEti`, ein Etikett pro physischem Exemplar) wurde
+  nicht übernommen, da es dafür noch keine Einzel-Exemplar-Bearbeitung in
+  INGA gibt und im vorliegenden Bestand nie befüllt war.
 - **Ausleihlimit**: neue Einstellung „Max. gleichzeitige Ausleihen pro
   Person" (Vorgabe: 0 = unbegrenzt) unter Einstellungen → Ausleihe. Greift
   beim Ausleihen mit einer klaren Fehlermeldung, unabhängig von Medienart

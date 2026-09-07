@@ -109,6 +109,7 @@ function showView(name) {
   else if (name === 'rueckgabe') loadRueckgabe();
   else if (name === 'mahnungen') { fuelleMahnstufenFilter(); loadMahnungen(); }
   else if (name === 'umlauf') loadUmlauf();
+  else if (name === 'papierkorb') loadPapierkorb();
   else if (name === 'statistik') loadStatistik();
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
@@ -590,6 +591,7 @@ async function openKatalogSheet(row) {
     { name: 'MedArtKb', label: 'Medienart', type: 'select', options: medArtOptions() },
     { name: 'SystemId', label: 'Systematik', type: 'select', options: systematikOptions() },
     { name: 'Schlagwort', label: 'Schlagworte' },
+    { name: 'KlasseAnto', label: 'Antolin-Klassenstufe' },
   ];
 
   let extraBox = null;
@@ -1453,6 +1455,83 @@ async function loadVerlustliste() {
   for (const r of rows) {
     tbody.appendChild(
       el('tr', {}, [el('td', {}, [r.Titel]), el('td', {}, [r.Autor || '']), el('td', {}, [r.MedienEtik || '']), el('td', {}, [r.grund || ''])])
+    );
+  }
+}
+
+/* ------------------------------------------------------------- Papierkorb */
+
+async function loadPapierkorb() {
+  const [leser, medien] = await Promise.all([api.papierkorb.leserListe(), api.papierkorb.medienListe()]);
+
+  const leserTbody = document.getElementById('papierkorb-leser-tbody');
+  leserTbody.replaceChildren();
+  if (!leser.length) {
+    leserTbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty small' }, ['Papierkorb ist leer.'])])]));
+  }
+  for (const r of leser) {
+    leserTbody.appendChild(
+      el('tr', {}, [
+        el('td', {}, [`${r.Nachname}, ${r.Vorname}`]),
+        el('td', {}, [r.Jahrgang || '']),
+        el('td', {}, [fmtDatum(r.LoeschDat)]),
+        el('td', {}, [r.LoeschAnw || '']),
+        el('td', {}, [
+          el('div', { class: 'row-inline' }, [
+            el('button', {
+              class: 'button small ghost',
+              onclick: async () => {
+                try { await api.papierkorb.leserWiederherstellen(r.id); toast('Wiederhergestellt.'); await loadPapierkorb(); await refreshKennzahlen(); }
+                catch (err) { toast(err.message || String(err), 'error'); }
+              },
+            }, ['Wiederherstellen']),
+            el('button', {
+              class: 'button small ghost danger',
+              onclick: async () => {
+                if (!confirm(`„${r.Nachname}, ${r.Vorname}“ endgültig aus dem Papierkorb entfernen? Das lässt sich nicht rückgängig machen.`)) return;
+                await api.papierkorb.leserEndgueltigLoeschen(r.id);
+                await loadPapierkorb();
+              },
+            }, ['Endgültig löschen']),
+          ]),
+        ]),
+      ])
+    );
+  }
+
+  const medienTbody = document.getElementById('papierkorb-medien-tbody');
+  medienTbody.replaceChildren();
+  if (!medien.length) {
+    medienTbody.appendChild(el('tr', {}, [el('td', { colSpan: 5 }, [el('div', { class: 'empty small' }, ['Papierkorb ist leer.'])])]));
+  }
+  for (const r of medien) {
+    medienTbody.appendChild(
+      el('tr', {}, [
+        el('td', {}, [r.Titel || '']),
+        el('td', {}, [r.Autor || '']),
+        el('td', {}, [r.MedienEtik || '']),
+        el('td', {}, [fmtDatum(r.LoeschDat)]),
+        el('td', {}, [r.LoeschAnw || '']),
+        el('td', {}, [
+          el('div', { class: 'row-inline' }, [
+            el('button', {
+              class: 'button small ghost',
+              onclick: async () => {
+                try { await api.papierkorb.medienWiederherstellen(r.id); toast('Wiederhergestellt.'); await loadPapierkorb(); await refreshKennzahlen(); }
+                catch (err) { toast(err.message || String(err), 'error'); }
+              },
+            }, ['Wiederherstellen']),
+            el('button', {
+              class: 'button small ghost danger',
+              onclick: async () => {
+                if (!confirm(`Exemplar „${r.Titel}“ (${r.MedienEtik || 'ohne Etikett'}) endgültig aus dem Papierkorb entfernen? Das lässt sich nicht rückgängig machen.`)) return;
+                await api.papierkorb.medienEndgueltigLoeschen(r.id);
+                await loadPapierkorb();
+              },
+            }, ['Endgültig löschen']),
+          ]),
+        ]),
+      ])
     );
   }
 }

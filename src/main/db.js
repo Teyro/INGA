@@ -52,6 +52,12 @@ const NATIVE_TABLES = {
   // bilden zusammen eine Zeile) – bekommt wie Ausleihe/Mahnung eine eigene
   // id-Spalte, siehe die Sonderbehandlung unten und Migration Version 5.
   Vormerkung: null,
+  // Papierkorb für gelöschte Nutzer:innen/Exemplare (siehe Migration Version 6)
+  // – kein *Ni-Einzelschlüssel (LeserNi/MedienNi können nach Wiederherstellen
+  // und erneutem Löschen mehrfach auftauchen), deshalb wie Ausleihe/Mahnung/
+  // Vormerkung eine eigene id-Spalte.
+  LeserAbg: null,
+  MedienAbg: null,
 };
 
 // StatMedien ist im Original eine abgeleitete Momentaufnahme der laufenden
@@ -62,7 +68,7 @@ const DERIVED_TABLES = new Set(['StatMedien']);
 // Tabellen mit eigener id-Spalte statt eines *Ni-Einzelschlüssels (siehe
 // NATIVE_TABLES-Kommentare oben) – für die WHERE-Klausel unten UND für die
 // Sonderbehandlung in createSchema()/csvio.js an einer Stelle gepflegt.
-const ID_BASIERTE_TABELLEN = new Set(['Ausleihe', 'Mahnung', 'Vormerkung']);
+const ID_BASIERTE_TABELLEN = new Set(['Ausleihe', 'Mahnung', 'Vormerkung', 'LeserAbg', 'MedienAbg']);
 
 const LEGACY_TABLES = Object.keys(TABLES).filter(
   (name) => !NATIVE_TABLES[name] && !ID_BASIERTE_TABELLEN.has(name) && !DERIVED_TABLES.has(name)
@@ -103,6 +109,19 @@ function createSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS "Vormerkung" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ${TABLES.Vormerkung.map(quoteIdent).join(', ')}
+  )`);
+  // Papierkorb (siehe NATIVE_TABLES-Kommentar): LeserAbg/MedienAbg speichern
+  // eine vollständige Momentaufnahme der gelöschten Zeile (bei MedienAbg
+  // zusätzlich die Katalogdaten des zugehörigen Titels, siehe deleteMedium()
+  // in repo.js) statt nur eines Verweises – dadurch bleibt der Papierkorb
+  // auch dann lesbar, wenn der Titel danach ebenfalls gelöscht wurde.
+  db.exec(`CREATE TABLE IF NOT EXISTS "LeserAbg" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ${TABLES.LeserAbg.map(quoteIdent).join(', ')}
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS "MedienAbg" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ${TABLES.MedienAbg.map(quoteIdent).join(', ')}
   )`);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_vormerkung_katalog ON "Vormerkung" ("KatalogNi")`);
@@ -181,7 +200,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MIGRATIONS = [
   {
     version: 2,
@@ -261,6 +280,29 @@ const MIGRATIONS = [
         columns,
         `INSERT INTO "Vormerkung" (${columns.map(quoteIdent).join(', ')}) VALUES (${columns.map((c) => `@${c}`).join(', ')})`
       );
+    },
+  },
+  {
+    version: 6,
+    beschreibung: 'Papierkorb für gelöschte Nutzer:innen/Exemplare (LeserAbg/MedienAbg werden echte Tabellen statt nur Legacy-Passthrough)',
+    up(db) {
+      // Wie Vormerkung (Migration Version 5): kein *Ni-Einzelschlüssel im
+      // Original, deshalb eigene id-Spalte. createSchema() legt beide für
+      // neue Datenbanken bereits an; hier zusätzlich idempotent samt
+      // Übernahme bereits vorhandener Altdaten aus einem früheren Import.
+      for (const table of ['LeserAbg', 'MedienAbg']) {
+        const columns = TABLES[table];
+        db.exec(`CREATE TABLE IF NOT EXISTS ${quoteIdent(table)} (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ${columns.map(quoteIdent).join(', ')}
+        )`);
+        uebernehmeLegacyAltdaten(
+          db,
+          table,
+          columns,
+          `INSERT INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(', ')}) VALUES (${columns.map((c) => `@${c}`).join(', ')})`
+        );
+      }
     },
   },
 ];

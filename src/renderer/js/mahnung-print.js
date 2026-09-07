@@ -74,7 +74,10 @@ function renderBrief(brief) {
   ]);
 }
 
+let aktuelleBriefe = [];
+
 api.on('print:data', (data) => {
+  aktuelleBriefe = data.briefe;
   document.getElementById('anzahl').textContent = `${data.briefe.length} Brief${data.briefe.length === 1 ? '' : 'e'}`;
 
   const root = document.documentElement;
@@ -87,6 +90,44 @@ api.on('print:data', (data) => {
   paper.replaceChildren(...data.briefe.map(renderBrief));
 });
 
+/**
+ * Reintext-Fassung eines Briefs für mailto: – dieselben Platzhalter wie
+ * renderBrief(), aber ohne HTML: Anrede/Brieftext, Medienliste als einfache
+ * Zeilen, Schlusstext. Kein Briefkopf/keine Anschrift (steht schon in der
+ * E-Mail selbst: Absender = Konto des Versendenden, Empfänger = To-Feld).
+ */
+function brieftextAlsEmail(brief) {
+  const { leser, posten, summe, mahngebuehrenAktiv } = brief;
+  const stufe = massgeblicheStufe(posten);
+  const tageMax = Math.max(...posten.map((p) => p.tageUeberfaellig || 0));
+  const faelligMin = posten.map((p) => p.faelligAm).sort()[0];
+  const werte = {
+    Vorname: leser?.Vorname || '', Nachname: leser?.Nachname || '',
+    Titel: posten.map((p) => p.Titel).join(', '), Tage: String(tageMax),
+    Gebuehr: fmtGeld(summe), Datum: brief.datum, Faellig: fmtDatum(faelligMin), Stufe: stufe.text || 'Mahnung',
+  };
+  const zeilen = [
+    fuellePlatzhalter(stufe.briefText, werte),
+    '',
+    ...posten.map((p) => `- ${p.Titel} (ausgeliehen am ${fmtDatum(p.AuslDatum)}, ${p.tageUeberfaellig || 0} Tage überfällig${mahngebuehrenAktiv ? `, ${fmtGeld(p.gebuehr)}` : ''})`),
+    mahngebuehrenAktiv ? `\nGesamt: ${fmtGeld(summe)}` : '',
+    brief.mahnSchluss || '',
+  ];
+  return {
+    to: leser?.emailPriv || leser?.emailGesch || '',
+    subject: fuellePlatzhalter(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung',
+    body: zeilen.filter((z) => z !== '').join('\n'),
+  };
+}
+
 document.getElementById('close').addEventListener('click', () => api.window.close());
 document.getElementById('print').addEventListener('click', () => api.print.now().catch((err) => alert(`Drucken fehlgeschlagen: ${err.message || err}`)));
 document.getElementById('pdf').addEventListener('click', () => api.print.pdf({ name: 'Mahnungen' }).catch((err) => alert(`PDF-Export fehlgeschlagen: ${err.message || err}`)));
+document.getElementById('email').addEventListener('click', async () => {
+  const mails = aktuelleBriefe.map(brieftextAlsEmail);
+  const ohneAdresse = mails.filter((m) => !m.to).length;
+  for (const m of mails.filter((m) => m.to)) {
+    try { await api.mail.oeffnen(m); } catch (err) { alert(`E-Mail konnte nicht geöffnet werden: ${err.message || err}`); }
+  }
+  if (ohneAdresse) alert(`${ohneAdresse} von ${mails.length} Personen haben keine hinterlegte E-Mail-Adresse – für diese wurde nichts geöffnet.`);
+});

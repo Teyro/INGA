@@ -122,9 +122,22 @@ contextBridge.exposeInMainWorld('inga', {
     einspielenDatei: () => ipcRenderer.invoke('backup:einspielen-datei'),
   },
 
+  papierkorb: {
+    leserListe: () => ipcRenderer.invoke('papierkorb:leser-liste'),
+    medienListe: () => ipcRenderer.invoke('papierkorb:medien-liste'),
+    leserWiederherstellen: (id) => ipcRenderer.invoke('papierkorb:leser-wiederherstellen', id),
+    medienWiederherstellen: (id) => ipcRenderer.invoke('papierkorb:medien-wiederherstellen', id),
+    leserEndgueltigLoeschen: (id) => ipcRenderer.invoke('papierkorb:leser-endgueltig-loeschen', id),
+    medienEndgueltigLoeschen: (id) => ipcRenderer.invoke('papierkorb:medien-endgueltig-loeschen', id),
+  },
+
   print: {
     now: (options) => ipcRenderer.invoke('print:now', options),
     pdf: (options) => ipcRenderer.invoke('print:pdf', options),
+  },
+
+  mail: {
+    oeffnen: (payload) => ipcRenderer.invoke('mail:oeffnen', payload),
   },
 
   window: {
