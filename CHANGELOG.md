@@ -43,6 +43,11 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
   zur XDG-Konvention für Nutzdaten.
 
 ### Behoben
+- **Rahmenlose Kopfleiste (GNOME) hatte nur einen Schließen-Knopf** –
+  Minimieren und Maximieren/Wiederherstellen waren im Hauptprozess und
+  Preload bereits vollständig angebunden, aber in der Oberfläche nie
+  verdrahtet; ohne native Fensterdekoration ließ sich das Fenster unter
+  GNOME dadurch weder minimieren noch maximieren.
 - **Katalog/Nutzer zeigten nie mehr als 300 Treffer an** (hartes `LIMIT`
   ohne Seitennavigation) – ab dem 301. Titel/Nutzer war er schlicht nicht
   mehr auffindbar.

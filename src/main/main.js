@@ -165,6 +165,8 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:state', { maximized: true }));
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:state', { maximized: false }));
 }
 
 function buildMenu() {

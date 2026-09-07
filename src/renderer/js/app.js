@@ -39,6 +39,10 @@ async function boot() {
   state.stammdaten = await api.stammdaten.get();
 
   document.getElementById('win-close').addEventListener('click', () => api.window.close());
+  document.getElementById('win-minimize').addEventListener('click', () => api.window.minimize());
+  const maximizeButton = document.getElementById('win-maximize');
+  maximizeButton.addEventListener('click', async () => setMaximizedState(await api.window.toggleMaximize()));
+  api.on('window:state', ({ maximized }) => setMaximizedState(maximized));
 
   for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => showView(item.dataset.view));
@@ -66,6 +70,12 @@ async function boot() {
   api.on('cover:progress', aktualisiereCoverFortschritt);
 
   showView('dashboard');
+}
+
+function setMaximizedState(maximized) {
+  const button = document.getElementById('win-maximize');
+  button.textContent = maximized ? '❐' : '□';
+  button.title = maximized ? 'Wiederherstellen' : 'Maximieren';
 }
 
 function applyChrome(data) {

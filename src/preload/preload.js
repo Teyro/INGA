@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress']);
+const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress', 'window:state']);
 
 contextBridge.exposeInMainWorld('inga', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
