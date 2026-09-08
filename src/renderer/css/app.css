@@ -231,14 +231,19 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-line
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  color: var(--text);
   font-weight: 600;
   white-space: nowrap;
 }
 .button:hover { background: var(--fill-hover); }
 .button:active { background: var(--fill-active); }
 .button:disabled { opacity: 0.45; cursor: default; }
-.button.primary { background: var(--accent); border-color: transparent; color: #fff; }
-.button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
+/* "Bestätigen"-Knöpfe (Speichern, Ausleihen, Drucken, Erinnerung/Mahnung
+   erstellen, …): kräftiges Orange statt der (einstellbaren, teils zu
+   blassen) Akzentfarbe, damit sie an der Theke immer sofort auffindbar sind. */
+.button.primary { background: var(--confirm); border-color: transparent; color: #fff; }
+.button.primary:hover { background: color-mix(in srgb, var(--confirm) 88%, white); }
+.button.primary:active { background: color-mix(in srgb, var(--confirm) 78%, black); }
 .button.ghost { border-color: transparent; background: transparent; }
 .button.ghost:hover { background: var(--fill-hover); }
 .button.danger { color: var(--danger); }
@@ -473,16 +478,22 @@ tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--a
 
 /* Fester Detailbereich neben der Liste statt eines Flyouts darüber (siehe
    app.js: zeigeBuchDetail) – die Liste bleibt sichtbar und an derselben
-   Stelle stehen. Unter --katalog-detail-breite (Container-Query) klappt das
+   Stelle stehen. Wichtig: NICHT über position:sticky gelöst – die Ansicht
+   verschachtelt zwei .view-Elemente (Konvention aller Ansichten), von denen
+   nur das äußere tatsächlich scrollt; sticky hätte sich auf das innere
+   (nie scrollende) Element bezogen und wäre beim Herunterscrollen mit der
+   Liste verschwunden. Stattdessen bekommt .katalog-view-inner selbst eine
+   feste Höhe (kein eigenes Scrollen) und Liste/Detail scrollen JEWEILS FÜR
+   SICH innerhalb dieser festen Höhe – das Detail bleibt dadurch immer an
+   Ort und Stelle sichtbar. Unter 780px Breite (Container-Query) klappt das
    Detail stattdessen unter der gewählten Zeile auf (siehe .katalog-detail-row). */
-.katalog-split { display: flex; gap: 16px; align-items: flex-start; container-type: inline-size; container-name: katalog-split; }
-.katalog-liste-wrap { flex: 1 1 55%; min-width: 0; }
+.katalog-view-inner { overflow: hidden; display: flex; flex-direction: column; }
+.katalog-split { flex: 1; min-height: 0; display: flex; gap: 16px; container-type: inline-size; container-name: katalog-split; }
+.katalog-liste-wrap { flex: 1 1 55%; min-width: 0; overflow-y: auto; min-height: 0; }
 .katalog-detail-panel {
   flex: 1 1 380px; max-width: 420px;
-  position: sticky; top: 0;
   padding: 18px;
-  max-height: calc(100vh - var(--titlebar-height) - 140px);
-  overflow-y: auto;
+  overflow-y: auto; min-height: 0;
 }
 tr.katalog-row-selected td { background: var(--accent-soft); }
 tr.katalog-row-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }

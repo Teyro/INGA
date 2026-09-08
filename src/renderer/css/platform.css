@@ -99,7 +99,7 @@
 :root[data-ui="kde"] #sidebar { border-right: 1px solid var(--line); background: var(--surface-2); }
 :root[data-ui="kde"] .button { height: 30px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
 :root[data-ui="kde"] .button:hover { border-color: var(--accent); }
-:root[data-ui="kde"] .button.primary { border-color: color-mix(in srgb, var(--accent) 70%, black); }
+:root[data-ui="kde"] .button.primary { border-color: color-mix(in srgb, var(--confirm) 70%, black); }
 :root[data-ui="kde"] .nav-item { border-radius: 4px; }
 :root[data-ui="kde"] .nav-item.active { background: var(--accent); color: #fff; }
 :root[data-ui="kde"] input, :root[data-ui="kde"] select { border-radius: 4px; border-color: var(--line-strong); }
@@ -133,8 +133,8 @@
 :root[data-ui="gnome"] .card { border-radius: 12px; border: 0; box-shadow: 0 0 0 1px rgb(var(--shadow-rgb) / 0.06), 0 1px 3px rgb(var(--shadow-rgb) / 0.12); }
 :root[data-ui="gnome"] .titlebar { background: var(--surface); border-bottom: 1px solid var(--line); }
 :root[data-ui="gnome"] #sidebar { background: var(--surface-2); border-right: 1px solid var(--line); }
-:root[data-ui="gnome"] .button { height: 34px; border: 0; border-radius: 6px; background: var(--fill); font-weight: 700; }
-:root[data-ui="gnome"] .button.primary { background: var(--accent); color: #fff; }
+:root[data-ui="gnome"] .button { height: 34px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); font-weight: 700; }
+:root[data-ui="gnome"] .button.primary { background: var(--confirm); border-color: transparent; color: #fff; }
 :root[data-ui="gnome"] .nav-item { border-radius: 6px; }
 :root[data-ui="gnome"] .nav-item.active { background: var(--fill-active); font-weight: 700; }
 :root[data-ui="gnome"] input, :root[data-ui="gnome"] select { border: 0; border-radius: 8px; background: var(--fill); }

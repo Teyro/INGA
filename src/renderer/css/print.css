@@ -1,4 +1,4 @@
-html, body { margin: 0; height: 100%; background: var(--window); }
+html, body { margin: 0; height: 100%; background: var(--window); color: var(--text); font-family: var(--font); }
 
 .print-bar {
   display: flex; align-items: center; gap: 10px;
@@ -11,6 +11,34 @@ html, body { margin: 0; height: 100%; background: var(--window); }
 .print-bar .brand { font-weight: 700; -webkit-app-region: no-drag; }
 .print-bar .spacer { flex: 1; }
 .print-bar button, .print-bar .hint { -webkit-app-region: no-drag; }
+
+/* Eigenständiges Fenster (lädt app.css bewusst nicht mit) – hatte dadurch
+   aber auch gar keine Stile für .button/.icon-button/.hint, zeigte
+   unstylisierte Browser-Standardknöpfe (auf manchen Systemen kaum von der
+   Kopfleiste zu unterscheiden). Dieselben Regeln wie im Hauptfenster
+   (app.css), damit "Als PDF sichern" & Co. hier genauso gut lesbar sind. */
+.hint { color: var(--text-faint); font-size: 0.82rem; }
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+}
+.button:hover { background: var(--fill-hover); }
+.button:active { background: var(--fill-active); }
+.button.primary { background: var(--confirm); border-color: transparent; color: #fff; }
+.button.primary:hover { background: color-mix(in srgb, var(--confirm) 88%, white); }
+.icon-button {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; border-radius: var(--radius-sm); color: var(--text-soft);
+  cursor: pointer; font: inherit;
+}
+.icon-button:hover { background: var(--fill-hover); color: var(--text); }
 
 #paper { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 24px; overflow-y: auto; height: calc(100% - var(--titlebar-height, 52px)); }
 
