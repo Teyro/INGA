@@ -9,7 +9,7 @@
  * (Medienart, Verlängerung, Einstellungen), dieses Modul kennt nur Kalender.
  */
 
-const { addTage, istWochenende, tageDifferenz } = require('./date-utils');
+const { addTage, istWochenende, tageDifferenz, heuteISO } = require('./date-utils');
 
 const TYPEN = ['Ferien', 'Feiertag', 'Schließzeit'];
 const QUELLEN = ['manuell', 'Import'];
@@ -69,9 +69,14 @@ function deleteFerienEintrag(db, id) {
  * versehentlich zweimal hintereinander).
  */
 function ferienImportUebernehmen(db, eintraege) {
-  const bestehende = listeFerien(db);
+  // Gegen die schon zu Abschnitten gebündelten Bestandsdaten prüfen (siehe
+  // buendleAbschnitte) statt nur gegen die rohen Zeilen – so werden neue,
+  // bereits gebündelte Importe auch dann als Dublette erkannt, wenn eine
+  // ältere Bibliothek denselben Zeitraum noch als mehrere Einzeltag-Zeilen
+  // aus einem Import von vor dieser Umstellung gespeichert hat.
+  let bestehendeAbschnitte = buendleAbschnitte(listeFerien(db));
   const istDoppelt = (e) =>
-    bestehende.some((b) => b.bezeichnung === e.bezeichnung && b.startdatum === e.startdatum && b.enddatum === e.enddatum);
+    bestehendeAbschnitte.some((b) => b.bezeichnung === e.bezeichnung && b.startdatum === e.startdatum && b.enddatum === e.enddatum);
   let neu = 0;
   let uebersprungen = 0;
   const tx = db.transaction(() => {
@@ -82,12 +87,116 @@ function ferienImportUebernehmen(db, eintraege) {
         continue;
       }
       saveFerienEintrag(db, clean);
-      bestehende.push(clean);
+      bestehendeAbschnitte = [...bestehendeAbschnitte, clean];
       neu += 1;
     }
   });
   tx();
   return { neu, uebersprungen };
+}
+
+/* -------------------------------------------------- Kompakte Übersicht (Abschnitt 2.1) */
+
+/**
+ * Bündelt zusammenhängende Ferieneinträge gleicher Bezeichnung/Typ zu einem
+ * Abschnitt – Grundlage sowohl für die Anzeige (viele Kalender liefern beim
+ * Import jeden Ferientag als eigenen Eintrag) als auch für den Import selbst
+ * (siehe main.js: die Importvorschau bündelt VOR dem Übernehmen, damit gar
+ * nicht erst hunderte Einzeltag-Zeilen entstehen). Rein additiv nach
+ * Kalendertagen: zwei Einträge werden zusammengefasst, wenn sie sich
+ * unmittelbar berühren oder überlappen UND dieselbe Bezeichnung/denselben Typ
+ * haben – ein direkt anschließender, ANDERS benannter Termin (z. B. ein
+ * Feiertag direkt nach den Ferien) bleibt bewusst ein eigener Abschnitt.
+ * `id`s der zusammengefassten Zeilen werden gesammelt (für Bearbeiten/Löschen
+ * in der Oberfläche), unterschiedliche `quelle`-Werte ergeben `"gemischt"`.
+ */
+function buendleAbschnitte(eintraege) {
+  const sortiert = [...(eintraege || [])].sort(
+    (a, b) => a.startdatum.localeCompare(b.startdatum) || String(a.bezeichnung).localeCompare(String(b.bezeichnung))
+  );
+  const abschnitte = [];
+  for (const e of sortiert) {
+    const letzter = abschnitte[abschnitte.length - 1];
+    const passtAnLetzten =
+      letzter && letzter.bezeichnung === e.bezeichnung && letzter.typ === e.typ && e.startdatum <= addTage(letzter.enddatum, 1);
+    if (passtAnLetzten) {
+      if (e.enddatum > letzter.enddatum) letzter.enddatum = e.enddatum;
+      if (e.id !== undefined) letzter.ids.push(e.id);
+      if (e.quelle && letzter.quelle && e.quelle !== letzter.quelle) letzter.quelle = 'gemischt';
+    } else {
+      abschnitte.push({
+        bezeichnung: e.bezeichnung,
+        typ: e.typ,
+        startdatum: e.startdatum,
+        enddatum: e.enddatum,
+        quelle: e.quelle,
+        ids: e.id !== undefined ? [e.id] : [],
+      });
+    }
+  }
+  return abschnitte.map((a) => ({ ...a, tage: tageDifferenz(a.startdatum, a.enddatum) + 1 }));
+}
+
+/** Hamburger Schuljahr (1. August – 31. Juli) für ein Kalenderdatum: Startjahr + Anzeige-Label "2026/27". */
+function schuljahrFuer(datumISO) {
+  const [jahrStr, monatStr] = String(datumISO).slice(0, 7).split('-');
+  const jahr = Number(jahrStr);
+  const monat = Number(monatStr);
+  const startJahr = monat >= 8 ? jahr : jahr - 1;
+  return { startJahr, label: `${startJahr}/${String((startJahr + 1) % 100).padStart(2, '0')}` };
+}
+
+/**
+ * Gruppiert bereits gebündelte Abschnitte nach Schuljahr (neuestes zuerst,
+ * jeweils nach Startdatum sortiert) und kennzeichnet vergangene Schuljahre.
+ * `heuteISOStr` ist injizierbar für Tests, Vorgabe das echte heutige Datum.
+ */
+function gruppiereNachSchuljahr(abschnitte, heuteISOStr) {
+  const heutigesStartJahr = schuljahrFuer(heuteISOStr || heuteISO()).startJahr;
+  const nachSchuljahr = new Map();
+  for (const a of abschnitte) {
+    const { startJahr, label } = schuljahrFuer(a.startdatum);
+    if (!nachSchuljahr.has(startJahr)) nachSchuljahr.set(startJahr, { schuljahr: label, startJahr, abschnitte: [] });
+    nachSchuljahr.get(startJahr).abschnitte.push(a);
+  }
+  return [...nachSchuljahr.values()]
+    .map((g) => ({
+      ...g,
+      vergangen: g.startJahr < heutigesStartJahr,
+      aktuell: g.startJahr === heutigesStartJahr,
+      abschnitte: g.abschnitte.sort((x, y) => x.startdatum.localeCompare(y.startdatum)),
+    }))
+    .sort((x, y) => y.startJahr - x.startJahr);
+}
+
+/** Für die Ferien-Übersicht in den Einstellungen: Bestand gebündelt und nach Schuljahr gruppiert. */
+function gruppiereFuerAnzeige(db, heuteISOStr) {
+  return gruppiereNachSchuljahr(buendleAbschnitte(listeFerien(db)), heuteISOStr);
+}
+
+/**
+ * Vorschau vor dem Übernehmen eines Imports/Abrufs: bündelt die rohen
+ * (möglicherweise tageweise vorliegenden) Termine zu Abschnitten, gruppiert
+ * nach Schuljahr und markiert je Abschnitt, ob er (als Abschnitt, nicht nur
+ * als Einzeltag) bereits vorhanden ist – Grundlage für "Schuljahr 2027/28: 6
+ * Abschnitte, davon 2 schon vorhanden" in der Oberfläche.
+ */
+function vorschauFuerImport(db, termine, heuteISOStr) {
+  const bestehendeAbschnitte = buendleAbschnitte(listeFerien(db));
+  const istVorhanden = (a) => bestehendeAbschnitte.some((b) => b.bezeichnung === a.bezeichnung && b.startdatum === a.startdatum && b.enddatum === a.enddatum);
+  const abschnitte = buendleAbschnitte(termine).map((a) => ({ ...a, bereitsVorhanden: istVorhanden(a) }));
+  return gruppiereNachSchuljahr(abschnitte, heuteISOStr).map((g) => ({
+    ...g,
+    anzahlVorhanden: g.abschnitte.filter((a) => a.bereitsVorhanden).length,
+  }));
+}
+
+/** Löscht ein komplettes Schuljahr (1.8. des Startjahrs bis 31.7. des Folgejahrs) auf einmal. */
+function loescheSchuljahr(db, startJahr) {
+  const von = `${startJahr}-08-01`;
+  const bis = `${Number(startJahr) + 1}-07-31`;
+  const info = db.prepare(`DELETE FROM ferien WHERE startdatum >= ? AND startdatum <= ?`).run(von, bis);
+  return info.changes;
 }
 
 /** Der erste Ferien-/Feiertags-/Schließzeit-Eintrag, der das Datum abdeckt (oder null). */
@@ -146,6 +255,68 @@ function schultageZwischen(vonExklusiv, bisInklusiv, ferienListe) {
   return zaehl;
 }
 
+/* --------------------------------------------- Frist verlängert sich um Ferien (Abschnitt 2.2) */
+
+/**
+ * Eigentlicher Zweck der Ferienverwaltung: Fällt die Ausleihspanne
+ * (`auslDatum` bis zur naiv berechneten Fälligkeit) ganz oder teilweise in
+ * einen Ferien-/Schließzeit-Zeitraum, verschiebt sich die Fälligkeit um dessen
+ * volle Länge nach hinten – nicht nur um den überlappenden Teil (Beispiel aus
+ * dem Auftrag: Ausleihe 14.10., 28 Tage Frist, Herbstferien 20.10.–31.10.
+ * liegen komplett VOR der naiven Fälligkeit 11.11., trotzdem verschiebt sich
+ * die Fälligkeit um die vollen 12 Ferientage auf den 23.11.). Feiertage zählen
+ * bewusst nicht mit (nur `typ: 'Ferien'` und `'Schließzeit'`) – ein einzelner
+ * Feiertag verlängert die Leihfrist nicht extra, er wird wie bisher nur über
+ * `verschobenesDatumMitHinweis` behandelt, falls die Fälligkeit direkt darauf
+ * fällt. Läuft iterativ (wie `verschobenesDatumMitHinweis`), weil eine
+ * Verlängerung die Fälligkeit in einen WEITEREN, bis dahin nicht berührten
+ * Ferienabschnitt schieben kann (z. B. Herbstferien knapp gefolgt von
+ * Weihnachtsferien). `zaehlweise` steuert, ob die volle Kalenderlänge eines
+ * Abschnitts zählt oder nur seine Schultage (siehe `schultageZwischen`).
+ */
+/**
+ * Anzahl der Werktage (Mo–Fr) innerhalb eines Zeitraums – für die Zählweise
+ * "Schultage" wird ein Ferienabschnitt damit auf seine eigenen Werktage
+ * verkürzt (die enthaltenen Wochenenden zählen nicht extra). Bewusst NICHT
+ * `istSchultagAn`/`schultageZwischen`: die zählen einen Tag innerhalb der
+ * Ferien selbst grundsätzlich als "kein Schultag" (weil er in der Ferienliste
+ * steckt) – hier soll es aber um die Werktage GENAU DIESES Abschnitts gehen.
+ */
+function werktageInZeitraum(startdatum, enddatum) {
+  let zaehl = 0;
+  let d = startdatum;
+  while (d <= enddatum) {
+    if (!istWochenende(d)) zaehl++;
+    d = addTage(d, 1);
+  }
+  return zaehl;
+}
+
+function verlaengerungDurchFerien(auslDatum, naivesDatum, ferienListe, zaehlweise = 'kalendertage') {
+  const relevante = (ferienListe || []).filter((f) => f.typ === 'Ferien' || f.typ === 'Schließzeit');
+  let ende = naivesDatum;
+  const beruecksichtigt = new Set();
+  const namen = [];
+  // Obergrenze als Sicherheitsnetz gegen fehlerhafte Daten (siehe
+  // verschobenesDatumMitHinweis) – im Normalbetrieb weit unerreicht, da jeder
+  // Ferienabschnitt nur einmal zählt.
+  for (let i = 0; i < 1000; i++) {
+    const treffer = relevante.find(
+      (f) => !beruecksichtigt.has(f) && auslDatum <= f.enddatum.slice(0, 10) && ende >= f.startdatum.slice(0, 10)
+    );
+    if (!treffer) break;
+    beruecksichtigt.add(treffer);
+    const start = treffer.startdatum.slice(0, 10);
+    const endeAbschnitt = treffer.enddatum.slice(0, 10);
+    const tage = zaehlweise === 'schultage' ? werktageInZeitraum(start, endeAbschnitt) : tageDifferenz(start, endeAbschnitt) + 1;
+    if (tage <= 0) continue;
+    ende = addTage(ende, tage);
+    namen.push(treffer.bezeichnung);
+  }
+  if (!namen.length) return { datum: naivesDatum, namen: [] };
+  return { datum: ende, namen };
+}
+
 module.exports = {
   TYPEN,
   QUELLEN,
@@ -158,4 +329,11 @@ module.exports = {
   istSchultagAn,
   verschobenesDatumMitHinweis,
   schultageZwischen,
+  buendleAbschnitte,
+  schuljahrFuer,
+  gruppiereNachSchuljahr,
+  gruppiereFuerAnzeige,
+  vorschauFuerImport,
+  loescheSchuljahr,
+  verlaengerungDurchFerien,
 };

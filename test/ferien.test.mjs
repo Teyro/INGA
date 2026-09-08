@@ -190,3 +190,134 @@ test('ueberfaelligeAusleihen: "keine Überfälligkeit während der Ferien" über
   assert.ok(mitOption[0]?.tageUeberfaellig <= ohneOption[0]?.tageUeberfaellig);
   db.close();
 });
+
+/* --------------------------------------------------- Kompakte Übersicht (2.1) */
+
+test('buendleAbschnitte: fasst tageweise importierte Ferien zu einem Abschnitt zusammen', () => {
+  const einzeltage = [
+    { bezeichnung: 'Herbstferien', startdatum: '2026-10-19', enddatum: '2026-10-19', typ: 'Ferien' },
+    { bezeichnung: 'Herbstferien', startdatum: '2026-10-20', enddatum: '2026-10-20', typ: 'Ferien' },
+    { bezeichnung: 'Herbstferien', startdatum: '2026-10-21', enddatum: '2026-10-21', typ: 'Ferien' },
+  ];
+  const abschnitte = ferien.buendleAbschnitte(einzeltage);
+  assert.equal(abschnitte.length, 1);
+  assert.equal(abschnitte[0].startdatum, '2026-10-19');
+  assert.equal(abschnitte[0].enddatum, '2026-10-21');
+  assert.equal(abschnitte[0].tage, 3);
+});
+
+test('buendleAbschnitte: unterschiedliche Bezeichnung bleibt trotz direktem Anschluss ein eigener Abschnitt', () => {
+  const eintraege = [
+    { bezeichnung: 'Weihnachtsferien', startdatum: '2026-12-21', enddatum: '2027-01-03', typ: 'Ferien' },
+    { bezeichnung: 'Heilige Drei Könige', startdatum: '2027-01-04', enddatum: '2027-01-04', typ: 'Feiertag' },
+  ];
+  const abschnitte = ferien.buendleAbschnitte(eintraege);
+  assert.equal(abschnitte.length, 2);
+});
+
+test('gruppiereNachSchuljahr: gruppiert nach Schuljahr (1.8.–31.7.), neuestes zuerst, vergangene markiert', () => {
+  const abschnitte = ferien.buendleAbschnitte([
+    { bezeichnung: 'Herbstferien 25', startdatum: '2025-10-13', enddatum: '2025-10-24', typ: 'Ferien' },
+    { bezeichnung: 'Herbstferien 26', startdatum: '2026-10-19', enddatum: '2026-10-30', typ: 'Ferien' },
+    // März liegt noch im Schuljahr 2026/27 (Schuljahr beginnt 1.8.), nicht 2027/28.
+    { bezeichnung: 'Osterferien 27', startdatum: '2027-03-22', enddatum: '2027-04-01', typ: 'Ferien' },
+  ]);
+  const gruppen = ferien.gruppiereNachSchuljahr(abschnitte, '2026-11-01'); // "heute" mitten im Schuljahr 2026/27
+  assert.deepEqual(gruppen.map((g) => g.schuljahr), ['2026/27', '2025/26']);
+  assert.equal(gruppen.find((g) => g.schuljahr === '2026/27').abschnitte.length, 2);
+  assert.equal(gruppen.find((g) => g.schuljahr === '2025/26').vergangen, true);
+  assert.equal(gruppen.find((g) => g.schuljahr === '2026/27').vergangen, false);
+});
+
+test('vorschauFuerImport: markiert bereits vorhandene Abschnitte und zählt sie je Schuljahr', () => {
+  const db = openDatabase(tmpDir());
+  ferien.saveFerienEintrag(db, { bezeichnung: 'Herbstferien', startdatum: '2026-10-19', enddatum: '2026-10-30' });
+  const termine = [
+    { bezeichnung: 'Herbstferien', startdatum: '2026-10-19', enddatum: '2026-10-30', typ: 'Ferien' }, // schon vorhanden
+    { bezeichnung: 'Weihnachtsferien', startdatum: '2026-12-21', enddatum: '2027-01-03', typ: 'Ferien' }, // neu
+  ];
+  const [gruppe] = ferien.vorschauFuerImport(db, termine, '2026-09-01');
+  assert.equal(gruppe.schuljahr, '2026/27');
+  assert.equal(gruppe.abschnitte.length, 2);
+  assert.equal(gruppe.anzahlVorhanden, 1);
+  assert.equal(gruppe.abschnitte.find((a) => a.bezeichnung === 'Herbstferien').bereitsVorhanden, true);
+  assert.equal(gruppe.abschnitte.find((a) => a.bezeichnung === 'Weihnachtsferien').bereitsVorhanden, false);
+  db.close();
+});
+
+test('loescheSchuljahr: entfernt nur die Einträge des angegebenen Schuljahrs', () => {
+  const db = openDatabase(tmpDir());
+  ferien.saveFerienEintrag(db, { bezeichnung: 'Herbstferien 26', startdatum: '2026-10-19', enddatum: '2026-10-30' });
+  ferien.saveFerienEintrag(db, { bezeichnung: 'Herbstferien 27', startdatum: '2027-10-18', enddatum: '2027-10-29' });
+  const anzahl = ferien.loescheSchuljahr(db, 2026);
+  assert.equal(anzahl, 1);
+  const liste = ferien.listeFerien(db);
+  assert.equal(liste.length, 1);
+  assert.equal(liste[0].bezeichnung, 'Herbstferien 27');
+  db.close();
+});
+
+/* -------------------------------------- Frist verlängert sich um Ferien (2.2) */
+
+test('verlaengerungDurchFerien: Beispiel aus dem Auftrag (14.10. + 28 Tage, Herbstferien 20.10.–31.10. liegen VOR der naiven Fälligkeit)', () => {
+  const ferienListe = [{ bezeichnung: 'Herbstferien', startdatum: '2026-10-20', enddatum: '2026-10-31', typ: 'Ferien' }];
+  // Naive Fälligkeit: 14.10. + 28 Tage = 11.11. Die Herbstferien (12 Tage)
+  // liegen komplett innerhalb der Ausleihspanne, obwohl die naive Fälligkeit
+  // selbst gar nicht auf einen Ferientag fällt – die Frist verlängert sich
+  // trotzdem um die vollen 12 Tage: 11.11. + 12 = 23.11.
+  const { datum, namen } = ferien.verlaengerungDurchFerien('2026-10-14', '2026-11-11', ferienListe);
+  assert.equal(datum, '2026-11-23');
+  assert.deepEqual(namen, ['Herbstferien']);
+});
+
+test('verlaengerungDurchFerien: keine Verlängerung, wenn die Ausleihspanne die Ferien gar nicht berührt', () => {
+  const ferienListe = [{ bezeichnung: 'Weihnachtsferien', startdatum: '2026-12-21', enddatum: '2027-01-03', typ: 'Ferien' }];
+  const { datum, namen } = ferien.verlaengerungDurchFerien('2026-10-01', '2026-10-15', ferienListe);
+  assert.equal(datum, '2026-10-15');
+  assert.deepEqual(namen, []);
+});
+
+test('verlaengerungDurchFerien: ein einzelner Feiertag verlängert nicht (nur Ferien/Schließzeit zählen)', () => {
+  const ferienListe = [{ bezeichnung: 'Tag der Deutschen Einheit', startdatum: '2026-10-03', enddatum: '2026-10-03', typ: 'Feiertag' }];
+  const { datum, namen } = ferien.verlaengerungDurchFerien('2026-09-25', '2026-10-05', ferienListe);
+  assert.equal(datum, '2026-10-05');
+  assert.deepEqual(namen, []);
+});
+
+test('verlaengerungDurchFerien: verkettet, wenn die Verlängerung selbst in einen weiteren Ferienabschnitt rutscht', () => {
+  const ferienListe = [
+    { bezeichnung: 'Herbstferien', startdatum: '2026-10-05', enddatum: '2026-10-09', typ: 'Ferien' }, // 5 Tage
+    { bezeichnung: 'Beweglicher Ferientag', startdatum: '2026-10-14', enddatum: '2026-10-14', typ: 'Ferien' }, // 1 Tag, liegt erst NACH der ersten Verlängerung im Bereich
+  ];
+  // Ausleihe 2026-10-01, naive Fälligkeit 2026-10-08 (innerhalb der Herbstferien).
+  // +5 Tage wegen Herbstferien -> 2026-10-13. Die Ausleihspanne (bis 2026-10-13)
+  // berührt den beweglichen Ferientag am 14.10. noch nicht – hier bewusst mit
+  // einer Spanne bis 2026-10-14 getestet, damit auch der zweite Abschnitt zählt.
+  const { datum, namen } = ferien.verlaengerungDurchFerien('2026-10-01', '2026-10-14', ferienListe);
+  assert.equal(namen.length, 2);
+  assert.ok(namen.includes('Herbstferien') && namen.includes('Beweglicher Ferientag'));
+});
+
+test('verlaengerungDurchFerien: Zählweise "schultage" zählt nur die Werktage des Ferienabschnitts, nicht das Wochenende darin', () => {
+  // Herbstferien Mo 2026-10-19 bis Fr 2026-10-30 (12 Kalendertage, davon ein
+  // Wochenende 24./25.10. -> 10 Werktage).
+  const ferienListe = [{ bezeichnung: 'Herbstferien', startdatum: '2026-10-19', enddatum: '2026-10-30', typ: 'Ferien' }];
+  const kalendertage = ferien.verlaengerungDurchFerien('2026-10-12', '2026-10-19', ferienListe, 'kalendertage');
+  const schultage = ferien.verlaengerungDurchFerien('2026-10-12', '2026-10-19', ferienListe, 'schultage');
+  assert.equal(kalendertage.datum, '2026-10-31');
+  assert.equal(schultage.datum, '2026-10-29');
+});
+
+test('berechneRueckgabedatum: Ferienverlängerung UND anschließender Wochenend-Nudge wirken zusammen, mit vollständigem Hinweistext', () => {
+  const db = openDatabase(tmpDir());
+  ferien.saveFerienEintrag(db, { bezeichnung: 'Herbstferien', startdatum: '2026-10-20', enddatum: '2026-10-31' });
+  const { datum, hinweise } = repo.berechneRueckgabedatum(db, {
+    auslDatum: '2026-10-14',
+    katalogNi: null,
+    anzVerl: 0,
+    einstellungen: { ...basisEinstellungen, leihfristTage: 28 },
+  });
+  assert.equal(datum, '2026-11-23');
+  assert.ok(hinweise.some((h) => h.includes('12 Ferientage') && h.includes('Herbstferien')), `Hinweis fehlt oder unerwartet: ${hinweise.join(' | ')}`);
+  db.close();
+});

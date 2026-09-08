@@ -110,6 +110,28 @@ test('berechneMahngebuehr: Karenztage werden abgezogen, danach linear pro Tag', 
   assert.equal(repo.berechneMahngebuehr(5, s), 1); // 2 Tage über der Karenz * 0,50 €
 });
 
+test('exemplareMitAusleiheInfoFuer: liefert bei verliehenen Exemplaren, an wen und bis wann (für die Buchdetailansicht)', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Detailbuch' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'D-0001' });
+  repo.saveLeser(db, { Nachname: 'Schulz', Vorname: 'Emma', AusweisId: 'D-L-1' });
+  const leser = repo.searchLeser(db, { query: 'Schulz' }).rows[0];
+  const ausleihe = repo.ausleihen(db, { medienNi, leserNi: leser.LeserNi, einstellungen: basisEinstellungen });
+
+  const [exemplar] = repo.exemplareMitAusleiheInfoFuer(db, katalogNi, basisEinstellungen);
+  assert.equal(exemplar.verliehen, true);
+  assert.equal(exemplar.ausleihe.Nachname, 'Schulz');
+  assert.equal(exemplar.ausleihe.Vorname, 'Emma');
+  assert.equal(exemplar.ausleihe.faelligAm, ausleihe.faelligAm);
+
+  repo.zurueckgeben(db, ausleihe.id);
+  const [nachRueckgabe] = repo.exemplareMitAusleiheInfoFuer(db, katalogNi, basisEinstellungen);
+  assert.equal(nachRueckgabe.verliehen, false);
+  assert.equal(nachRueckgabe.ausleihe, null);
+  db.close();
+});
+
 test('berechneMahngebuehr: bei 0 gedeckelt auf den Höchstbetrag', () => {
   const s = { ...DEFAULT_SETTINGS, mahngebuehrenAktiv: true, mahnGebuehrProTag: 1, mahnGebuehrMax: 5, mahnKarenztage: 0 };
   assert.equal(repo.berechneMahngebuehr(100, s), 5);

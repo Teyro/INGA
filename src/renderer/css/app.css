@@ -407,7 +407,123 @@ tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--a
 
 .logo-preview { max-height: 44px; max-width: 160px; object-fit: contain; border-radius: 4px; background: var(--fill); padding: 4px; }
 
+.mahnung-vorschau-text {
+  white-space: pre-wrap; font-family: inherit; font-size: 0.88rem;
+  padding: 14px 16px; border-radius: var(--radius-sm);
+  background: var(--fill); border: 1px solid var(--line);
+  max-height: 360px; overflow-y: auto;
+}
+
 .progress-track {
   height: 8px; border-radius: 999px; background: var(--fill); overflow: hidden; margin-top: 10px;
 }
 .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s var(--ease); }
+
+/* ---------------------------------------------------------- Einstellungen */
+
+.settings-layout { flex: 1; display: flex; min-height: 0; }
+.settings-nav {
+  width: 220px; flex: none;
+  border-right: 1px solid var(--line);
+  padding: 16px 10px;
+  overflow-y: auto;
+}
+.settings-nav-item {
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  cursor: pointer;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+.settings-nav-item:hover { background: var(--fill-hover); color: var(--text); }
+.settings-nav-item.active { background: var(--accent-soft); color: var(--accent-text); }
+.settings-content { flex: 1; overflow-y: auto; padding: 20px 24px; max-width: 760px; }
+.settings-pane[hidden] { display: none; }
+.settings-pane h2 { margin: 0 0 16px; font-size: 1.15rem; }
+
+/* -------------------------------------------------------------- Ferien-Baum */
+
+.ferien-jahr { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
+.ferien-jahr-kopf {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--surface-2, var(--fill));
+}
+.ferien-jahr-kopf:hover { background: var(--fill-hover); }
+.ferien-jahr-kopf .chevron { width: 14px; flex: none; transition: transform var(--duration) var(--ease); color: var(--text-faint); }
+.ferien-jahr-kopf.offen .chevron { transform: rotate(90deg); }
+.ferien-jahr-titel { font-weight: 700; }
+.ferien-jahr-badge { color: var(--text-faint); font-size: 0.8rem; }
+.ferien-jahr-inhalt { padding: 6px 10px 10px; }
+.ferien-jahr-inhalt[hidden] { display: none; }
+.ferien-abschnitt-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ferien-abschnitt-row:hover { background: var(--fill-hover); }
+.ferien-abschnitt-bez { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ferien-abschnitt-zeitraum { color: var(--text-soft); font-size: 0.86rem; white-space: nowrap; }
+.ferien-abschnitt-tage { color: var(--text-faint); font-size: 0.8rem; white-space: nowrap; min-width: 70px; text-align: right; }
+
+/* --------------------------------------------------------- Katalog: Buchdetail */
+
+/* Fester Detailbereich neben der Liste statt eines Flyouts darüber (siehe
+   app.js: zeigeBuchDetail) – die Liste bleibt sichtbar und an derselben
+   Stelle stehen. Unter --katalog-detail-breite (Container-Query) klappt das
+   Detail stattdessen unter der gewählten Zeile auf (siehe .katalog-detail-row). */
+.katalog-split { display: flex; gap: 16px; align-items: flex-start; container-type: inline-size; container-name: katalog-split; }
+.katalog-liste-wrap { flex: 1 1 55%; min-width: 0; }
+.katalog-detail-panel {
+  flex: 1 1 380px; max-width: 420px;
+  position: sticky; top: 0;
+  padding: 18px;
+  max-height: calc(100vh - var(--titlebar-height) - 140px);
+  overflow-y: auto;
+}
+tr.katalog-row-selected td { background: var(--accent-soft); }
+tr.katalog-row-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.katalog-detail-inhalt-anim { animation: katalog-detail-ein var(--duration) var(--ease); }
+@keyframes katalog-detail-ein { from { opacity: 0; } to { opacity: 1; } }
+
+.buchdetail-titel { font-size: 1.15rem; font-weight: 700; margin: 0 0 2px; }
+.buchdetail-autor { color: var(--text-soft); margin-bottom: 14px; }
+.buchdetail-status-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.buchdetail-status-row:last-child { border-bottom: 0; }
+.buchdetail-status-etikett { font-weight: 600; flex: none; }
+.buchdetail-status-text { color: var(--text-soft); font-size: 0.86rem; }
+.buchdetail-katalogdaten { color: var(--text-soft); font-size: 0.86rem; }
+.buchdetail-katalogdaten dt { color: var(--text-faint); float: left; width: 110px; clear: left; }
+.buchdetail-katalogdaten dd { margin: 0 0 4px 110px; }
+
+/* ------------------------------------------------------ Ausleihe: Vorschläge */
+
+.autocomplete-field { position: relative; }
+.suggest-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 30;
+  margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / 0.18);
+  max-height: 320px; overflow-y: auto;
+}
+.suggest-list[hidden] { display: none; }
+.suggest-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.suggest-row.aktiv, .suggest-row:hover { background: var(--fill-hover); }
+.suggest-avatar {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--fill); overflow: hidden; font-size: 1rem;
+}
+.suggest-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.suggest-main { flex: 1; min-width: 0; }
+.suggest-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-sub { color: var(--text-faint); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Schmales Fenster: kein Detail-Panel, stattdessen Accordion-Zeile in der Tabelle. */
+.katalog-detail-row td { background: var(--surface-2, var(--fill)); padding: 16px 18px; cursor: default; }
+@container katalog-split (max-width: 780px) {
+  .katalog-detail-panel { display: none; }
+}

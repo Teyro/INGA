@@ -22,6 +22,7 @@ function renderBrief(brief) {
     Datum: brief.datum,
     Faellig: fmtDatum(faelligMin),
     Stufe: stufe.text || 'Mahnung',
+    Bibliothek: brief.bibliotheksName || 'die Bücherei',
   };
 
   return el('article', { class: 'brief' }, [
@@ -105,6 +106,7 @@ function brieftextAlsEmail(brief) {
     Vorname: leser?.Vorname || '', Nachname: leser?.Nachname || '',
     Titel: posten.map((p) => p.Titel).join(', '), Tage: String(tageMax),
     Gebuehr: fmtGeld(summe), Datum: brief.datum, Faellig: fmtDatum(faelligMin), Stufe: stufe.text || 'Mahnung',
+    Bibliothek: brief.bibliotheksName || 'die Bücherei',
   };
   const zeilen = [
     fuellePlatzhalter(stufe.briefText, werte),
@@ -136,6 +138,7 @@ function brieftextAlsElement(brief) {
     Vorname: leser?.Vorname || '', Nachname: leser?.Nachname || '',
     Titel: posten.map((p) => p.Titel).join(', '), Tage: String(tageMax),
     Gebuehr: fmtGeld(summe), Datum: brief.datum, Faellig: fmtDatum(faelligMin), Stufe: stufe.text || 'Mahnung',
+    Bibliothek: brief.bibliotheksName || 'die Bücherei',
   };
   const betreff = fuellePlatzhalter(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung';
   const zeilen = [

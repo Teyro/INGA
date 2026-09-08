@@ -113,24 +113,32 @@
         </div>
         <div class="filter-chips" id="katalog-filter-chips" hidden></div>
         <div class="view">
-          <table>
-            <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
-            <tbody id="katalog-tbody"></tbody>
-          </table>
-          <div class="pagination-bar">
-            <span class="hint" id="katalog-treffer"></span>
-            <div class="row-inline">
-              <label class="hint">Pro Seite
-                <select id="katalog-pro-seite">
-                  <option value="25">25</option>
-                  <option value="50" selected>50</option>
-                  <option value="100">100</option>
-                  <option value="250">250</option>
-                  <option value="alle">Alle</option>
-                </select>
-              </label>
-              <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
-              <button class="button small" id="katalog-seite-vor">Weiter ›</button>
+          <div class="katalog-split" id="katalog-split">
+            <div class="katalog-liste-wrap">
+              <table>
+                <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
+                <tbody id="katalog-tbody"></tbody>
+              </table>
+              <div class="pagination-bar">
+                <span class="hint" id="katalog-treffer"></span>
+                <div class="row-inline">
+                  <label class="hint">Pro Seite
+                    <select id="katalog-pro-seite">
+                      <option value="25">25</option>
+                      <option value="50" selected>50</option>
+                      <option value="100">100</option>
+                      <option value="250">250</option>
+                      <option value="alle">Alle</option>
+                    </select>
+                  </label>
+                  <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
+                  <button class="button small" id="katalog-seite-vor">Weiter ›</button>
+                </div>
+              </div>
+            </div>
+            <div class="katalog-detail-panel card" id="katalog-detail-panel">
+              <div class="empty small" id="katalog-detail-leer"><div class="icon">📖</div>Titel auswählen – Klick oder Pfeiltasten ↑ ↓, Esc schließt.</div>
+              <div id="katalog-detail-inhalt" hidden></div>
             </div>
           </div>
         </div>
@@ -281,13 +289,15 @@
         <div class="toolbar"><h1>Ausleihen</h1></div>
         <div class="view">
           <div class="card" style="padding:18px; max-width:520px">
-            <div class="field">
-              <label>Exemplar (Barcode / Etikett)</label>
-              <input type="text" id="ausleihe-etikett" placeholder="Barcode scannen oder eingeben" autofocus />
+            <div class="field autocomplete-field">
+              <label>Buch</label>
+              <input type="text" id="ausleihe-etikett" placeholder="Buchnummer scannen, oder Titel/Autor eingeben" autocomplete="off" autofocus />
+              <ul class="suggest-list" id="ausleihe-etikett-vorschlaege" hidden></ul>
             </div>
-            <div class="field">
-              <label>Nutzer (Ausweis-Nr. / Kürzel)</label>
-              <input type="text" id="ausleihe-leser" placeholder="Ausweisnummer scannen oder eingeben" />
+            <div class="field autocomplete-field">
+              <label>Kind</label>
+              <input type="text" id="ausleihe-leser" placeholder="Ausweisnummer scannen, oder Namen eingeben" autocomplete="off" />
+              <ul class="suggest-list" id="ausleihe-leser-vorschlaege" hidden></ul>
             </div>
             <button class="button primary" id="ausleihe-bestaetigen">Ausleihen</button>
             <p class="hint" id="ausleihe-status" style="margin-top:10px"></p>
@@ -334,17 +344,32 @@
         <div class="toolbar">
           <h1>Mahnungen</h1>
           <div class="searchbar"><span class="icon">🔎</span><input type="search" id="mahnungen-suche" placeholder="Name oder Titel filtern" /></div>
-          <select class="filter-select" id="mahnungen-filter-stufe"><option value="">Alle Stufen</option></select>
           <select class="filter-select" id="mahnungen-filter-klasse"><option value="">Alle Klassen</option></select>
+          <select class="filter-select" id="mahnungen-sortierung">
+            <option value="tage">Sortieren: Tage überfällig</option>
+            <option value="name">Sortieren: Name</option>
+            <option value="klasse">Sortieren: Klasse</option>
+          </select>
           <div class="spacer"></div>
           <button class="button" id="mahnungen-im-umlauf">Im Umlauf …</button>
-          <button class="button primary" id="mahnungen-drucken">Ausgewählte mahnen &amp; drucken</button>
         </div>
         <div class="view">
+          <div class="row-inline" style="margin-bottom:14px; flex-wrap:wrap">
+            <label class="hint">Überfällig seit mindestens
+              <input type="number" id="mahn-schwelle" min="0" value="14" style="max-width:70px; margin:0 6px" />
+              Tagen
+            </label>
+            <div class="spacer"></div>
+            <span class="hint" id="mahn-zusammenfassung"></span>
+          </div>
           <table>
-            <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Titel</th><th>Nutzer</th><th>Fällig seit</th><th>Tage</th><th>Stufe</th><th class="num" id="mahn-gebuehr-head">Gebühr</th></tr></thead>
+            <thead><tr><th style="width:30px"><input type="checkbox" id="mahn-alle" /></th><th>Kind</th><th>Klasse</th><th>Buch</th><th class="num">Tage überfällig</th><th>Zuletzt</th></tr></thead>
             <tbody id="mahnungen-tbody"></tbody>
           </table>
+          <div class="row-inline" style="margin-top:16px">
+            <button class="button" id="mahnungen-erinnerung-erstellen">Erinnerung erstellen</button>
+            <button class="button primary" id="mahnungen-mahnung-erstellen">Mahnung erstellen</button>
+          </div>
         </div>
       </section>
 
@@ -437,176 +462,220 @@
       <!-- ------------------------------------------------------- Einstellungen -->
       <section class="view" id="view-einstellungen" hidden>
         <div class="toolbar"><h1>Einstellungen</h1></div>
-        <div class="view" style="max-width:720px">
-          <div class="section-title">Oberfläche</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <div class="field">
-              <label>Gestaltung</label>
-              <select id="set-uiStyle">
-                <option value="auto">Automatisch (System)</option>
-                <option value="mac">macOS</option>
-                <option value="win">Windows 11</option>
-                <option value="kde">KDE Plasma</option>
-                <option value="gnome">GNOME</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Farbschema</label>
-              <select id="set-theme">
-                <option value="auto">Automatisch</option>
-                <option value="light">Hell</option>
-                <option value="dark">Dunkel</option>
-              </select>
-            </div>
-          </div>
+        <div class="settings-layout">
+          <nav class="settings-nav">
+            <div class="settings-nav-item active" data-einst-pane="ferien">Ferien</div>
+            <div class="settings-nav-item" data-einst-pane="mahnungen">Mahnungen</div>
+            <div class="settings-nav-item" data-einst-pane="allgemein">Aussehen und weitere App-Einstellungen</div>
+          </nav>
+          <div class="settings-content">
 
-          <div class="section-title">Ausleihe</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <div class="field-row">
-              <div class="field"><label>Standard-Leihfrist (Tage)</label><input type="number" id="set-leihfristTage" min="1" max="365" /></div>
-              <div class="field"><label>Max. Verlängerungen</label><input type="number" id="set-maxVerlaengerung" min="0" max="10" /></div>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>Verlängerungsdauer (Tage)</label><input type="number" id="set-verlaengerungDauerTage" min="1" max="365" /></div>
-              <div class="field">
-                <label>Max. gleichzeitige Ausleihen pro Person</label>
-                <input type="number" id="set-ausleihLimit" min="0" max="999" />
-                <p class="hint">0 = unbegrenzt. Wird beim Ausleihen geprüft, unabhängig von Medienart oder Klasse.</p>
+            <!-- ····································································· Ferien -->
+            <section class="settings-pane" id="einst-pane-ferien">
+              <h2>Ferien</h2>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <p class="hint">Fällt eine Ausleihfrist ganz oder teilweise in Ferien oder eine Schließzeit, verschiebt INGA das Rückgabedatum automatisch um deren Länge nach hinten – der eigentliche Zweck dieser Übersicht. Ein einzelner Feiertag direkt auf der Fälligkeit verschiebt sie zusätzlich auf den nächsten Schultag.</p>
+                <div class="field-row">
+                  <div class="field">
+                    <label>Ferientage zählen als</label>
+                    <select id="set-ferienZaehlweise">
+                      <option value="kalendertage">Kalendertage</option>
+                      <option value="schultage">Nur Schultage</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label class="checkbox-label" style="margin-top:22px"><input type="checkbox" id="set-ueberfaelligTageOhneFerien" /> Während der Ferien keine Überfälligkeit zählen</label>
+                    <p class="hint">Wichtig, wenn ein Kind ein Buch wegen der Ferien einfach nicht zurückgeben kann.</p>
+                  </div>
+                </div>
+
+                <div class="row-inline" style="margin:14px 0; flex-wrap:wrap">
+                  <button class="button" id="ferien-neu">+ Neuer Eintrag</button>
+                  <button class="button" id="ferien-ics-datei">ICS-Datei importieren …</button>
+                  <button class="button" id="ferien-ics-url">Von URL importieren …</button>
+                  <button class="button" id="ferien-api-abrufen">Hamburger Schulferien automatisch abrufen</button>
+                </div>
+                <p class="hint" id="ferien-abruf-status"></p>
+
+                <div class="row-inline" style="margin-bottom:10px">
+                  <label class="checkbox-label"><input type="checkbox" id="ferien-vergangene-ausblenden" /> Vergangene Schuljahre ausblenden</label>
+                </div>
+                <div id="ferien-baum"></div>
+
+                <div class="field" style="margin-top:18px">
+                  <label>Bereits laufende Ausleihen</label>
+                  <div><button class="button" id="ferien-neuberechnen">Fristen anhand der Ferien neu berechnen</button></div>
+                  <p class="hint">INGA berechnet Fälligkeiten ohnehin bei jeder Anzeige live neu – ein neuer oder geänderter Ferieneintrag wirkt sofort. Dieser Knopf zeigt vorab, welche offenen Ausleihen sich dadurch verschieben, bevor es in der Rückgabe-/Mahnliste auffällt.</p>
+                  <div id="ferien-neuberechnen-ergebnis" hidden></div>
+                </div>
               </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label class="checkbox-label"><input type="checkbox" id="set-verlaengerungGesperrtBeiVormerkung" /> Verlängerung gesperrt, wenn Buch vorgemerkt ist</label>
-                <p class="hint">Verlängerung ist dann nicht möglich, solange eine andere Person auf diesen Titel wartet (Vormerkungen: Buchdetailseite im Katalog).</p>
+            </section>
+
+            <!-- ································································· Mahnungen -->
+            <section class="settings-pane" id="einst-pane-mahnungen" hidden>
+              <h2>Mahnungen</h2>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <label class="checkbox-label"><input type="checkbox" id="set-mahngebuehrenAktiv" /> Mahngebühren verwenden</label>
+                <p class="hint">Aus (Vorgabe): Mahnungen bleiben als Erinnerung erhalten, nur ohne Geldbeträge – Gebührenspalten und -summen werden überall ausgeblendet.</p>
+                <div class="field-row" id="mahngebuehr-felder" hidden>
+                  <div class="field"><label>Betrag pro Tag (€)</label><input type="number" id="set-mahnGebuehrProTag" min="0" step="0.05" /></div>
+                  <div class="field"><label>Höchstbetrag (€)</label><input type="number" id="set-mahnGebuehrMax" min="0" step="0.5" /></div>
+                  <div class="field"><label>Karenztage</label><input type="number" id="set-mahnKarenztage" min="0" max="90" /></div>
+                </div>
+                <p class="hint placeholder-legend" style="margin-top:14px">Platzhalter für Betreff &amp; Brieftext:
+                  <code>{Vorname}</code> <code>{Nachname}</code> <code>{Titel}</code> <code>{Tage}</code> <code>{Gebuehr}</code> <code>{Datum}</code> <code>{Faellig}</code> <code>{Stufe}</code> <code>{Bibliothek}</code>
+                </p>
+                <div id="mahnstufen-liste"></div>
+
+                <div class="section-title" style="margin-top:26px">Briefkopf &amp; Absender</div>
+                <div class="field-row">
+                  <div class="field"><label>Absender – Name</label><input type="text" id="set-absenderName" /></div>
+                  <div class="field"><label>Absender – E-Mail</label><input type="email" id="set-absenderEmail" /></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label>Absender – Adresse</label><textarea id="set-absenderAdresse" rows="3"></textarea></div>
+                  <div class="field"><label>Absender – Telefon</label><input type="text" id="set-absenderTelefon" /></div>
+                </div>
+                <div class="field"><label>Betreff-Vorlage</label><input type="text" id="set-mahnBetreffVorlage" /></div>
+                <div class="field"><label>Schlusstext</label><textarea id="set-mahnSchluss" rows="3"></textarea></div>
+                <div class="field">
+                  <label>Logo im Briefkopf</label>
+                  <div class="row-inline">
+                    <img id="mahn-logo-preview" class="logo-preview" hidden />
+                    <button class="button small" id="mahn-logo-hochladen">Logo hochladen …</button>
+                    <button class="button small" id="mahn-logo-entfernen" hidden>Entfernen</button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="field">
-              <label>Fristverschiebung (Tage)</label>
-              <input type="number" id="set-leihfristOffsetTage" min="-365" max="365" />
-              <p class="hint">Wirkt sofort auf <strong>jede</strong> berechnete Fälligkeit – offene und künftige Ausleihen. Z.&nbsp;B. +14 während einer Ferienschließzeit; auf 0 zurücksetzen, um sie wieder aufzuheben.</p>
-            </div>
-            <div class="field" style="margin-top:4px">
-              <label>Alle aktuell offenen Ausleihen einmalig verschieben</label>
-              <div class="row-inline">
-                <input type="number" id="fristverschiebung-tage" value="0" style="max-width:100px" />
-                <button class="button" id="fristverschiebung-anwenden">Anwenden</button>
+
+              <div class="section-title">Element (Matrix) – Mahnungen als Nachricht</div>
+              <div class="card" style="padding:18px">
+                <label class="checkbox-label"><input type="checkbox" id="set-matrixAktiv" /> Mahnungen zusätzlich über Element verschicken können</label>
+                <p class="hint">Die Adresse der/des Angemahnten wird automatisch aus Vorname.Nachname und der Domain gebildet (z.&nbsp;B. „Anna Muster" + <code>soed.hamburg.de</code> → <code>@anna.muster:soed.hamburg.de</code>). Setzt voraus, dass die Schule Element-/Matrix-Konten nach diesem Muster vergibt – existiert kein passendes Konto, meldet INGA das beim Versand statt es einfach zu versuchen.</p>
+                <div class="field-row">
+                  <div class="field"><label>Domain</label><input type="text" id="set-matrixDomain" placeholder="soed.hamburg.de" /></div>
+                  <div class="field">
+                    <label>Homeserver (optional)</label>
+                    <input type="text" id="set-matrixHomeserver" placeholder="automatisch ermitteln" />
+                    <p class="hint">Nur nötig, wenn die automatische Ermittlung über <code>.well-known/matrix/client</code> der Domain nicht funktioniert.</p>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Versender</label>
+                  <p class="hint" id="matrix-versender-status">Nicht angemeldet.</p>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label>Benutzername</label><input type="text" id="matrix-benutzername" autocomplete="off" /></div>
+                  <div class="field"><label>Passwort</label><input type="password" id="matrix-passwort" autocomplete="off" /></div>
+                </div>
+                <div class="row-inline">
+                  <button class="button small" id="matrix-anmelden">Anmelden</button>
+                  <button class="button small ghost" id="matrix-verbindung-testen">Verbindung testen</button>
+                  <button class="button small ghost danger" id="matrix-trennen">Verbindung trennen</button>
+                </div>
+                <p class="hint" style="margin-top:10px">Das Passwort wird nur für die Anmeldung verwendet und nirgends gespeichert – INGA merkt sich danach nur das dabei ausgestellte Zugangstoken (wie bei einem Bot-Konto üblich).</p>
+                <details style="margin-top:10px">
+                  <summary class="hint">Alternativ: Zugangstoken direkt eintragen (z.&nbsp;B. für ein eigenes Bot-Konto)</summary>
+                  <div class="field" style="margin-top:8px"><label>Zugangstoken</label><input type="password" id="set-matrixZugangstoken" autocomplete="off" /></div>
+                  <p class="hint">Danach oben auf „Verbindung testen" klicken, damit der Versender darunter angezeigt wird.</p>
+                </details>
               </div>
-              <p class="hint">Verschiebt das Ausleihdatum aller aktuell offenen Ausleihen um die angegebene Anzahl Tage (dadurch verschiebt sich auch ihre Fälligkeit). Betrifft nicht künftige Ausleihen und ist nicht rückgängig zu machen.</p>
-            </div>
-            <div class="field" style="margin-top:4px">
-              <label>Abweichende Fristen je Medienart</label>
-              <p class="hint">Leer lassen, damit die Vorgabe oben gilt. Wirkt für alle Titel dieser Medienart.</p>
-              <div id="medart-fristen-liste"></div>
-            </div>
-          </div>
+            </section>
 
-          <div class="section-title">Ferien &amp; Schließzeiten</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <p class="hint">Fällt eine berechnete Rückgabefrist in einen hier eingetragenen Zeitraum (oder auf ein Wochenende), verschiebt INGA sie automatisch auf den nächsten Schultag danach – auch über mehrere direkt aneinandergrenzende Zeiträume hinweg (z.&nbsp;B. Ferien direkt gefolgt von einem Feiertag).</p>
-            <label class="checkbox-label"><input type="checkbox" id="set-ueberfaelligTageOhneFerien" /> Während der Ferien keine Überfälligkeit zählen</label>
-            <p class="hint">Ferientage (und Wochenenden) zählen dann nicht als Verzugstage – wichtig, wenn ein Kind ein Buch wegen der Ferien einfach nicht zurückgeben kann.</p>
+            <!-- ································································· Aussehen und weitere App-Einstellungen -->
+            <section class="settings-pane" id="einst-pane-allgemein" hidden>
+              <h2>Aussehen und weitere App-Einstellungen</h2>
 
-            <div class="row-inline" style="margin:14px 0; flex-wrap:wrap">
-              <button class="button" id="ferien-neu">+ Neuer Eintrag</button>
-              <button class="button" id="ferien-ics-datei">ICS-Datei importieren …</button>
-              <button class="button" id="ferien-ics-url">Von URL importieren …</button>
-              <button class="button" id="ferien-api-abrufen">Hamburger Schulferien automatisch abrufen</button>
-            </div>
-            <p class="hint" id="ferien-abruf-status"></p>
-
-            <table>
-              <thead><tr><th>Bezeichnung</th><th>Von</th><th>Bis</th><th>Typ</th><th>Quelle</th><th class="actions"></th></tr></thead>
-              <tbody id="ferien-tbody"></tbody>
-            </table>
-
-            <div class="field" style="margin-top:18px">
-              <label>Bereits laufende Ausleihen</label>
-              <div><button class="button" id="ferien-neuberechnen">Fristen anhand der Ferien neu berechnen</button></div>
-              <p class="hint">INGA berechnet Fälligkeiten ohnehin bei jeder Anzeige live neu – ein neuer oder geänderter Ferieneintrag wirkt sofort. Dieser Knopf zeigt vorab, welche offenen Ausleihen sich dadurch verschieben, bevor es in der Rückgabe-/Mahnliste auffällt.</p>
-              <div id="ferien-neuberechnen-ergebnis" hidden></div>
-            </div>
-          </div>
-
-          <div class="section-title">Mahnwesen</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <label class="checkbox-label"><input type="checkbox" id="set-mahngebuehrenAktiv" /> Mahngebühren verwenden</label>
-            <p class="hint">Aus (Vorgabe): Mahnungen bleiben als Erinnerung erhalten, nur ohne Geldbeträge – Gebührenspalten und -summen werden überall ausgeblendet.</p>
-            <div class="field-row" id="mahngebuehr-felder" hidden>
-              <div class="field"><label>Betrag pro Tag (€)</label><input type="number" id="set-mahnGebuehrProTag" min="0" step="0.05" /></div>
-              <div class="field"><label>Höchstbetrag (€)</label><input type="number" id="set-mahnGebuehrMax" min="0" step="0.5" /></div>
-              <div class="field"><label>Karenztage</label><input type="number" id="set-mahnKarenztage" min="0" max="90" /></div>
-            </div>
-            <p class="hint placeholder-legend" style="margin-top:14px">Platzhalter für Betreff &amp; Brieftext:
-              <code>{Vorname}</code> <code>{Nachname}</code> <code>{Titel}</code> <code>{Tage}</code> <code>{Gebuehr}</code> <code>{Datum}</code> <code>{Faellig}</code> <code>{Stufe}</code>
-            </p>
-            <div id="mahnstufen-liste"></div>
-            <button class="button small" id="mahnstufe-hinzufuegen">+ Stufe hinzufügen</button>
-
-            <div class="section-title" style="margin-top:26px">Briefkopf &amp; Absender</div>
-            <div class="field-row">
-              <div class="field"><label>Absender – Name</label><input type="text" id="set-absenderName" /></div>
-              <div class="field"><label>Absender – E-Mail</label><input type="email" id="set-absenderEmail" /></div>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>Absender – Adresse</label><textarea id="set-absenderAdresse" rows="3"></textarea></div>
-              <div class="field"><label>Absender – Telefon</label><input type="text" id="set-absenderTelefon" /></div>
-            </div>
-            <div class="field"><label>Betreff-Vorlage</label><input type="text" id="set-mahnBetreffVorlage" /></div>
-            <div class="field"><label>Schlusstext</label><textarea id="set-mahnSchluss" rows="3"></textarea></div>
-            <div class="field">
-              <label>Logo im Briefkopf</label>
-              <div class="row-inline">
-                <img id="mahn-logo-preview" class="logo-preview" hidden />
-                <button class="button small" id="mahn-logo-hochladen">Logo hochladen …</button>
-                <button class="button small" id="mahn-logo-entfernen" hidden>Entfernen</button>
+              <div class="section-title" style="margin-top:0">Oberfläche</div>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <div class="field-row">
+                  <div class="field">
+                    <label>Gestaltung</label>
+                    <select id="set-uiStyle">
+                      <option value="auto">Automatisch (System)</option>
+                      <option value="mac">macOS</option>
+                      <option value="win">Windows 11</option>
+                      <option value="kde">KDE Plasma</option>
+                      <option value="gnome">GNOME</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Farbschema</label>
+                    <select id="set-theme">
+                      <option value="auto">Automatisch</option>
+                      <option value="light">Hell</option>
+                      <option value="dark">Dunkel</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label>Schriftgröße (%)</label>
+                    <input type="number" id="set-fontScale" min="80" max="200" step="5" />
+                    <p class="hint">Für den Alltag im Stehen an der Theke ruhig größer stellen als 100&nbsp;%.</p>
+                  </div>
+                  <div class="field">
+                    <label>Bibliotheksname</label>
+                    <input type="text" id="set-bibliotheksName" placeholder="z.&nbsp;B. Schulbücherei Musterschule" />
+                    <p class="hint">Erscheint als Platzhalter <code>{Bibliothek}</code> in Mahntexten.</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div class="section-title">Element (Matrix) – Mahnungen als Nachricht</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <label class="checkbox-label"><input type="checkbox" id="set-matrixAktiv" /> Mahnungen zusätzlich über Element verschicken können</label>
-            <p class="hint">Die Adresse der/des Angemahnten wird automatisch aus Vorname.Nachname und der Domain gebildet (z.&nbsp;B. „Anna Muster" + <code>soed.hamburg.de</code> → <code>@anna.muster:soed.hamburg.de</code>). Setzt voraus, dass die Schule Element-/Matrix-Konten nach diesem Muster vergibt – existiert kein passendes Konto, meldet INGA das beim Versand statt es einfach zu versuchen.</p>
-            <div class="field-row">
-              <div class="field"><label>Domain</label><input type="text" id="set-matrixDomain" placeholder="soed.hamburg.de" /></div>
-              <div class="field">
-                <label>Homeserver (optional)</label>
-                <input type="text" id="set-matrixHomeserver" placeholder="automatisch ermitteln" />
-                <p class="hint">Nur nötig, wenn die automatische Ermittlung über <code>.well-known/matrix/client</code> der Domain nicht funktioniert.</p>
+              <div class="section-title">Ausleihe</div>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <div class="field-row">
+                  <div class="field"><label>Standard-Leihfrist (Tage)</label><input type="number" id="set-leihfristTage" min="1" max="365" /></div>
+                  <div class="field"><label>Max. Verlängerungen</label><input type="number" id="set-maxVerlaengerung" min="0" max="10" /></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label>Verlängerungsdauer (Tage)</label><input type="number" id="set-verlaengerungDauerTage" min="1" max="365" /></div>
+                  <div class="field">
+                    <label>Max. gleichzeitige Ausleihen pro Person</label>
+                    <input type="number" id="set-ausleihLimit" min="0" max="999" />
+                    <p class="hint">0 = unbegrenzt. Wird beim Ausleihen geprüft, unabhängig von Medienart oder Klasse.</p>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label class="checkbox-label"><input type="checkbox" id="set-verlaengerungGesperrtBeiVormerkung" /> Verlängerung gesperrt, wenn Buch vorgemerkt ist</label>
+                    <p class="hint">Verlängerung ist dann nicht möglich, solange eine andere Person auf diesen Titel wartet (Vormerkungen: Buchdetailseite im Katalog).</p>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Fristverschiebung (Tage)</label>
+                  <input type="number" id="set-leihfristOffsetTage" min="-365" max="365" />
+                  <p class="hint">Wirkt sofort auf <strong>jede</strong> berechnete Fälligkeit – offene und künftige Ausleihen. Z.&nbsp;B. +14 während einer Ferienschließzeit; auf 0 zurücksetzen, um sie wieder aufzuheben.</p>
+                </div>
+                <div class="field" style="margin-top:4px">
+                  <label>Alle aktuell offenen Ausleihen einmalig verschieben</label>
+                  <div class="row-inline">
+                    <input type="number" id="fristverschiebung-tage" value="0" style="max-width:100px" />
+                    <button class="button" id="fristverschiebung-anwenden">Anwenden</button>
+                  </div>
+                  <p class="hint">Verschiebt das Ausleihdatum aller aktuell offenen Ausleihen um die angegebene Anzahl Tage (dadurch verschiebt sich auch ihre Fälligkeit). Betrifft nicht künftige Ausleihen und ist nicht rückgängig zu machen.</p>
+                </div>
+                <div class="field" style="margin-top:4px">
+                  <label>Abweichende Fristen je Medienart</label>
+                  <p class="hint">Leer lassen, damit die Vorgabe oben gilt. Wirkt für alle Titel dieser Medienart.</p>
+                  <div id="medart-fristen-liste"></div>
+                </div>
               </div>
-            </div>
-            <div class="field">
-              <label>Versender</label>
-              <p class="hint" id="matrix-versender-status">Nicht angemeldet.</p>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>Benutzername</label><input type="text" id="matrix-benutzername" autocomplete="off" /></div>
-              <div class="field"><label>Passwort</label><input type="password" id="matrix-passwort" autocomplete="off" /></div>
-            </div>
-            <div class="row-inline">
-              <button class="button small" id="matrix-anmelden">Anmelden</button>
-              <button class="button small ghost" id="matrix-verbindung-testen">Verbindung testen</button>
-              <button class="button small ghost danger" id="matrix-trennen">Verbindung trennen</button>
-            </div>
-            <p class="hint" style="margin-top:10px">Das Passwort wird nur für die Anmeldung verwendet und nirgends gespeichert – INGA merkt sich danach nur das dabei ausgestellte Zugangstoken (wie bei einem Bot-Konto üblich).</p>
-            <details style="margin-top:10px">
-              <summary class="hint">Alternativ: Zugangstoken direkt eintragen (z.&nbsp;B. für ein eigenes Bot-Konto)</summary>
-              <div class="field" style="margin-top:8px"><label>Zugangstoken</label><input type="password" id="set-matrixZugangstoken" autocomplete="off" /></div>
-              <p class="hint">Danach oben auf „Verbindung testen" klicken, damit der Versender darunter angezeigt wird.</p>
-            </details>
-          </div>
 
-          <div class="section-title">Datensicherung</div>
-          <div class="card" style="padding:18px; margin-bottom:16px">
-            <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“.</p>
-            <div class="row-inline" style="margin:10px 0">
-              <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
-              <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>
-            </div>
-            <table>
-              <thead><tr><th>Datei</th><th>Erstellt</th><th class="num">Größe</th><th class="actions"></th></tr></thead>
-              <tbody id="backup-tbody"></tbody>
-            </table>
+              <div class="section-title">Datensicherung</div>
+              <div class="card" style="padding:18px">
+                <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“.</p>
+                <div class="row-inline" style="margin:10px 0">
+                  <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
+                  <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>
+                </div>
+                <table>
+                  <thead><tr><th>Datei</th><th>Erstellt</th><th class="num">Größe</th><th class="actions"></th></tr></thead>
+                  <tbody id="backup-tbody"></tbody>
+                </table>
+              </div>
+            </section>
+
           </div>
         </div>
       </section>
@@ -631,15 +700,28 @@
   <div class="sheet table-wide" id="ferien-import-panel">
     <div class="sheet-head"><h2>Import prüfen</h2><button class="icon-button" id="ferien-import-close">✕</button></div>
     <div class="sheet-body">
-      <p class="hint">Bitte vor der Übernahme prüfen: Termine abwählen oder Bezeichnung/Typ korrigieren. Bereits vorhandene, identische Einträge werden beim Übernehmen automatisch übersprungen.</p>
-      <table>
-        <thead><tr><th style="width:30px"><input type="checkbox" id="ferien-import-alle" checked /></th><th>Bezeichnung</th><th>Von</th><th>Bis</th><th>Typ</th></tr></thead>
-        <tbody id="ferien-import-tbody"></tbody>
-      </table>
+      <p class="hint">Zusammenhängende Tage sind bereits zu Abschnitten gebündelt und nach Schuljahr gruppiert. Bitte vor der Übernahme prüfen: Abschnitte abwählen oder Bezeichnung/Typ korrigieren. Bereits vorhandene Abschnitte sind markiert und beim Übernehmen automatisch übersprungen.</p>
+      <div class="row-inline" style="margin-bottom:10px"><label class="checkbox-label"><input type="checkbox" id="ferien-import-alle" checked /> Alle auswählen</label></div>
+      <div id="ferien-import-liste"></div>
     </div>
     <div class="sheet-foot">
       <button class="button" id="ferien-import-abbrechen">Abbrechen</button>
       <button class="button primary" id="ferien-import-uebernehmen">Ausgewählte übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="mahnung-vorschau-backdrop" hidden>
+  <div class="sheet table-wide" id="mahnung-vorschau-panel">
+    <div class="sheet-head"><h2 id="mahnung-vorschau-titel"></h2><button class="icon-button" id="mahnung-vorschau-close">✕</button></div>
+    <div class="sheet-body">
+      <p class="hint" id="mahnung-vorschau-anzahl"></p>
+      <div class="section-title">Text des ersten Falls</div>
+      <pre class="mahnung-vorschau-text" id="mahnung-vorschau-text"></pre>
+    </div>
+    <div class="sheet-foot">
+      <button class="button" id="mahnung-vorschau-abbrechen">Abbrechen</button>
+      <button class="button primary" id="mahnung-vorschau-weiter">Drucken / PDF / E-Mail …</button>
     </div>
   </div>
 </div>

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('inga', {
     delete: (katalogNi) => ipcRenderer.invoke('katalog:delete', katalogNi),
     exemplare: (katalogNi) => ipcRenderer.invoke('katalog:exemplare', katalogNi),
     exemplareMitStatus: (katalogNi) => ipcRenderer.invoke('katalog:exemplare-mit-status', katalogNi),
+    exemplareMitAusleihe: (katalogNi) => ipcRenderer.invoke('katalog:exemplare-mit-ausleihe', katalogNi),
     topAusgeliehen: (limit) => ipcRenderer.invoke('katalog:top-ausgeliehen', limit),
     ausleihStatistik: (katalogNi) => ipcRenderer.invoke('katalog:ausleih-statistik', katalogNi),
     isbnNachschlagen: (isbn) => ipcRenderer.invoke('katalog:isbn-nachschlagen', isbn),
@@ -30,10 +31,12 @@ contextBridge.exposeInMainWorld('inga', {
     delete: (medienNi) => ipcRenderer.invoke('medium:delete', medienNi),
     status: (medienNi) => ipcRenderer.invoke('medium:status', medienNi),
     findByEtikett: (etikett) => ipcRenderer.invoke('medium:find-etikett', etikett),
+    vorschlaege: (query) => ipcRenderer.invoke('medium:vorschlaege', query),
   },
 
   leser: {
     search: (filter, seitenOptionen) => ipcRenderer.invoke('leser:search', filter, seitenOptionen),
+    vorschlaege: (query) => ipcRenderer.invoke('leser:vorschlaege', query),
     jahrgaenge: () => ipcRenderer.invoke('leser:jahrgaenge'),
     get: (leserNi) => ipcRenderer.invoke('leser:get', leserNi),
     save: (row) => ipcRenderer.invoke('leser:save', row),
@@ -75,7 +78,8 @@ contextBridge.exposeInMainWorld('inga', {
 
   mahnung: {
     ueberfaellige: () => ipcRenderer.invoke('mahnung:ueberfaellige'),
-    erzeugenUndDrucken: (positionen) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', positionen),
+    rueckstandsliste: (schwelleTage) => ipcRenderer.invoke('mahnung:rueckstandsliste', schwelleTage),
+    erzeugenUndDrucken: (positionen, stufeIndex) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', { positionen, stufeIndex }),
     logoAuswaehlen: () => ipcRenderer.invoke('mahnung:logo-auswaehlen'),
   },
 
@@ -106,11 +110,14 @@ contextBridge.exposeInMainWorld('inga', {
 
   ferien: {
     liste: () => ipcRenderer.invoke('ferien:liste'),
+    listeGruppiert: () => ipcRenderer.invoke('ferien:liste-gruppiert'),
     speichern: (row) => ipcRenderer.invoke('ferien:speichern', row),
     loeschen: (id) => ipcRenderer.invoke('ferien:loeschen', id),
+    schuljahrLoeschen: (startJahr) => ipcRenderer.invoke('ferien:schuljahr-loeschen', startJahr),
     importIcsDatei: () => ipcRenderer.invoke('ferien:import-ics-datei'),
     importIcsUrl: (url) => ipcRenderer.invoke('ferien:import-ics-url', url),
     apiAbrufen: () => ipcRenderer.invoke('ferien:api-abrufen'),
+    vorschauFuerImport: (termine) => ipcRenderer.invoke('ferien:vorschau-fuer-import', termine),
     importUebernehmen: (eintraege) => ipcRenderer.invoke('ferien:import-uebernehmen', eintraege),
   },
 

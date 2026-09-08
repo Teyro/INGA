@@ -7,6 +7,10 @@ const state = {
   settings: null,
   katalogSeite: 1,
   leserSeite: 1,
+  // Buchdetail (Abschnitt 3): aktuell ausgewählter Titel + die zuletzt
+  // geladene Trefferliste (für die Pfeiltasten-Navigation), siehe wireKatalog.
+  katalogAusgewaehltNi: null,
+  katalogZeilen: [],
 };
 
 /**
@@ -67,7 +71,7 @@ async function boot() {
   api.on('settings:updated', (s) => {
     state.settings = s;
     applyChrome({ ...data, settings: s });
-    if (state.view === 'mahnungen') fuelleMahnstufenFilter();
+    if (state.view === 'mahnungen') renderMahnungenAktuell();
   });
   api.on('cover:progress', aktualisiereCoverFortschritt);
 
@@ -126,7 +130,7 @@ function showView(name) {
   if (name === 'katalog') loadKatalog();
   else if (name === 'leser') loadLeser();
   else if (name === 'rueckgabe') loadRueckgabe();
-  else if (name === 'mahnungen') { fuelleMahnstufenFilter(); loadMahnungen(); }
+  else if (name === 'mahnungen') loadMahnungen();
   else if (name === 'umlauf') loadUmlauf();
   else if (name === 'papierkorb') loadPapierkorb();
   else if (name === 'statistik') loadStatistik();
@@ -199,7 +203,7 @@ function renderTopAusgeliehen(top10) {
   top10.forEach((row, i) => {
     const cover = el('div', { class: 'rank-cover' }, [el('span', {}, ['📕'])]);
     box.appendChild(
-      el('div', { class: 'list-row', onclick: async () => openKatalogSheet(await api.katalog.get(row.KatalogNi)) }, [
+      el('div', { class: 'list-row', onclick: () => springeZuBuchDetail(row.KatalogNi) }, [
         el('div', { class: 'rank' }, [String(i + 1)]),
         cover,
         el('div', { class: 'list-row-main' }, [
@@ -450,6 +454,25 @@ function wireKatalog() {
   document.getElementById('katalog-neu').addEventListener('click', () => openKatalogSheet(null));
   document.getElementById('katalog-csv').addEventListener('click', () => katalogExport('csv'));
   document.getElementById('katalog-xlsx').addEventListener('click', () => katalogExport('xlsx'));
+
+  // Pfeiltasten wechseln die Auswahl im Katalog, Escape schließt das Detail –
+  // nur während der Katalog-Ansicht aktiv ist und die Kollegin nicht gerade
+  // in ein Textfeld tippt (sonst würden z. B. Pfeiltasten im Suchfeld
+  // blockiert). Siehe Abschnitt 3: Buchdetails ruhiger darstellen.
+  document.addEventListener('keydown', (e) => {
+    if (state.view !== 'katalog') return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'Escape') { schliesseBuchDetail(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (!state.katalogZeilen.length) return;
+    e.preventDefault();
+    const aktIndex = state.katalogZeilen.findIndex((r) => r.KatalogNi === state.katalogAusgewaehltNi);
+    const naechsterIndex = aktIndex === -1
+      ? 0
+      : Math.min(state.katalogZeilen.length - 1, Math.max(0, aktIndex + (e.key === 'ArrowDown' ? 1 : -1)));
+    waehleKatalogZeile(state.katalogZeilen[naechsterIndex]);
+  });
 }
 
 /** Aktueller Filter als Objekt für repo.searchKatalog – von Anzeige UND Export gleich genutzt, damit "der Filter auch für den Export gilt". */
@@ -478,18 +501,20 @@ async function loadKatalog() {
     proSeite: proSeiteWert === 'alle' ? 'alle' : Number(proSeiteWert),
   });
   state.katalogSeite = seite;
+  state.katalogZeilen = rows;
   renderFilterChips('katalog-filter-chips', KATALOG_FILTER_FELDER);
   const tbody = document.getElementById('katalog-tbody');
   tbody.replaceChildren();
   aktualisierePaginierung('katalog', { seite, proSeite, gesamt, anzahlAngezeigt: rows.length });
   if (!rows.length) {
     tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['📖']), 'Keine Titel gefunden.'])])]));
+    schliesseBuchDetail();
     return;
   }
   for (const row of rows) {
     const belegt = row.exemplareGesamt > 0 && row.exemplareVerfuegbar === 0;
     tbody.appendChild(
-      el('tr', { onclick: () => openKatalogSheet(row) }, [
+      el('tr', { 'data-katalog-ni': String(row.KatalogNi), class: row.KatalogNi === state.katalogAusgewaehltNi ? 'katalog-row-selected' : '', onclick: () => waehleKatalogZeile(row) }, [
         el('td', {}, [row.Titel || '']),
         el('td', {}, [row.Autor || '']),
         el('td', {}, [medArtLabel(row.MedArtKb)]),
@@ -499,6 +524,12 @@ async function loadKatalog() {
       ])
     );
   }
+  // Auswahl bleibt über ein Neuladen hinweg erhalten (z. B. nach dem
+  // Speichern im Bearbeiten-Sheet), solange der Titel noch in der Liste ist –
+  // sonst wird das Detail geschlossen, statt eine verwaiste Auswahl zu zeigen.
+  const nochDa = rows.find((r) => r.KatalogNi === state.katalogAusgewaehltNi);
+  if (nochDa) zeigeBuchDetail(nochDa);
+  else if (state.katalogAusgewaehltNi !== null) schliesseBuchDetail();
 }
 
 const KATALOG_EXPORT_SPALTEN = [
@@ -619,7 +650,15 @@ function buildCoverPanel(row) {
   return panel;
 }
 
-async function openKatalogSheet(row) {
+/**
+ * Metadaten bearbeiten (Titel/Autor/Verlag/ISBN/…) – bewusst noch das
+ * modale Sheet, weil das Katalogisieren eine bewusste, eher seltene Aktion
+ * ist. Der Alltag an der Theke (Status ansehen, Exemplare/Vormerkungen
+ * verwalten) läuft dagegen über das ruhige Detail-Panel, siehe
+ * zeigeBuchDetail()/baueBuchDetailInhalt() – dort gibt es einen
+ * "Bearbeiten"-Knopf, der genau hierher führt.
+ */
+function openKatalogSheet(row) {
   const fields = [
     { name: 'Titel', label: 'Titel' },
     { name: 'UntTitel', label: 'Untertitel' },
@@ -634,111 +673,12 @@ async function openKatalogSheet(row) {
     { name: 'KlasseAnto', label: 'Antolin-Klassenstufe' },
   ];
 
-  let extraBox = null;
-  if (row?.KatalogNi) {
-    const [exemplare, statistik, vormerkungen] = await Promise.all([
-      api.katalog.exemplareMitStatus(row.KatalogNi),
-      api.katalog.ausleihStatistik(row.KatalogNi),
-      api.vormerkung.liste(row.KatalogNi),
-    ]);
-    extraBox = el('div', {}, [
-      el('div', { class: 'row-inline' }, [
-        el('div', { class: 'section-title' }, ['Exemplare']),
-        el('div', { class: 'spacer' }),
-        exemplare.length
-          ? el('button', {
-              class: 'button small ghost',
-              type: 'button',
-              title: 'Ein Etikett je Exemplar dieses Titels',
-              onclick: () => druckeEtiketten(exemplare.map((m) => etikettAusExemplar(m, row))),
-            }, ['🏷️ Alle Etiketten drucken'])
-          : null,
-      ]),
-      exemplare.length
-        ? el('div', {}, exemplare.map((m) =>
-            el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
-              el('span', { class: 'badge' }, [m.MedienEtik || `#${m.MedienNi}`]),
-              el('span', { class: `badge ${m.verliehen ? 'warn' : 'ok'}` }, [m.verliehen ? 'verliehen' : 'verfügbar']),
-              el('button', {
-                class: 'icon-button',
-                title: 'Etikett für dieses Exemplar drucken',
-                onclick: () => druckeEtiketten([etikettAusExemplar(m, row)]),
-              }, ['🏷️']),
-            ])
-          ))
-        : el('p', { class: 'hint' }, ['Noch keine Exemplare.']),
-      el('div', { class: 'row-inline', style: { marginTop: '8px' } }, [
-        el('input', { id: 'neues-etikett', type: 'text', placeholder: 'Neues Etikett / Barcode' }),
-        el('button', {
-          class: 'button small',
-          onclick: async (e) => {
-            const etikett = document.getElementById('neues-etikett').value.trim();
-            if (!etikett) return;
-            e.target.disabled = true;
-            try {
-              await api.medium.save({ KatalogNi: row.KatalogNi, MedienEtik: etikett });
-              openKatalogSheet(await api.katalog.get(row.KatalogNi));
-            } catch (err) {
-              toast(err.message || String(err), 'error');
-            } finally {
-              e.target.disabled = false;
-            }
-          },
-        }, ['+ Exemplar']),
-      ]),
-      el('p', { class: 'hint', style: { marginTop: '14px' } }, [`Insgesamt ${statistik.gesamt}× ausgeliehen.`]),
-      el('div', { class: 'section-title', style: { marginTop: '18px' } }, ['Vormerkungen']),
-      vormerkungen.length
-        ? el('div', {}, vormerkungen.map((v) =>
-            el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
-              el('span', { class: 'badge' }, [`${v.Nachname}, ${v.Vorname}`]),
-              el('span', { class: 'hint' }, [`seit ${fmtDatum(v.VormerkDat)}`]),
-              el('button', {
-                class: 'icon-button',
-                title: 'Vormerkung entfernen',
-                onclick: async () => {
-                  try {
-                    await api.vormerkung.loeschen(v.id);
-                    openKatalogSheet(await api.katalog.get(row.KatalogNi));
-                  } catch (err) {
-                    toast(err.message || String(err), 'error');
-                  }
-                },
-              }, ['✕']),
-            ])
-          ))
-        : el('p', { class: 'hint' }, ['Keine Vormerkungen.']),
-      el('div', { class: 'row-inline', style: { marginTop: '8px' } }, [
-        el('input', { id: 'neue-vormerkung', type: 'text', placeholder: 'Ausweisnummer / Kürzel' }),
-        el('button', {
-          class: 'button small',
-          onclick: async (e) => {
-            const kennung = document.getElementById('neue-vormerkung').value.trim();
-            if (!kennung) return;
-            e.target.disabled = true;
-            try {
-              const leser = await findLeserByKennung(kennung);
-              if (!leser) { toast(`Kein Nutzer für „${kennung}“ gefunden.`, 'error'); return; }
-              await api.vormerkung.anlegen({ katalogNi: row.KatalogNi, leserNi: leser.LeserNi });
-              openKatalogSheet(await api.katalog.get(row.KatalogNi));
-            } catch (err) {
-              toast(err.message || String(err), 'error');
-            } finally {
-              e.target.disabled = false;
-            }
-          },
-        }, ['+ Vormerken']),
-      ]),
-    ]);
-  }
-
   openSheet({
     title: row ? row.Titel || 'Titel bearbeiten' : 'Neuer Titel',
     fields,
     values: row || {},
     before: buildCoverPanel(row),
     wide: true,
-    extra: extraBox,
     onSave: async (values) => {
       const payload = row ? { ...values, KatalogNi: row.KatalogNi } : values;
       await api.katalog.save(payload);
@@ -749,12 +689,187 @@ async function openKatalogSheet(row) {
     onDelete: row
       ? async () => {
           await api.katalog.delete(row.KatalogNi);
+          state.katalogAusgewaehltNi = null;
           await loadKatalog();
           await refreshKennzahlen();
           toast('Titel gelöscht.');
         }
       : null,
   });
+}
+
+/* ------------------------------------------------------- Buchdetail (Abschnitt 3) */
+
+/** Unter dieser Breite des Split-Bereichs klappt das Detail unter der Zeile auf statt daneben zu stehen (siehe app.css @container). */
+function katalogDetailSchmal() {
+  const split = document.getElementById('katalog-split');
+  return split ? split.clientWidth < 780 : false;
+}
+
+function markiereAusgewaehlteZeile() {
+  for (const tr of document.querySelectorAll('#katalog-tbody tr[data-katalog-ni]')) {
+    tr.classList.toggle('katalog-row-selected', Number(tr.dataset.katalogNi) === state.katalogAusgewaehltNi);
+  }
+}
+
+/** Schließt das Detail (Panel oder Accordion-Zeile), OHNE die Trefferliste neu zu laden oder ihre Scrollposition zu verändern. */
+function schliesseBuchDetail() {
+  state.katalogAusgewaehltNi = null;
+  markiereAusgewaehlteZeile();
+  document.getElementById('katalog-detail-leer').hidden = false;
+  const inhaltBox = document.getElementById('katalog-detail-inhalt');
+  inhaltBox.hidden = true;
+  inhaltBox.replaceChildren();
+  for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
+}
+
+async function waehleKatalogZeile(row) {
+  state.katalogAusgewaehltNi = row.KatalogNi;
+  await zeigeBuchDetail(row);
+}
+
+/** Von woanders (Dashboard, Statistik) direkt zu einem Titel im Katalog springen und ihn dort auswählen. */
+async function springeZuBuchDetail(katalogNi) {
+  showView('katalog');
+  const buch = await api.katalog.get(katalogNi);
+  if (buch) await waehleKatalogZeile(buch);
+}
+
+/** Zeigt das Detail für `row` – je nach verfügbarer Breite im festen Panel oder als aufgeklappte Zeile direkt unter dem Titel (kein Overlay, keine verdeckte Liste). */
+async function zeigeBuchDetail(row) {
+  markiereAusgewaehlteZeile();
+  for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
+  const inhalt = await baueBuchDetailInhalt(row);
+
+  if (katalogDetailSchmal()) {
+    document.getElementById('katalog-detail-leer').hidden = false;
+    const panelInhalt = document.getElementById('katalog-detail-inhalt');
+    panelInhalt.hidden = true;
+    panelInhalt.replaceChildren();
+    const zeile = document.querySelector(`#katalog-tbody tr[data-katalog-ni="${row.KatalogNi}"]`);
+    if (zeile) zeile.after(el('tr', { class: 'katalog-detail-row' }, [el('td', { colSpan: 6 }, [inhalt])]));
+  } else {
+    document.getElementById('katalog-detail-leer').hidden = true;
+    const box = document.getElementById('katalog-detail-inhalt');
+    box.replaceChildren(inhalt);
+    box.hidden = false;
+    // Einzige, kurze Einblendbewegung beim Wechsel der Auswahl – kein Hover-
+    // Effekt, keine gestaffelte Animation einzelner Elemente (siehe Auftrag).
+    box.classList.remove('katalog-detail-inhalt-anim');
+    void box.offsetWidth;
+    box.classList.add('katalog-detail-inhalt-anim');
+  }
+}
+
+/**
+ * Baut den Detailinhalt: zuerst, was an der Theke gebraucht wird (Titel,
+ * Autor, je Exemplar Buchnummer + Status – verfügbar oder an wen/bis wann
+ * ausgeliehen, inkl. Ferien-Hinweis), danach Exemplar-/Vormerkungsverwaltung,
+ * zuletzt ein ruhigerer zweiter Block mit den reinen Katalogdaten.
+ */
+async function baueBuchDetailInhalt(row) {
+  const [exemplare, vormerkungen, statistik] = await Promise.all([
+    api.katalog.exemplareMitAusleihe(row.KatalogNi),
+    api.vormerkung.liste(row.KatalogNi),
+    api.katalog.ausleihStatistik(row.KatalogNi),
+  ]);
+
+  const neuLaden = async () => { await zeigeBuchDetail(await api.katalog.get(row.KatalogNi)); };
+
+  const statusZeilen = exemplare.length
+    ? exemplare.map((m) =>
+        el('div', { class: 'buchdetail-status-row' }, [
+          el('span', { class: 'buchdetail-status-etikett' }, [m.MedienEtik || `#${m.MedienNi}`]),
+          m.verliehen
+            ? el('div', { class: 'buchdetail-status-text' }, [
+                `Ausgeliehen an ${m.ausleihe.Nachname}, ${m.ausleihe.Vorname} – bis ${fmtDatum(m.ausleihe.faelligAm)}`,
+                m.ausleihe.hinweise?.length ? el('div', { class: 'hint' }, [m.ausleihe.hinweise.join(', ')]) : null,
+              ])
+            : el('span', { class: 'badge ok' }, ['Verfügbar']),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'icon-button', title: 'Etikett drucken', onclick: () => druckeEtiketten([etikettAusExemplar(m, row)]) }, ['🏷️']),
+        ])
+      )
+    : [el('p', { class: 'hint' }, ['Noch keine Exemplare.'])];
+
+  const katalogdaten = el('dl', { class: 'buchdetail-katalogdaten' }, [
+    row.Verlag ? el('dt', {}, ['Verlag']) : null, row.Verlag ? el('dd', {}, [row.Verlag]) : null,
+    row.ISBN || row.EAN ? el('dt', {}, ['ISBN/EAN']) : null, row.ISBN || row.EAN ? el('dd', {}, [row.ISBN || row.EAN]) : null,
+    row.ErschJahr ? el('dt', {}, ['Jahr']) : null, row.ErschJahr ? el('dd', {}, [String(row.ErschJahr)]) : null,
+    row.SystemId ? el('dt', {}, ['Systematik']) : null, row.SystemId ? el('dd', {}, [systematikOptions().find((o) => String(o.value) === String(row.SystemId))?.label || row.SystemId]) : null,
+    row.Schlagwort ? el('dt', {}, ['Schlagworte']) : null, row.Schlagwort ? el('dd', {}, [row.Schlagwort]) : null,
+    row.KlasseAnto ? el('dt', {}, ['Antolin']) : null, row.KlasseAnto ? el('dd', {}, [row.KlasseAnto]) : null,
+  ]);
+
+  return el('div', {}, [
+    el('div', { class: 'buchdetail-titel' }, [row.Titel || '']),
+    row.Autor ? el('div', { class: 'buchdetail-autor' }, [row.Autor]) : null,
+
+    el('div', { class: 'section-title', style: { marginTop: '0' } }, ['Status']),
+    ...statusZeilen,
+    el('div', { class: 'row-inline', style: { marginTop: '10px' } }, [
+      el('input', { id: 'neues-etikett', type: 'text', placeholder: 'Neues Exemplar: Etikett/Barcode' }),
+      el('button', {
+        class: 'button small',
+        onclick: async (e) => {
+          const etikett = document.getElementById('neues-etikett').value.trim();
+          if (!etikett) return;
+          e.target.disabled = true;
+          try { await api.medium.save({ KatalogNi: row.KatalogNi, MedienEtik: etikett }); await neuLaden(); }
+          catch (err) { toast(err.message || String(err), 'error'); }
+          finally { e.target.disabled = false; }
+        },
+      }, ['+ Exemplar']),
+    ]),
+
+    el('div', { class: 'section-title' }, ['Vormerkungen']),
+    vormerkungen.length
+      ? el('div', {}, vormerkungen.map((v) =>
+          el('div', { class: 'row-inline', style: { marginBottom: '6px' } }, [
+            el('span', { class: 'badge' }, [`${v.Nachname}, ${v.Vorname}`]),
+            el('span', { class: 'hint' }, [`seit ${fmtDatum(v.VormerkDat)}`]),
+            el('button', {
+              class: 'icon-button',
+              title: 'Vormerkung entfernen',
+              onclick: async () => {
+                try { await api.vormerkung.loeschen(v.id); await neuLaden(); }
+                catch (err) { toast(err.message || String(err), 'error'); }
+              },
+            }, ['✕']),
+          ])
+        ))
+      : el('p', { class: 'hint' }, ['Keine Vormerkungen.']),
+    el('div', { class: 'row-inline', style: { marginBottom: '4px' } }, [
+      el('input', { id: 'neue-vormerkung', type: 'text', placeholder: 'Ausweisnummer / Kürzel' }),
+      el('button', {
+        class: 'button small',
+        onclick: async (e) => {
+          const kennung = document.getElementById('neue-vormerkung').value.trim();
+          if (!kennung) return;
+          e.target.disabled = true;
+          try {
+            const leser = await findLeserByKennung(kennung);
+            if (!leser) { toast(`Kein Nutzer für „${kennung}“ gefunden.`, 'error'); return; }
+            await api.vormerkung.anlegen({ katalogNi: row.KatalogNi, leserNi: leser.LeserNi });
+            await neuLaden();
+          } catch (err) {
+            toast(err.message || String(err), 'error');
+          } finally {
+            e.target.disabled = false;
+          }
+        },
+      }, ['+ Vormerken']),
+    ]),
+
+    el('div', { class: 'section-title' }, ['Katalogdaten']),
+    katalogdaten,
+    el('p', { class: 'hint' }, [`Insgesamt ${statistik.gesamt}× ausgeliehen.`]),
+
+    el('div', { class: 'row-inline', style: { marginTop: '14px' } }, [
+      el('button', { class: 'button small', onclick: () => openKatalogSheet(row) }, ['Bearbeiten']),
+      exemplare.length ? el('button', { class: 'button small ghost', title: 'Ein Etikett je Exemplar dieses Titels', onclick: () => druckeEtiketten(exemplare.map((m) => etikettAusExemplar(m, row))) }, ['🏷️ Alle Etiketten drucken']) : null,
+    ]),
+  ]);
 }
 
 /* ------------------------------------------------------- Etiketten-Ansicht */
@@ -1033,23 +1148,131 @@ async function findLeserByKennung(text) {
   return rows.find((r) => r.AusweisId === text || r.Kuerzel === text) || null;
 }
 
+/**
+ * Vorschlagsliste unter einem Textfeld (Abschnitt 4): ab dem zweiten Zeichen
+ * `holeVorschlaege(query)` (entprellt), Pfeiltasten wählen, Enter übernimmt
+ * die aktive Zeile (oder fällt auf `onEnter` zurück, wenn keine Zeile aktiv
+ * ist – "wer eine gültige Nummer eintippt und Enter drückt, überspringt die
+ * Liste wie bisher"), Escape schließt. Ein Klick auf eine Zeile wählt sie
+ * ebenfalls. Liefert `{ getAusgewaehlt, reset }`, damit der Aufrufer weiß,
+ * ob (und welche) Entität bewusst aus der Liste gewählt wurde, statt sie ein
+ * zweites Mal über den Text auflösen zu müssen.
+ */
+function wireAutocomplete({ inputId, listeId, holeVorschlaege, baueZeile, textFuer, onEnter, maxEintraege = 6 }) {
+  const input = document.getElementById(inputId);
+  const liste = document.getElementById(listeId);
+  let vorschlaege = [];
+  let aktiverIndex = -1;
+  let ausgewaehlt = null;
+
+  function schliesseListe() {
+    liste.replaceChildren();
+    liste.hidden = true;
+    vorschlaege = [];
+    aktiverIndex = -1;
+  }
+
+  function markiereAktiv() {
+    [...liste.children].forEach((li, i) => li.classList.toggle('aktiv', i === aktiverIndex));
+    liste.children[aktiverIndex]?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function waehle(eintrag) {
+    ausgewaehlt = eintrag;
+    input.value = textFuer(eintrag);
+    schliesseListe();
+  }
+
+  const sucheAusloesen = debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 2) { schliesseListe(); return; }
+    vorschlaege = (await holeVorschlaege(q)).slice(0, maxEintraege);
+    if (!vorschlaege.length) { schliesseListe(); return; }
+    aktiverIndex = -1;
+    liste.replaceChildren(
+      ...vorschlaege.map((eintrag) => {
+        const zeile = baueZeile(eintrag);
+        zeile.classList.add('suggest-row');
+        zeile.addEventListener('mousedown', (e) => { e.preventDefault(); waehle(eintrag); }); // mousedown vor dem blur-Timeout des Feldes
+        return zeile;
+      })
+    );
+    liste.hidden = false;
+  }, 200);
+
+  input.addEventListener('input', () => {
+    ausgewaehlt = null; // Text hat sich geändert – vorherige Auswahl gilt nicht mehr sicher
+    sucheAusloesen();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (!liste.hidden && vorschlaege.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); aktiverIndex = Math.min(vorschlaege.length - 1, aktiverIndex + 1); markiereAktiv(); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); aktiverIndex = Math.max(0, aktiverIndex - 1); markiereAktiv(); return; }
+      if (e.key === 'Escape') { schliesseListe(); return; }
+      if (e.key === 'Enter' && aktiverIndex >= 0) { e.preventDefault(); waehle(vorschlaege[aktiverIndex]); return; }
+    }
+    if (e.key === 'Enter') onEnter?.();
+  });
+  input.addEventListener('blur', () => setTimeout(schliesseListe, 150));
+
+  return {
+    getAusgewaehlt: () => ausgewaehlt,
+    reset: () => { ausgewaehlt = null; schliesseListe(); },
+  };
+}
+
+let ausleiheBuchAuto = null;
+let ausleiheKindAuto = null;
+
 function wireAusleihe() {
   document.getElementById('ausleihe-bestaetigen').addEventListener('click', ausleihenAbschicken);
-  for (const id of ['ausleihe-etikett', 'ausleihe-leser']) {
-    document.getElementById(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') ausleihenAbschicken(); });
-  }
+
+  ausleiheBuchAuto = wireAutocomplete({
+    inputId: 'ausleihe-etikett',
+    listeId: 'ausleihe-etikett-vorschlaege',
+    holeVorschlaege: (q) => api.medium.vorschlaege(q),
+    textFuer: (m) => m.MedienEtik || '',
+    onEnter: ausleihenAbschicken,
+    baueZeile: (m) =>
+      el('li', {}, [
+        el('div', { class: 'suggest-main' }, [
+          el('div', { class: 'suggest-title' }, [m.Titel || '']),
+          el('div', { class: 'suggest-sub' }, [[m.Autor, m.MedienEtik].filter(Boolean).join(' · ')]),
+        ]),
+        el('span', { class: `badge ${m.verliehen ? 'danger' : 'ok'}` }, [m.verliehen ? 'nicht verfügbar' : 'verfügbar']),
+      ]),
+  });
+
+  ausleiheKindAuto = wireAutocomplete({
+    inputId: 'ausleihe-leser',
+    listeId: 'ausleihe-leser-vorschlaege',
+    holeVorschlaege: (q) => api.leser.vorschlaege(q),
+    textFuer: (l) => `${l.Vorname || ''} ${l.Nachname || ''}`.trim(),
+    onEnter: ausleihenAbschicken,
+    baueZeile: (l) =>
+      el('li', {}, [
+        el('span', { class: 'suggest-avatar' }, ['🧑']), // kein Passbild-Upload in INGA – bewusst immer der neutrale Platzhalter statt einer Initialen-Bubble
+        el('div', { class: 'suggest-main' }, [
+          el('div', { class: 'suggest-title' }, [`${l.Vorname || ''} ${l.Nachname || ''}`.trim()]),
+          el('div', { class: 'suggest-sub' }, [[l.Jahrgang, `${l.offeneAusleihen || 0} ausgeliehen`].filter(Boolean).join(' · ')]),
+        ]),
+      ]),
+  });
 }
 
 async function ausleihenAbschicken() {
   const status = document.getElementById('ausleihe-status');
   const etikett = document.getElementById('ausleihe-etikett').value.trim();
   const leserText = document.getElementById('ausleihe-leser').value.trim();
-  if (!etikett || !leserText) { status.textContent = 'Bitte Exemplar und Nutzer angeben.'; return; }
+  if (!etikett || !leserText) { status.textContent = 'Bitte Buch und Kind angeben.'; return; }
 
-  const medium = await api.medium.findByEtikett(etikett);
-  if (!medium) { status.textContent = `Kein Exemplar mit Etikett „${etikett}“ gefunden.`; return; }
-  const leser = await findLeserByKennung(leserText);
-  if (!leser) { status.textContent = `Kein Nutzer für „${leserText}“ gefunden.`; return; }
+  // Bewusst aus der Vorschlagsliste gewählt? Sonst wie bisher exakt auflösen
+  // (Buchnummer/Ausweisnummer/Kürzel) – "wer eine gültige Nummer eintippt und
+  // Enter drückt, überspringt die Liste wie bisher".
+  const medium = ausleiheBuchAuto?.getAusgewaehlt() || (await api.medium.findByEtikett(etikett));
+  if (!medium) { status.textContent = `Kein Buch für „${etikett}“ gefunden.`; return; }
+  const leser = ausleiheKindAuto?.getAusgewaehlt() || (await findLeserByKennung(leserText));
+  if (!leser) { status.textContent = `Kein Kind für „${leserText}“ gefunden.`; return; }
 
   const result = await api.ausleihe.ausleihen({ medienNi: medium.MedienNi, leserNi: leser.LeserNi, benutzer: 'inga' });
   if (!result.ok) { status.textContent = result.error; toast(result.error, 'error'); return; }
@@ -1058,6 +1281,8 @@ async function ausleihenAbschicken() {
   if (result.vormerkungHinweis) toast(result.vormerkungHinweis, 'error');
   document.getElementById('ausleihe-etikett').value = '';
   document.getElementById('ausleihe-leser').value = '';
+  ausleiheBuchAuto?.reset();
+  ausleiheKindAuto?.reset();
   document.getElementById('ausleihe-etikett').focus();
   await refreshKennzahlen();
 }
@@ -1243,83 +1468,158 @@ async function rueckgabeExport(art) {
 
 /* ------------------------------------------------------------- Mahnungen */
 
-function wireMahnungen() {
-  document.getElementById('mahn-alle').addEventListener('change', (e) => {
-    for (const cb of document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
-  });
-  document.getElementById('mahnungen-suche').addEventListener('input', debounce(loadMahnungen, 200));
-  document.getElementById('mahnungen-filter-stufe').addEventListener('change', loadMahnungen);
-  document.getElementById('mahnungen-filter-klasse').addEventListener('change', loadMahnungen);
-  document.getElementById('mahnungen-drucken').addEventListener('click', async () => {
-    const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]:checked')];
-    if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
-    const positionen = checked.map((cb) => JSON.parse(cb.dataset.payload));
-    const result = await api.mahnung.erzeugenUndDrucken(positionen);
-    toast(`${result.anzahl} Mahnung(en) erzeugt.`);
-    await loadMahnungen();
-    await refreshKennzahlen();
-  });
-}
+// Zuletzt geladene Rückstandsliste (repo.rueckstandsliste) – Suche/Klassen-
+// filter/Sortierung rendern daraus nur neu, ohne bei jeder Änderung neu zu
+// laden (nur die Schwelle selbst löst einen neuen IPC-Aufruf aus).
+let mahnDaten = [];
 
-/** Stufen sind nur nach ihrer Position (nicht nach Namen) eindeutig – zwei Stufen dürfen gleich heißen. */
+/** Stufen sind nur nach ihrer Position (nicht nach Namen) eindeutig – für den Stufen-Editor in den Einstellungen (renderMahnstufen). */
 function badgeKlasseFuerStufenIndex(index, anzahlStufen) {
   if (index >= anzahlStufen - 1) return 'danger';
   if (index >= 1) return 'warn';
   return '';
 }
 
-function fuelleMahnstufenFilter() {
-  const sel = document.getElementById('mahnungen-filter-stufe');
-  const bisher = sel.value;
-  sel.replaceChildren(el('option', { value: '' }, ['Alle Stufen']), ...state.settings.mahnstufen.map((s, i) => el('option', { value: String(i) }, [s.text])));
-  sel.value = bisher;
+function wireMahnungen() {
+  document.getElementById('mahn-alle').addEventListener('change', (e) => {
+    for (const cb of document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+  });
+  document.getElementById('mahnungen-suche').addEventListener('input', debounce(renderMahnungenAktuell, 200));
+  document.getElementById('mahnungen-filter-klasse').addEventListener('change', renderMahnungenAktuell);
+  document.getElementById('mahnungen-sortierung').addEventListener('change', renderMahnungenAktuell);
+  document.getElementById('mahn-schwelle').addEventListener('input', debounce(loadMahnungen, 300));
+  document.getElementById('mahnungen-im-umlauf').addEventListener('click', () => showView('umlauf'));
+
+  document.getElementById('mahnungen-erinnerung-erstellen').addEventListener('click', () => mahnungenVorbereiten(0));
+  document.getElementById('mahnungen-mahnung-erstellen').addEventListener('click', () => mahnungenVorbereiten(1));
+
+  document.getElementById('mahnung-vorschau-close').addEventListener('click', schliesseMahnungVorschau);
+  document.getElementById('mahnung-vorschau-abbrechen').addEventListener('click', schliesseMahnungVorschau);
+  document.getElementById('mahnung-vorschau-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'mahnung-vorschau-backdrop') schliesseMahnungVorschau();
+  });
 }
 
-/** Klassen-Dropdown der Mahnliste aus den tatsächlich betroffenen Klassen befüllen (Jahrgang ist ein Freitextfeld, kein Stammdatum). */
-function fuelleMahnungenKlassenFilter(rows) {
+async function loadMahnungen() {
+  const schwelle = Number(document.getElementById('mahn-schwelle').value) || 0;
+  mahnDaten = await api.mahnung.rueckstandsliste(schwelle);
+  renderMahnungenAktuell();
+}
+
+/** Klassen-Dropdown aus den tatsächlich betroffenen Klassen befüllen (Jahrgang ist ein Freitextfeld, kein Stammdatum). */
+function fuelleMahnungenKlassenFilter() {
   const sel = document.getElementById('mahnungen-filter-klasse');
   const bisher = sel.value;
-  const klassen = [...new Set(rows.map((r) => r.Jahrgang).filter(Boolean))].sort();
+  const klassen = [...new Set(mahnDaten.map((r) => r.Jahrgang).filter(Boolean))].sort();
   sel.replaceChildren(el('option', { value: '' }, ['Alle Klassen']), ...klassen.map((k) => el('option', { value: k }, [k])));
   sel.value = bisher;
 }
 
-async function loadMahnungen() {
-  const rows = await api.mahnung.ueberfaellige();
-  fuelleMahnungenKlassenFilter(rows);
-  const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
-  const stufeFilter = document.getElementById('mahnungen-filter-stufe').value;
-  const klasseFilter = document.getElementById('mahnungen-filter-klasse').value;
-  const anzahlStufen = state.settings.mahnstufen.length;
-  const gebuehrenAktiv = Boolean(state.settings.mahngebuehrenAktiv);
-  document.getElementById('mahn-gebuehr-head').hidden = !gebuehrenAktiv;
+const MAHN_SORTIERUNG = {
+  tage: (a, b) => b.tageUeberfaellig - a.tageUeberfaellig,
+  name: (a, b) => `${a.Nachname},${a.Vorname}`.localeCompare(`${b.Nachname},${b.Vorname}`) || b.tageUeberfaellig - a.tageUeberfaellig,
+  klasse: (a, b) => (a.Jahrgang || '').localeCompare(b.Jahrgang || '') || `${a.Nachname},${a.Vorname}`.localeCompare(`${b.Nachname},${b.Vorname}`),
+};
 
-  let gefiltert = rows;
+/** Rendert Suche/Klassenfilter/Sortierung aus der zuletzt geladenen Rückstandsliste neu – ein Eintrag pro überfälligem Buch, mehrere Bücher desselben Kindes stehen untereinander. */
+function renderMahnungenAktuell() {
+  fuelleMahnungenKlassenFilter();
+  const suche = document.getElementById('mahnungen-suche').value.trim().toLowerCase();
+  const klasseFilter = document.getElementById('mahnungen-filter-klasse').value;
+  const sortierung = document.getElementById('mahnungen-sortierung').value;
+
+  let gefiltert = mahnDaten;
   if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
-  if (stufeFilter !== '') gefiltert = gefiltert.filter((r) => r.stufeIndex === Number(stufeFilter));
   if (klasseFilter) gefiltert = gefiltert.filter((r) => r.Jahrgang === klasseFilter);
+  gefiltert = [...gefiltert].sort(MAHN_SORTIERUNG[sortierung] || MAHN_SORTIERUNG.tage);
+
+  const anzahlKinder = new Set(gefiltert.map((r) => r.LeserNi)).size;
+  document.getElementById('mahn-zusammenfassung').textContent = gefiltert.length
+    ? `${anzahlKinder} Kind${anzahlKinder === 1 ? '' : 'er'}, ${gefiltert.length} Buch${gefiltert.length === 1 ? '' : 'bücher'}`
+    : '';
 
   const tbody = document.getElementById('mahnungen-tbody');
   tbody.replaceChildren();
   document.getElementById('mahn-alle').checked = false;
   if (!gefiltert.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 7 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✉️']), 'Keine überfälligen Ausleihen.'])])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✉️']), 'Keine Rückstände über der eingestellten Schwelle.'])])]));
     return;
   }
   for (const row of gefiltert) {
-    const badgeClass = badgeKlasseFuerStufenIndex(row.stufeIndex, anzahlStufen);
+    const zuletzt = row.letzteMahnung
+      ? `${row.letzteMahnung.stufeIndex === 0 ? 'Erinnerung' : 'Mahnung'} am ${fmtDatum(row.letzteMahnung.datum)}`
+      : '–';
     tbody.appendChild(
-      el('tr', { class: badgeClass === 'danger' ? 'row-overdue' : '' }, [
+      el('tr', {}, [
         el('td', {}, [el('input', { type: 'checkbox', 'data-payload': JSON.stringify(row) })]),
+        el('td', {}, [`${row.Vorname} ${row.Nachname}`]),
+        el('td', {}, [row.Jahrgang || '']),
         el('td', {}, [row.Titel]),
-        el('td', {}, [`${row.Nachname}, ${row.Vorname}`]),
-        el('td', {}, [fmtDatum(row.faelligAm)]),
-        el('td', {}, [String(row.tageUeberfaellig)]),
-        el('td', {}, [el('span', { class: `badge ${badgeClass}` }, [row.stufe.text])]),
-        el('td', { class: 'num', hidden: !gebuehrenAktiv }, [fmtGeld(row.gebuehr)]),
+        el('td', { class: 'num' }, [String(row.tageUeberfaellig)]),
+        el('td', { class: 'hint' }, [zuletzt]),
       ])
     );
   }
+}
+
+/** Baut je Kind EIN Schreiben aus mehreren Positionen (dieselbe Gruppierung wie main.js/mahnung:erzeugen-und-drucken) – für die Vorschau vor dem Drucken. */
+function baueMahnBriefeVorschau(positionen, stufeIndex) {
+  const stufe = state.settings.mahnstufen[stufeIndex] || {};
+  const nachLeser = new Map();
+  for (const p of positionen) {
+    if (!nachLeser.has(p.LeserNi)) nachLeser.set(p.LeserNi, { Nachname: p.Nachname, Vorname: p.Vorname, posten: [] });
+    nachLeser.get(p.LeserNi).posten.push(p);
+  }
+  return [...nachLeser.values()].map((brief) => {
+    const tageMax = Math.max(...brief.posten.map((p) => p.tageUeberfaellig || 0));
+    const faelligMin = brief.posten.map((p) => p.faelligAm).sort()[0];
+    const summe = brief.posten.reduce((sum, p) => sum + Number(p.gebuehr || 0), 0);
+    const werte = {
+      Vorname: brief.Vorname,
+      Nachname: brief.Nachname,
+      Titel: brief.posten.map((p) => p.Titel).join(', '),
+      Tage: String(tageMax),
+      Gebuehr: fmtGeld(summe),
+      Datum: fmtDatum(heutigesDatumISO()),
+      Faellig: fmtDatum(faelligMin),
+      Stufe: stufe.text || '',
+      Bibliothek: state.settings.bibliotheksName || 'die Bücherei',
+    };
+    return {
+      ...brief,
+      betreff: fuellePlatzhalter(state.settings.mahnBetreffVorlage || '', werte) || stufe.text || '',
+      text: fuellePlatzhalter(stufe.briefText || '', werte),
+    };
+  });
+}
+
+function mahnungenVorbereiten(stufeIndex) {
+  const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]:checked')];
+  if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
+  const positionen = checked.map((cb) => JSON.parse(cb.dataset.payload));
+  zeigeMahnungVorschau(positionen, stufeIndex);
+}
+
+/** Vorschau vor dem Erstellen: Anzahl der Schreiben + fertiger Text des ersten Falls – erst nach Bestätigung wird tatsächlich gedruckt/gespeichert (Abschnitt 5.2). */
+function zeigeMahnungVorschau(positionen, stufeIndex) {
+  const stufe = state.settings.mahnstufen[stufeIndex] || {};
+  const briefe = baueMahnBriefeVorschau(positionen, stufeIndex);
+  document.getElementById('mahnung-vorschau-titel').textContent = `${stufe.text || 'Schreiben'} erstellen`;
+  document.getElementById('mahnung-vorschau-anzahl').textContent = `${briefe.length} Schreiben ${briefe.length === 1 ? 'wird' : 'werden'} erstellt.`;
+  const erster = briefe[0];
+  document.getElementById('mahnung-vorschau-text').textContent = erster ? `${erster.betreff}\n\n${erster.text}` : '';
+  document.getElementById('mahnung-vorschau-backdrop').hidden = false;
+  document.getElementById('mahnung-vorschau-weiter').onclick = async () => {
+    schliesseMahnungVorschau();
+    const result = await api.mahnung.erzeugenUndDrucken(positionen, stufeIndex);
+    toast(`${result.anzahl} Schreiben erzeugt.`);
+    await loadMahnungen();
+    await refreshKennzahlen();
+  };
+}
+
+function schliesseMahnungVorschau() {
+  document.getElementById('mahnung-vorschau-backdrop').hidden = true;
 }
 
 /* ----------------------------------------------------------- Im Umlauf */
@@ -1561,7 +1861,7 @@ async function loadLadenhueter() {
   }
   for (const r of rows) {
     tbody.appendChild(
-      el('tr', { onclick: async () => openKatalogSheet(await api.katalog.get(r.KatalogNi)) }, [
+      el('tr', { onclick: () => springeZuBuchDetail(r.KatalogNi) }, [
         el('td', {}, [r.Titel]),
         el('td', {}, [r.Autor || '']),
         el('td', {}, [r.letzteAusleihe ? fmtDatum(r.letzteAusleihe) : 'nie']),
@@ -1720,11 +2020,29 @@ function wireBestand() {
 
 /* ---------------------------------------------------------- Einstellungen */
 
+/**
+ * Sub-Navigation innerhalb der Einstellungen (Ferien/Mahnungen/Aussehen &
+ * weitere App-Einstellungen) – dieselbe einfache Zeig-genau-eins-Logik wie
+ * showView() für die Hauptansichten, nur eine Ebene tiefer und ohne eigenes
+ * Neuladen der Daten (die lädt loadEinstellungen() ohnehin komplett).
+ */
+function wireEinstellungenNav() {
+  for (const item of document.querySelectorAll('.settings-nav-item')) {
+    item.addEventListener('click', () => {
+      const ziel = item.dataset.einstPane;
+      for (const el of document.querySelectorAll('.settings-nav-item')) el.classList.toggle('active', el.dataset.einstPane === ziel);
+      for (const pane of document.querySelectorAll('.settings-pane')) pane.hidden = pane.id !== `einst-pane-${ziel}`;
+    });
+  }
+}
+
 function wireEinstellungen() {
-  for (const id of ['set-uiStyle', 'set-theme']) {
+  wireEinstellungenNav();
+  for (const id of ['set-uiStyle', 'set-theme', 'set-ferienZaehlweise']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   for (const id of [
+    'set-fontScale', 'set-bibliotheksName',
     'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit',
     'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
@@ -1738,17 +2056,6 @@ function wireEinstellungen() {
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
     document.getElementById('mahngebuehr-felder').hidden = !e.target.checked;
-    speichereEinstellungenFormular();
-  });
-
-  document.getElementById('mahnstufe-hinzufuegen').addEventListener('click', () => {
-    state.settings.mahnstufen.push({
-      tageUeberfaellig: 7,
-      gebuehr: 0.5,
-      text: 'Mahnung',
-      briefText: 'Liebe/r {Vorname} {Nachname},\n\ndas Medium ist seit {Tage} Tagen überfällig. Bitte gib es so bald wie möglich zurück.',
-    });
-    renderMahnstufen();
     speichereEinstellungenFormular();
   });
 
@@ -1841,6 +2148,7 @@ function fuelleVorschauVorlage(vorlage, stufe) {
     Vorname: 'Anna', Nachname: 'Muster', Titel: 'Beispielbuch',
     Tage: String(stufe.tageUeberfaellig || 0), Gebuehr: fmtGeld(beispielGebuehr(stufe.tageUeberfaellig)),
     Datum: fmtDatum(heutigesDatumISO()), Faellig: fmtDatum(heutigesDatumISO()), Stufe: stufe.text,
+    Bibliothek: state.settings.bibliotheksName || 'die Bücherei',
   };
   return fuellePlatzhalter(vorlage, werte);
 }
@@ -1931,15 +2239,14 @@ function renderMahnstufen() {
     box.appendChild(
       el('div', { class: 'mahnstufe-card' }, [
         el('div', { class: 'mahnstufe-head' }, [
-          el('span', { class: `badge ${badgeKlasseFuerStufenIndex(i, arr.length)}` }, [`Stufe ${i + 1}`]),
+          el('span', { class: `badge ${badgeKlasseFuerStufenIndex(i, arr.length)}` }, [i === 0 ? 'Stufe 1' : 'Stufe 2']),
           el('input', { type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text', onchange: (e) => { stufe.text = e.target.value; aktualisierePreview(); speichereEinstellungenFormular(); } }),
-          el('div', { class: 'spacer' }),
-          el('button', { class: 'icon-button', title: 'Nach oben', disabled: i === 0, onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['↑']),
-          el('button', { class: 'icon-button', title: 'Nach unten', disabled: i === arr.length - 1, onclick: () => { arr.splice(i + 1, 0, arr.splice(i, 1)[0]); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['↓']),
-          el('button', { class: 'icon-button', title: 'Stufe löschen', onclick: () => { arr.splice(i, 1); renderMahnstufen(); speichereEinstellungenFormular(); } }, ['✕']),
         ]),
         el('div', { class: 'field-row' }, [
-          el('div', { class: 'field' }, [el('label', {}, ['Tage überfällig']), el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } })]),
+          el('div', { class: 'field' }, [
+            el('label', {}, [i === 0 ? 'Frist bis zur Erinnerung (Tage überfällig)' : 'Frist von der Erinnerung bis zur Mahnung (Tage überfällig)']),
+            el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } }),
+          ]),
         ]),
         el('div', { class: 'field' }, [
           el('div', { class: 'row-inline', style: { justifyContent: 'space-between' } }, [
@@ -1959,12 +2266,15 @@ async function loadEinstellungen() {
   const s = state.settings;
   document.getElementById('set-uiStyle').value = s.uiStyle;
   document.getElementById('set-theme').value = s.theme;
+  document.getElementById('set-fontScale').value = s.fontScale || 100;
+  document.getElementById('set-bibliotheksName').value = s.bibliotheksName || '';
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
   document.getElementById('set-ausleihLimit').value = s.ausleihLimit || 0;
   document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
+  document.getElementById('set-ferienZaehlweise').value = s.ferienZaehlweise || 'kalendertage';
   document.getElementById('set-ueberfaelligTageOhneFerien').checked = Boolean(s.ueberfaelligTageOhneFerien);
   document.getElementById('set-mahngebuehrenAktiv').checked = Boolean(s.mahngebuehrenAktiv);
   document.getElementById('mahngebuehr-felder').hidden = !s.mahngebuehrenAktiv;
@@ -2027,6 +2337,15 @@ function renderMedArtFristen() {
 
 const FERIEN_TYPEN = ['Ferien', 'Feiertag', 'Schließzeit'].map((t) => ({ value: t, label: t }));
 
+// Welche Schuljahre in der Baumansicht gerade aufgeklappt sind – Vorgabe
+// beim ersten Laden ist "nur das laufende", danach merkt sich der Zustand,
+// was die Kollegin manuell auf-/zugeklappt hat (siehe renderFerienBaum).
+let ferienAufgeklappt = null;
+// Zuletzt von der IPC geladene (ungefilterte) Gruppen – Auf-/Zuklappen und
+// der "Vergangene ausblenden"-Schalter rendern daraus nur neu, ohne jedes Mal
+// erneut zu laden (kein Datenbankzugriff für eine reine Anzeigefrage).
+let ferienLetzteGruppen = [];
+
 function wireFerien() {
   document.getElementById('ferien-neu').addEventListener('click', () => openFerienSheet(null));
 
@@ -2057,7 +2376,7 @@ function wireFerien() {
     }
     abrufStatus.textContent = `${result.termine.length} Termine von ${result.quelle} gefunden – bitte prüfen.`;
     if (!result.termine.length) { toast('Keine Termine gefunden.', 'error'); return; }
-    openFerienImportPreview(result.termine);
+    await openFerienImportPreview(result.termine);
   });
 
   document.getElementById('ferien-neuberechnen').addEventListener('click', async () => {
@@ -2065,26 +2384,35 @@ function wireFerien() {
     renderFerienNeuberechnenErgebnis(liste);
   });
 
+  document.getElementById('ferien-vergangene-ausblenden').addEventListener('change', anzeigeFerienBaumAktualisieren);
+
   document.getElementById('ferien-import-close').addEventListener('click', closeFerienImportPreview);
   document.getElementById('ferien-import-abbrechen').addEventListener('click', closeFerienImportPreview);
   document.getElementById('ferien-import-backdrop').addEventListener('click', (e) => {
     if (e.target.id === 'ferien-import-backdrop') closeFerienImportPreview();
   });
   document.getElementById('ferien-import-alle').addEventListener('change', (e) => {
-    for (const cb of document.querySelectorAll('#ferien-import-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+    for (const cb of document.querySelectorAll('#ferien-import-liste input[type="checkbox"][data-abschnitt]')) cb.checked = e.target.checked;
   });
   document.getElementById('ferien-import-uebernehmen').addEventListener('click', ferienImportUebernehmenAbschicken);
 }
 
-function behandleFerienImportErgebnis(result) {
+async function behandleFerienImportErgebnis(result) {
   if (!result.ok) { toast(result.error, 'error'); return; }
   if (!result.termine.length) { toast('Keine Termine gefunden.', 'error'); return; }
-  openFerienImportPreview(result.termine);
+  await openFerienImportPreview(result.termine);
 }
 
 async function loadFerien() {
-  const liste = await api.ferien.liste();
-  renderFerienListe(liste);
+  ferienLetzteGruppen = await api.ferien.listeGruppiert();
+  if (!ferienAufgeklappt) ferienAufgeklappt = new Set(ferienLetzteGruppen.filter((g) => g.aktuell).map((g) => g.startJahr));
+  anzeigeFerienBaumAktualisieren();
+}
+
+/** Rendert aus dem zuletzt geladenen Bestand neu – für Auf-/Zuklappen und den "Vergangene ausblenden"-Schalter, ohne erneut zu laden. */
+function anzeigeFerienBaumAktualisieren() {
+  const ausblenden = document.getElementById('ferien-vergangene-ausblenden').checked;
+  renderFerienBaum(ausblenden ? ferienLetzteGruppen.filter((g) => !g.vergangen) : ferienLetzteGruppen);
 }
 
 function ferienTypBadgeKlasse(typ) {
@@ -2093,40 +2421,79 @@ function ferienTypBadgeKlasse(typ) {
   return '';
 }
 
-function renderFerienListe(liste) {
-  const tbody = document.getElementById('ferien-tbody');
-  tbody.replaceChildren();
-  if (!liste.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty small' }, ['Noch keine Ferien/Schließzeiten eingetragen.'])])]));
+/** Ein Abschnitt (bereits zusammenhängende Tage gebündelt, siehe ferien.buendleAbschnitte) als Zeile im Baum. */
+function ferienAbschnittRow(a) {
+  const zeitraum = a.startdatum === a.enddatum ? fmtDatum(a.startdatum) : `${fmtDatum(a.startdatum)} – ${fmtDatum(a.enddatum)}`;
+  const bearbeitbar = a.ids.length === 1;
+  const bearbeiten = () => openFerienSheet({ id: a.ids[0], bezeichnung: a.bezeichnung, startdatum: a.startdatum, enddatum: a.enddatum, typ: a.typ });
+  return el(
+    'div',
+    { class: 'ferien-abschnitt-row', onclick: bearbeitbar ? bearbeiten : undefined },
+    [
+      el('span', { class: `badge ${ferienTypBadgeKlasse(a.typ)}` }, [a.typ]),
+      el('span', { class: 'ferien-abschnitt-bez' }, [a.bezeichnung]),
+      el('span', { class: 'ferien-abschnitt-zeitraum' }, [zeitraum]),
+      el('span', { class: 'ferien-abschnitt-tage' }, [`${a.tage} Tag${a.tage === 1 ? '' : 'e'}`]),
+      el('div', { class: 'row-inline' }, [
+        bearbeitbar ? el('button', { class: 'button small ghost', onclick: (e) => { e.stopPropagation(); bearbeiten(); } }, ['Bearbeiten']) : null,
+        el('button', {
+          class: 'button small ghost',
+          onclick: async (e) => {
+            e.stopPropagation();
+            if (!confirm(`„${a.bezeichnung}“ (${zeitraum}) wirklich löschen?`)) return;
+            try {
+              for (const id of a.ids) await api.ferien.loeschen(id);
+              await loadFerien();
+              toast('Eintrag gelöscht.');
+            } catch (err) {
+              toast(err.message || String(err), 'error');
+            }
+          },
+        }, ['Löschen']),
+      ]),
+    ]
+  );
+}
+
+/**
+ * Baumansicht: Schuljahre (neuestes oben), standardmäßig bis auf das
+ * laufende zugeklappt, darunter die gebündelten Abschnitte. Ein
+ * zusammenhängender Zeitraum ist EIN Abschnitt, keine Zeile pro Kalendertag
+ * mehr – auch bei mehrjährigen Importen bleibt die Liste damit überschaubar.
+ */
+function renderFerienBaum(gruppen) {
+  const box = document.getElementById('ferien-baum');
+  box.replaceChildren();
+  if (!gruppen.length) {
+    box.appendChild(el('div', { class: 'empty small' }, ['Noch keine Ferien/Schließzeiten eingetragen.']));
     return;
   }
-  for (const row of liste) {
-    tbody.appendChild(
-      el('tr', { onclick: () => openFerienSheet(row) }, [
-        el('td', {}, [row.bezeichnung]),
-        el('td', {}, [fmtDatum(row.startdatum)]),
-        el('td', {}, [fmtDatum(row.enddatum)]),
-        el('td', {}, [el('span', { class: `badge ${ferienTypBadgeKlasse(row.typ)}` }, [row.typ])]),
-        el('td', {}, [row.quelle]),
-        el('td', { class: 'actions' }, [
-          el('button', {
-            class: 'icon-button',
-            title: 'Löschen',
-            onclick: async (e) => {
-              e.stopPropagation();
-              if (!confirm(`„${row.bezeichnung}“ wirklich löschen?`)) return;
-              try {
-                await api.ferien.loeschen(row.id);
-                await loadFerien();
-                toast('Eintrag gelöscht.');
-              } catch (err) {
-                toast(err.message || String(err), 'error');
-              }
-            },
-          }, ['✕']),
-        ]),
-      ])
+  for (const g of gruppen) {
+    const offen = ferienAufgeklappt.has(g.startJahr);
+    const inhalt = el('div', { class: 'ferien-jahr-inhalt', hidden: !offen }, g.abschnitte.map(ferienAbschnittRow));
+    const kopf = el(
+      'div',
+      { class: `ferien-jahr-kopf${offen ? ' offen' : ''}`, onclick: () => { offen ? ferienAufgeklappt.delete(g.startJahr) : ferienAufgeklappt.add(g.startJahr); anzeigeFerienBaumAktualisieren(); } },
+      [
+        el('span', { class: 'chevron' }, ['▶']),
+        el('span', { class: 'ferien-jahr-titel' }, [`Schuljahr ${g.schuljahr}`]),
+        g.vergangen ? el('span', { class: 'ferien-jahr-badge' }, ['(vergangen)']) : null,
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'ferien-jahr-badge' }, [`${g.abschnitte.length} Abschnitt${g.abschnitte.length === 1 ? '' : 'e'}`]),
+        el('button', {
+          class: 'button small ghost',
+          title: `Gesamtes Schuljahr ${g.schuljahr} löschen`,
+          onclick: async (e) => {
+            e.stopPropagation();
+            if (!confirm(`Wirklich ALLE Ferien-/Schließzeiteinträge des Schuljahrs ${g.schuljahr} löschen (${g.abschnitte.length} Abschnitte)?`)) return;
+            const result = await api.ferien.schuljahrLoeschen(g.startJahr);
+            await loadFerien();
+            toast(`Schuljahr ${g.schuljahr} gelöscht (${result.anzahl} Einträge).`);
+          },
+        }, ['Schuljahr löschen']),
+      ]
     );
+    box.appendChild(el('div', { class: 'ferien-jahr' }, [kopf, inhalt]));
   }
 }
 
@@ -2157,35 +2524,53 @@ function openFerienSheet(row) {
   });
 }
 
-/** Zeile in der Import-Vorschau: Checkbox + editierbare Bezeichnung/Typ, Von/Bis nur lesend. */
-function ferienImportZeile(termin) {
-  const bezeichnungInput = el('input', { type: 'text', value: termin.bezeichnung });
-  const typSelect = el(
-    'select',
-    {},
-    FERIEN_TYPEN.map((o) => el('option', { value: o.value, selected: o.value === (termin.typ || 'Ferien') }, [o.label]))
-  );
-  const checkbox = el('input', { type: 'checkbox', checked: true });
-  const tr = el('tr', {}, [
-    el('td', {}, [checkbox]),
-    el('td', {}, [bezeichnungInput]),
-    el('td', {}, [fmtDatum(termin.startdatum)]),
-    el('td', {}, [fmtDatum(termin.enddatum)]),
-    el('td', {}, [typSelect]),
+/**
+ * Zeile in der Import-Vorschau: ein bereits gebündelter Abschnitt (nicht mehr
+ * ein Kalendertag), mit Checkbox + editierbarer Bezeichnung/Typ, Von/Bis nur
+ * lesend. Bereits vorhandene Abschnitte sind vorbelegt ABgewählt (werden beim
+ * Übernehmen ohnehin automatisch übersprungen, siehe ferienImportUebernehmen).
+ */
+function ferienImportZeile(a) {
+  const bezeichnungInput = el('input', { type: 'text', value: a.bezeichnung });
+  const typSelect = el('select', {}, FERIEN_TYPEN.map((o) => el('option', { value: o.value, selected: o.value === (a.typ || 'Ferien') }, [o.label])));
+  const checkbox = el('input', { type: 'checkbox', 'data-abschnitt': '1', checked: !a.bereitsVorhanden });
+  const zeitraum = a.startdatum === a.enddatum ? fmtDatum(a.startdatum) : `${fmtDatum(a.startdatum)} – ${fmtDatum(a.enddatum)}`;
+  const zeile = el('div', { class: 'ferien-abschnitt-row' }, [
+    checkbox,
+    bezeichnungInput,
+    typSelect,
+    el('span', { class: 'ferien-abschnitt-zeitraum' }, [zeitraum]),
+    el('span', { class: 'ferien-abschnitt-tage' }, [`${a.tage} Tag${a.tage === 1 ? '' : 'e'}`]),
+    a.bereitsVorhanden ? el('span', { class: 'badge' }, ['bereits vorhanden']) : null,
   ]);
-  tr._lesen = () => ({
+  zeile._lesen = () => ({
     ausgewaehlt: checkbox.checked,
     bezeichnung: bezeichnungInput.value.trim(),
-    startdatum: termin.startdatum,
-    enddatum: termin.enddatum,
+    startdatum: a.startdatum,
+    enddatum: a.enddatum,
     typ: typSelect.value,
   });
-  return tr;
+  return zeile;
 }
 
-function openFerienImportPreview(termine) {
-  const tbody = document.getElementById('ferien-import-tbody');
-  tbody.replaceChildren(...termine.map(ferienImportZeile));
+/** Termine (roh, ggf. tageweise) über die Vorschau-IPC bündeln/gruppieren lassen und als Schuljahr-Baum anzeigen. */
+async function openFerienImportPreview(termine) {
+  const gruppen = await api.ferien.vorschauFuerImport(termine);
+  const box = document.getElementById('ferien-import-liste');
+  box.replaceChildren(
+    ...gruppen.map((g) =>
+      el('div', { class: 'ferien-jahr' }, [
+        el('div', { class: 'ferien-jahr-kopf offen', style: { cursor: 'default' } }, [
+          el('span', { class: 'ferien-jahr-titel' }, [`Schuljahr ${g.schuljahr}`]),
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'ferien-jahr-badge' }, [
+            `${g.abschnitte.length} Abschnitt${g.abschnitte.length === 1 ? '' : 'e'}${g.anzahlVorhanden ? `, davon ${g.anzahlVorhanden} schon vorhanden` : ''}`,
+          ]),
+        ]),
+        el('div', { class: 'ferien-jahr-inhalt' }, g.abschnitte.map(ferienImportZeile)),
+      ])
+    )
+  );
   document.getElementById('ferien-import-alle').checked = true;
   document.getElementById('ferien-import-backdrop').hidden = false;
 }
@@ -2195,14 +2580,14 @@ function closeFerienImportPreview() {
 }
 
 async function ferienImportUebernehmenAbschicken() {
-  const zeilen = [...document.querySelectorAll('#ferien-import-tbody tr')].map((tr) => tr._lesen());
+  const zeilen = [...document.querySelectorAll('#ferien-import-liste .ferien-abschnitt-row')].map((zeile) => zeile._lesen());
   const ausgewaehlt = zeilen.filter((z) => z.ausgewaehlt && z.bezeichnung);
   if (!ausgewaehlt.length) { toast('Nichts ausgewählt.', 'error'); return; }
   const result = await api.ferien.importUebernehmen(ausgewaehlt);
   if (!result.ok) { toast(result.error, 'error'); return; }
   closeFerienImportPreview();
   await loadFerien();
-  toast(`${result.neu} Termin(e) übernommen${result.uebersprungen ? `, ${result.uebersprungen} bereits vorhanden übersprungen` : ''}.`);
+  toast(`${result.neu} Abschnitt(e) übernommen${result.uebersprungen ? `, ${result.uebersprungen} bereits vorhanden übersprungen` : ''}.`);
 }
 
 /** Ergebnis von "Fristen anhand der Ferien neu berechnen" – reine Anzeige, siehe repo.vorschauFristenMitFerien. */
@@ -2306,12 +2691,15 @@ const speichereEinstellungenFormular = debounce(async () => {
   const patch = {
     uiStyle: document.getElementById('set-uiStyle').value,
     theme: document.getElementById('set-theme').value,
+    fontScale: Number(document.getElementById('set-fontScale').value) || 100,
+    bibliotheksName: document.getElementById('set-bibliotheksName').value,
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
     ausleihLimit: Number(document.getElementById('set-ausleihLimit').value) || 0,
     verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
+    ferienZaehlweise: document.getElementById('set-ferienZaehlweise').value,
     ueberfaelligTageOhneFerien: document.getElementById('set-ueberfaelligTageOhneFerien').checked,
     mahngebuehrenAktiv: document.getElementById('set-mahngebuehrenAktiv').checked,
     mahnGebuehrProTag: Number(document.getElementById('set-mahnGebuehrProTag').value) || 0,

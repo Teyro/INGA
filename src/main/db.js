@@ -200,7 +200,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const MIGRATIONS = [
   {
     version: 2,
@@ -302,6 +302,22 @@ const MIGRATIONS = [
           columns,
           `INSERT INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(', ')}) VALUES (${columns.map((c) => `@${c}`).join(', ')})`
         );
+      }
+    },
+  },
+  {
+    version: 7,
+    beschreibung: 'Mahnung: je Fall die verschickte Stufe protokollieren (1=Erinnerung, 2=Mahnung – Abschnitt 5.2)',
+    up(db) {
+      // Kein Perpustakaan-Feld (die Tabelle bleibt trotzdem Perpustakaan-
+      // kompatibel: die Spalte ist rein additiv, taucht nicht in
+      // schema/perpustakaan-tables.json auf und wird beim Export deshalb
+      // einfach nicht mit ausgegeben, ähnlich inga_covers). ALTER TABLE ADD
+      // COLUMN ist – anders als CREATE TABLE IF NOT EXISTS – nicht von sich
+      // aus idempotent, deshalb der PRAGMA-Check davor.
+      const spalten = db.prepare(`PRAGMA table_info("Mahnung")`).all().map((c) => c.name);
+      if (!spalten.includes('IngaStufe')) {
+        db.exec(`ALTER TABLE "Mahnung" ADD COLUMN "IngaStufe" INTEGER`);
       }
     },
   },

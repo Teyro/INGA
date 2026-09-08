@@ -479,6 +479,7 @@ function registerIpc() {
   ipcMain.handle('katalog:delete', sicher((_e, katalogNi) => repo.deleteKatalog(db, katalogNi)));
   ipcMain.handle('katalog:exemplare', (_e, katalogNi) => repo.exemplareFuer(db, katalogNi));
   ipcMain.handle('katalog:exemplare-mit-status', (_e, katalogNi) => repo.exemplareMitStatusFuer(db, katalogNi));
+  ipcMain.handle('katalog:exemplare-mit-ausleihe', (_e, katalogNi) => repo.exemplareMitAusleiheInfoFuer(db, katalogNi, settings()));
   ipcMain.handle('katalog:top-ausgeliehen', (_e, limit) => repo.topAusgelieheneBuecher(db, limit || 10));
   ipcMain.handle('katalog:ausleih-statistik', (_e, katalogNi) => repo.ausleihStatistikFuerKatalog(db, katalogNi));
   ipcMain.handle('katalog:isbn-nachschlagen', (_e, isbn) => holeBuchdaten(isbn));
@@ -493,8 +494,10 @@ function registerIpc() {
   ipcMain.handle('medium:delete', sicher((_e, medienNi) => repo.deleteMedium(db, medienNi, 'inga')));
   ipcMain.handle('medium:status', (_e, medienNi) => repo.exemplarStatus(db, medienNi));
   ipcMain.handle('medium:find-etikett', (_e, etikett) => repo.findExemplarByEtikett(db, etikett));
+  ipcMain.handle('medium:vorschlaege', (_e, query) => repo.medienVorschlaege(db, query));
 
   ipcMain.handle('leser:search', (_e, filter, seitenOptionen) => repo.searchLeser(db, filter, seitenOptionen));
+  ipcMain.handle('leser:vorschlaege', (_e, query) => repo.leserVorschlaege(db, query));
   ipcMain.handle('leser:jahrgaenge', () => repo.distinctJahrgaenge(db));
   ipcMain.handle('leser:get', (_e, leserNi) => repo.getLeser(db, leserNi));
   ipcMain.handle('leser:save', sicher((_e, row) => repo.saveLeser(db, row)));
@@ -570,16 +573,26 @@ function registerIpc() {
   }));
 
   ipcMain.handle('mahnung:ueberfaellige', () => repo.ueberfaelligeMitStufe(db, settings()));
-  ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, positionen) => {
+  ipcMain.handle('mahnung:rueckstandsliste', (_e, schwelleTage) => repo.rueckstandsliste(db, settings(), schwelleTage));
+  /**
+   * Erstellt für die ausgewählten Positionen EINE der beiden Stufen –
+   * bewusst von der Kollegin am Knopf gewählt ("Erinnerung erstellen" /
+   * "Mahnung erstellen", Abschnitt 5.2), nicht mehr automatisch pro Fall
+   * bestimmt. Alle Positionen bekommen dieselbe Stufe, gruppiert wie bisher
+   * zu einem Schreiben je Kind. Protokolliert je Fall, welche Stufe verschickt
+   * wurde (repo.mahnungEintragen/IngaStufe) – Grundlage für die
+   * "Erinnerung am …"-Anzeige in der Rückstandsliste.
+   */
+  ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, { positionen, stufeIndex }) => {
     const s = settings();
+    const stufe = s.mahnstufen[stufeIndex] || s.mahnstufen[0] || { text: 'Mahnung', briefText: '' };
     const nachLeser = new Map();
     for (const p of positionen) {
-      // p.gebuehr kommt bereits aus mahnung:ueberfaellige (repo.berechneMahngebuehr,
-      // beachtet den An/Aus-Schalter) – nicht erneut aus p.stufe.gebuehr lesen,
-      // das ist nur noch der Name/Text der Eskalationsstufe.
-      repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr: p.gebuehr || 0 });
+      const gebuehr = repo.berechneMahngebuehr(p.tageUeberfaellig, s);
+      repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr, stufe: stufeIndex + 1 });
+      const position = { ...p, gebuehr, stufe, stufeIndex };
       if (!nachLeser.has(p.LeserNi)) nachLeser.set(p.LeserNi, { leser: repo.getLeser(db, p.LeserNi), posten: [] });
-      nachLeser.get(p.LeserNi).posten.push(p);
+      nachLeser.get(p.LeserNi).posten.push(position);
     }
     const briefe = [...nachLeser.values()].map(({ leser, posten }) => ({
       leser,
@@ -593,6 +606,7 @@ function registerIpc() {
       mahnBetreffVorlage: s.mahnBetreffVorlage,
       mahnSchluss: s.mahnSchluss,
       mahnLogoDataUrl: s.mahnLogoDataUrl,
+      bibliotheksName: s.bibliotheksName,
       datum: new Date().toLocaleDateString('de-DE'),
     }));
     await openMahnungPrintWindow(briefe);
@@ -650,6 +664,9 @@ function registerIpc() {
   /* ------------------------------------------------------------ Ferien */
 
   ipcMain.handle('ferien:liste', () => ferien.listeFerien(db));
+  ipcMain.handle('ferien:liste-gruppiert', () => ferien.gruppiereFuerAnzeige(db));
+  ipcMain.handle('ferien:vorschau-fuer-import', (_e, termine) => ferien.vorschauFuerImport(db, termine));
+  ipcMain.handle('ferien:schuljahr-loeschen', (_e, startJahr) => ({ anzahl: ferien.loescheSchuljahr(db, startJahr) }));
   ipcMain.handle('ferien:speichern', (_e, row) => {
     try {
       return { ok: true, id: ferien.saveFerienEintrag(db, row) };

@@ -5,6 +5,7 @@
 const { upsert, nextId, quoteIdent, TABLES } = require('./db');
 const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz, parseKalenderdatum } = require('./date-utils');
 const ferien = require('./ferien');
+const suche = require('./suche');
 
 // todayStr/nowStamp/addDays hießen früher so und rechneten über
 // `new Date().toISOString()` – das liefert das UTC-Datum statt des lokalen
@@ -176,6 +177,60 @@ function exemplareMitStatusFuer(db, katalogNi) {
     .map((m) => ({ ...m, verliehen: Boolean(m.verliehen) }));
 }
 
+/**
+ * Wie exemplareMitStatusFuer, aber je verliehenem Exemplar zusätzlich an wen
+ * und bis wann – Grundlage für den Status-Block der ruhigen Buchdetailansicht
+ * (Abschnitt 3: "Titel, Autor, Buchnummer, Status – verfügbar/ausgeliehen an
+ * wen bis wann"). Ein Titel hat typischerweise nur eine Handvoll Exemplare,
+ * ein Einzelabfrage-Join je verliehenem Exemplar ist hier unproblematisch
+ * (anders als bei den Listen über ALLE offenen Ausleihen, siehe
+ * ueberfaelligeAusleihen).
+ */
+function exemplareMitAusleiheInfoFuer(db, katalogNi, einstellungen) {
+  const exemplare = exemplareMitStatusFuer(db, katalogNi);
+  if (!exemplare.some((m) => m.verliehen)) return exemplare.map((m) => ({ ...m, ausleihe: null }));
+  const ferienListe = ferien.listeFerien(db);
+  return exemplare.map((m) => {
+    if (!m.verliehen) return { ...m, ausleihe: null };
+    const ausleihe = db
+      .prepare(
+        `SELECT a.*, l."Nachname", l."Vorname" FROM "Ausleihe" a
+         JOIN "Leser" l ON l."LeserNi" = a."LeserNi"
+         WHERE a."MedienNi" = ? AND a."Rueckgabe" IS NULL`
+      )
+      .get(m.MedienNi);
+    if (!ausleihe) return { ...m, ausleihe: null };
+    const { datum, hinweise } = berechneRueckgabedatum(db, { auslDatum: ausleihe.AuslDatum, katalogNi, anzVerl: ausleihe.AnzVerl, einstellungen });
+    return {
+      ...m,
+      ausleihe: { id: ausleihe.id, Nachname: ausleihe.Nachname, Vorname: ausleihe.Vorname, AuslDatum: ausleihe.AuslDatum, faelligAm: datum, hinweise },
+    };
+  });
+}
+
+/**
+ * Vorschläge fürs Feld "Buch" beim Ausleihen (Abschnitt 4): Buchnummer,
+ * Titel oder Autor, unscharf. Arbeitet auf EXEMPLAR-Ebene (nicht Titel-
+ * Ebene) – ausgeliehen wird immer ein konkretes Exemplar, und bereits
+ * verliehene Exemplare sollen auftauchen (nur gekennzeichnet), nicht
+ * verschwinden ("sonst sucht man an der Theke vergeblich weiter").
+ */
+function medienVorschlaege(db, query, limit = 6) {
+  const q = String(query ?? '').trim();
+  if (q.length < 2) return [];
+  const alle = db
+    .prepare(
+      `SELECT m."MedienNi", m."MedienEtik", m."KatalogNi", k."Titel", k."Autor",
+        EXISTS(SELECT 1 FROM "Ausleihe" a WHERE a."MedienNi" = m."MedienNi" AND a."Rueckgabe" IS NULL) AS verliehen
+       FROM "Medien" m JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"`
+    )
+    .all();
+  return suche
+    .ranglisteSortiert(alle, q, (m) => [m.MedienEtik, m.Titel, m.Autor])
+    .slice(0, limit)
+    .map((m) => ({ ...m, verliehen: Boolean(m.verliehen) }));
+}
+
 function findExemplarByEtikett(db, etikett) {
   return db.prepare(`SELECT * FROM "Medien" WHERE "MedienEtik" = ?`).get(etikett);
 }
@@ -294,6 +349,26 @@ function searchLeser(db, { query, leserGruNi, zweigId, jahrgang, aktiveAusleihen
   }
   const rows = db.prepare(sql).all(...abfrageParams);
   return { rows, gesamt, seite, proSeite: alle ? 'alle' : groesse };
+}
+
+/**
+ * Vorschläge fürs Feld "Kind" beim Ausleihen (Abschnitt 4): Nummer, Vorname,
+ * Nachname oder Kürzel, unscharf ("Meier" findet auch "Meyer"/"Maier").
+ * Liefert zusätzlich Klasse/Jahrgang und die Anzahl offener Ausleihen, damit
+ * der Vorschlag das ohne weiteren Aufruf anzeigen kann.
+ */
+function leserVorschlaege(db, query, limit = 6) {
+  const q = String(query ?? '').trim();
+  if (q.length < 2) return [];
+  const alle = db
+    .prepare(
+      `SELECT l.*, (SELECT COUNT(*) FROM "Ausleihe" a WHERE a."LeserNi" = l."LeserNi" AND a."Rueckgabe" IS NULL) AS offeneAusleihen
+       FROM "Leser" l`
+    )
+    .all();
+  return suche
+    .ranglisteSortiert(alle, q, (l) => [l.Vorname, l.Nachname, `${l.Vorname} ${l.Nachname}`, l.Kuerzel, l.AusweisId])
+    .slice(0, limit);
 }
 
 function getLeser(db, leserNi) {
@@ -439,17 +514,30 @@ function fristTageGesamt({ basisFristTage, verlaengerungFristTage, anzVerl = 0, 
 }
 
 /**
- * Verschiebt ein rein aus der Frist errechnetes Datum ggf. auf den nächsten
- * Schultag (siehe ferien.js) und hängt bei Bedarf einen nachvollziehbaren
- * Hinweis an ("+12 Tage wegen Herbstferien"). `hinweise` wird nicht mutiert,
- * sondern eine neue Liste zurückgegeben.
+ * Verschiebt ein rein aus der Frist errechnetes Datum um die Ferien, die in
+ * die Ausleihspanne fallen (ferien.verlaengerungDurchFerien – der eigentliche
+ * Zweck der Ferienverwaltung, siehe dort), und schiebt das Ergebnis
+ * anschließend noch auf den nächsten echten Schultag, falls es selbst auf ein
+ * Wochenende oder einen Feiertag fällt (ferien.verschobenesDatumMitHinweis).
+ * Hängt bei Bedarf nachvollziehbare Hinweise an ("+12 Tage wegen
+ * Herbstferien"). `hinweise` wird nicht mutiert, sondern eine neue Liste
+ * zurückgegeben.
  */
-function mitFerienverschiebung(naivesDatum, ferienListe, hinweise) {
-  const { datum, namen } = ferien.verschobenesDatumMitHinweis(naivesDatum, ferienListe);
-  if (!namen.length) return { datum, hinweise };
-  const verschobenTage = tageDifferenz(naivesDatum, datum);
-  const hinweisText = `+${verschobenTage} Tag${verschobenTage === 1 ? '' : 'e'} wegen ${namen.join(' und ')}`;
-  return { datum, hinweise: [...hinweise, hinweisText] };
+function mitFerienverschiebung(auslDatum, naivesDatum, ferienListe, hinweise, zaehlweise) {
+  const { datum: nachVerlaengerung, namen: namenVerlaengerung } = ferien.verlaengerungDurchFerien(auslDatum, naivesDatum, ferienListe, zaehlweise);
+  const { datum, namen: namenNudge } = ferien.verschobenesDatumMitHinweis(nachVerlaengerung, ferienListe);
+
+  const hinweiseNeu = [...hinweise];
+  if (namenVerlaengerung.length) {
+    const verlaengertTage = tageDifferenz(naivesDatum, nachVerlaengerung);
+    hinweiseNeu.push(`+${verlaengertTage} Ferientag${verlaengertTage === 1 ? '' : 'e'} wegen ${namenVerlaengerung.join(' und ')}`);
+  }
+  const namenNeu = namenNudge.filter((n) => !namenVerlaengerung.includes(n));
+  if (namenNeu.length) {
+    const nudgeTage = tageDifferenz(nachVerlaengerung, datum);
+    hinweiseNeu.push(`+${nudgeTage} Tag${nudgeTage === 1 ? '' : 'e'} wegen ${namenNeu.join(' und ')}`);
+  }
+  return { datum, hinweise: hinweiseNeu };
 }
 
 /**
@@ -473,7 +561,7 @@ function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstel
     offsetTage: einstellungen.leihfristOffsetTage,
   });
   const naiv = addDays(auslDatum, gesamt);
-  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(naiv, ferien.listeFerien(db), hinweise);
+  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(auslDatum, naiv, ferien.listeFerien(db), hinweise, einstellungen.ferienZaehlweise);
   return { datum, tageGesamt: gesamt, hinweise: hinweiseMitFerien };
 }
 
@@ -490,7 +578,7 @@ function berechneRueckgabedatumAusRow(row, einstellungen, ferienListe = []) {
     offsetTage: einstellungen.leihfristOffsetTage,
   });
   const naiv = addDays(row.AuslDatum, gesamt);
-  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(naiv, ferienListe, hinweise);
+  const { datum, hinweise: hinweiseMitFerien } = mitFerienverschiebung(row.AuslDatum, naiv, ferienListe, hinweise, einstellungen.ferienZaehlweise);
   return { datum, tageGesamt: gesamt, hinweise: hinweiseMitFerien };
 }
 
@@ -699,39 +787,89 @@ function katalogNiMitUeberfaelligemExemplar(db, einstellungen) {
 }
 
 /**
+ * Die Mahnstufe mit der höchsten Schwelle, die bei `tageUeberfaellig` schon
+ * erreicht ist, oder `null`, wenn noch keine erreicht ist. Sortiert dafür
+ * erst nach Schwelle aufsteigend (Regressionsfix: die Oberfläche hängt eine
+ * neue Stufe beim Anlegen immer ANS ENDE des Arrays an, nicht an die nach
+ * Tagen richtige Stelle; ein Durchlauf in Array-Reihenfolge hätte dann bei
+ * jeder nicht mehr zufällig schon sortierten Stufenliste die falsche –
+ * meist zu milde – Stufe gewählt). `stufeIndex` bleibt der Index in der
+ * URSPRÜNGLICHEN (unsortierten) Liste, weil die Oberfläche darüber die Stufe
+ * wiedererkennt (Vorlagen-Auswahl in den Einstellungen, Badges).
+ */
+function erreichteStufe(tageUeberfaellig, mahnstufen) {
+  const nachSchwelle = (mahnstufen || []).map((s, stufeIndex) => ({ ...s, stufeIndex })).sort((a, b) => a.tageUeberfaellig - b.tageUeberfaellig);
+  let treffer = null;
+  for (const s of nachSchwelle) {
+    if (tageUeberfaellig < s.tageUeberfaellig) break; // aufsteigend sortiert: alles Weitere ist noch strenger
+    treffer = s;
+  }
+  return treffer;
+}
+
+/**
  * Überfällige Ausleihen mit der passenden Mahnstufe (nach Tagen überfällig).
  * Nutzt Mahnstufen aus den Einstellungen; Ausleihen, die noch keine Stufe
- * erreicht haben, tauchen hier nicht auf (siehe dafür ueberfaelligeAusleihen).
+ * erreicht haben, tauchen hier nicht auf (siehe dafür ueberfaelligeAusleihen
+ * bzw. rueckstandsliste, die AUCH knapp-noch-nicht-fällige Fälle zeigt).
  * Liefert zusätzlich stufeIndex mit – die Oberfläche braucht ihn, um die
  * Stufe eindeutig wiederzuerkennen (Namen allein sind nicht eindeutig, falls
- * zwei Stufen gleich benannt wurden).
+ * beide Stufen gleich benannt wurden).
  */
 function ueberfaelligeMitStufe(db, einstellungen) {
-  // Die Stufe mit der höchsten Schwelle wählen, die noch erreicht ist – dafür
-  // erst nach Schwelle aufsteigend sortieren (Regressionsfix: die Oberfläche
-  // hängt eine neue Stufe beim Anlegen immer ANS ENDE des Arrays an, nicht an
-  // die nach Tagen richtige Stelle; ein Durchlauf in Array-Reihenfolge hätte
-  // dann bei jeder nicht mehr zufällig schon sortierten Stufenliste die
-  // falsche – meist zu milde – Stufe gewählt). stufeIndex bleibt der Index in
-  // der URSPRÜNGLICHEN (unsortierten) Liste, weil die Oberfläche darüber die
-  // Stufe wiedererkennt (Mahnstufen-Filter, Badges).
-  const stufenNachSchwelle = (einstellungen.mahnstufen || [])
-    .map((s, stufeIndex) => ({ ...s, stufeIndex }))
-    .sort((a, b) => a.tageUeberfaellig - b.tageUeberfaellig);
-
   const ergebnis = [];
   for (const a of ueberfaelligeAusleihen(db, einstellungen)) {
-    let treffer = null;
-    for (const s of stufenNachSchwelle) {
-      if (a.tageUeberfaellig < s.tageUeberfaellig) break; // aufsteigend sortiert: alles Weitere ist noch strenger
-      treffer = s;
-    }
+    const treffer = erreichteStufe(a.tageUeberfaellig, einstellungen.mahnstufen);
     if (treffer) {
       const { stufeIndex, ...stufe } = treffer;
       ergebnis.push({ ...a, stufe, stufeIndex, gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen) });
     }
   }
   return ergebnis;
+}
+
+/**
+ * Letzte für GENAU diese Ausleihe (Medium+Kind+Ausleihdatum identifizieren
+ * sie eindeutig) verschickte Erinnerung/Mahnung, falls vorhanden – für die
+ * Anzeige "Erinnerung am 12.09." in der Rückstandsliste (Abschnitt 5.2).
+ * Datensätze von vor der Zwei-Stufen-Umstellung (ohne IngaStufe oder mit
+ * einer höheren als der jetzt gültigen Stufe 2) werden auf Stufe 2
+ * abgebildet – "es gehen keine Vorgänge verloren" (Auftrag 5.1).
+ */
+function letzteMahnungFuer(db, medienNi, leserNi, auslDatum) {
+  const row = db
+    .prepare(
+      `SELECT "Mahndatum","IngaStufe" FROM "Mahnung"
+       WHERE "MedienNi" = ? AND "LeserNi" = ? AND "AuslDatum" = ?
+       ORDER BY "Mahndatum" DESC, id DESC LIMIT 1`
+    )
+    .get(medienNi, leserNi, auslDatum);
+  if (!row) return null;
+  const stufeIndex = row.IngaStufe && row.IngaStufe <= 1 ? 0 : 1;
+  return { datum: row.Mahndatum, stufeIndex };
+}
+
+/**
+ * Rückstandsliste zum Abarbeiten (Abschnitt 5.2): alle offenen Ausleihen, die
+ * mindestens `schwelleTage` überfällig sind (bewusst NICHT an eine Mahnstufe
+ * gekoppelt – die Schwelle ist frei einstellbar, auch niedriger als Stufe 1),
+ * je Fall die aktuell erreichte Stufe (falls schon eine erreicht ist) sowie
+ * wann zuletzt welche Stufe für GENAU diesen Fall verschickt wurde.
+ */
+function rueckstandsliste(db, einstellungen, schwelleTage = 14) {
+  const schwelle = Math.max(0, Number(schwelleTage) || 0);
+  return ueberfaelligeAusleihen(db, einstellungen)
+    .filter((a) => a.tageUeberfaellig >= schwelle)
+    .map((a) => {
+      const stufe = erreichteStufe(a.tageUeberfaellig, einstellungen.mahnstufen);
+      return {
+        ...a,
+        stufeIndex: stufe ? stufe.stufeIndex : null,
+        stufeText: stufe ? stufe.text : null,
+        gebuehr: berechneMahngebuehr(a.tageUeberfaellig, einstellungen),
+        letzteMahnung: letzteMahnungFuer(db, a.MedienNi, a.LeserNi, a.AuslDatum),
+      };
+    });
 }
 
 /**
@@ -758,7 +896,10 @@ function vorschauFristenMitFerien(db, einstellungen) {
       offsetTage: einstellungen.leihfristOffsetTage,
     });
     const ohneFerien = addDays(a.AuslDatum, gesamt);
-    const { datum: mitFerien, namen } = ferien.verschobenesDatumMitHinweis(ohneFerien, ferienListe);
+    const nachVerlaengerung = ferien.verlaengerungDurchFerien(a.AuslDatum, ohneFerien, ferienListe, einstellungen.ferienZaehlweise);
+    const nachNudge = ferien.verschobenesDatumMitHinweis(nachVerlaengerung.datum, ferienListe);
+    const mitFerien = nachNudge.datum;
+    const namen = [...nachVerlaengerung.namen, ...nachNudge.namen.filter((n) => !nachVerlaengerung.namen.includes(n))];
     if (mitFerien === ohneFerien) continue;
     ergebnis.push({
       id: a.id,
@@ -775,11 +916,12 @@ function vorschauFristenMitFerien(db, einstellungen) {
   return ergebnis;
 }
 
-function mahnungEintragen(db, { medienNi, leserNi, auslDatum, gebuehr }) {
+/** `stufe` ist 1 (Erinnerung) oder 2 (Mahnung) – siehe letzteMahnungFuer/rueckstandsliste. */
+function mahnungEintragen(db, { medienNi, leserNi, auslDatum, gebuehr, stufe }) {
   db.prepare(
-    `INSERT INTO "Mahnung" ("MedienNi","LeserNi","Mahndatum","MaGebuehr","AuslDatum","Rueckgabe")
-     VALUES (?, ?, ?, ?, ?, NULL)`
-  ).run(medienNi, leserNi, todayStr(), gebuehr, auslDatum);
+    `INSERT INTO "Mahnung" ("MedienNi","LeserNi","Mahndatum","MaGebuehr","AuslDatum","Rueckgabe","IngaStufe")
+     VALUES (?, ?, ?, ?, ?, NULL, ?)`
+  ).run(medienNi, leserNi, todayStr(), gebuehr, auslDatum, stufe || null);
 }
 
 function mahnhistorieVonLeser(db, leserNi) {
@@ -1046,11 +1188,14 @@ module.exports = {
   deleteKatalog,
   exemplareFuer,
   exemplareMitStatusFuer,
+  exemplareMitAusleiheInfoFuer,
+  medienVorschlaege,
   findExemplarByEtikett,
   saveMedium,
   deleteMedium,
   exemplarStatus,
   searchLeser,
+  leserVorschlaege,
   getLeser,
   saveLeser,
   deleteLeser,
@@ -1068,6 +1213,9 @@ module.exports = {
   verschiebeOffeneAusleihen,
   ueberfaelligeAusleihen,
   ueberfaelligeMitStufe,
+  erreichteStufe,
+  letzteMahnungFuer,
+  rueckstandsliste,
   katalogNiMitUeberfaelligemExemplar,
   vorschauFristenMitFerien,
   berechneRueckgabedatum,

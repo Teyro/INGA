@@ -88,16 +88,22 @@ class Store {
 }
 
 // Platzhalter, die beim Drucken ersetzt werden: {Vorname} {Nachname} {Titel}
-// {Tage} {Gebuehr} {Datum} {Faellig} {Stufe}
-const DEFAULT_BRIEFTEXT =
-  'Liebe/r {Vorname} {Nachname},\n\n' +
-  'die unten aufgeführten Medien sind seit {Tage} Tagen überfällig (fällig war am {Faellig}). ' +
-  'Bitte gib sie so bald wie möglich in der Bibliothek zurück.';
-const DEFAULT_BRIEFTEXT_LETZTE =
-  'Liebe/r {Vorname} {Nachname},\n\n' +
-  'trotz vorheriger Mahnung(en) sind die unten aufgeführten Medien weiterhin nicht zurückgegeben – ' +
-  'sie sind nun seit {Tage} Tagen überfällig. Bitte gib sie umgehend zurück, ' +
-  'andernfalls kontaktieren wir die Erziehungsberechtigten.';
+// {Tage} {Gebuehr} {Datum} {Faellig} {Stufe} {Bibliothek}. Genau zwei Stufen
+// (Abschnitt 5.1 des Umbau-Auftrags): Stufe 1 "Erinnerung" – freundlich, ans
+// Kind gerichtet, keine Gebühr, keine Drohung. Stufe 2 "Mahnung" – sachlich,
+// an die Eltern gerichtet, mit Hinweis auf Ersatz bei Verlust (Titel und
+// Ausleihdatum je Medium stehen ohnehin in der Medienliste des Ausdrucks,
+// siehe mahnung-print.js).
+const DEFAULT_BRIEFTEXT_ERINNERUNG =
+  'Hallo {Vorname},\n\n' +
+  'dein Buch „{Titel}“ wollte eigentlich am {Faellig} zurück in die {Bibliothek}. ' +
+  'Vielleicht liegt es noch in deinem Schulranzen? Bring es einfach beim nächsten Mal mit – wir freuen uns drauf.';
+const DEFAULT_BRIEFTEXT_MAHNUNG =
+  'Sehr geehrte Erziehungsberechtigte,\n\n' +
+  'Ihr Kind {Vorname} {Nachname} hat unten aufgeführte Medien aus der {Bibliothek} ausgeliehen. ' +
+  'Die Rückgabe war am {Faellig} fällig, sie sind inzwischen seit {Tage} Tagen überfällig. ' +
+  'Bitte veranlassen Sie die Rückgabe. Sollte ein Medium nicht mehr auffindbar sein, ' +
+  'bitten wir um Ersatzbeschaffung oder Erstattung der Wiederbeschaffungskosten.';
 
 const DEFAULT_SETTINGS = {
   uiStyle: 'auto', // auto | mac | win | kde | gnome
@@ -109,6 +115,11 @@ const DEFAULT_SETTINGS = {
   fontScale: 100,
   reduceTransparency: false,
   highContrast: false,
+  // Name der Bibliothek, wie er den Kolleginnen gegenüber angezeigt wird und
+  // als {Bibliothek}-Platzhalter in den Mahntexten zur Verfügung steht
+  // (siehe DEFAULT_BRIEFTEXT/store.sanitizeSettings – generische String-
+  // Behandlung reicht hier, kein Sonderfall nötig).
+  bibliotheksName: '',
 
   // Ausleihe
   leihfristTage: 7,
@@ -129,6 +140,10 @@ const DEFAULT_SETTINGS = {
   // Fälligkeit selbst wird unabhängig davon immer schon auf den nächsten
   // Schultag verschoben (siehe berechneRueckgabedatum).
   ueberfaelligTageOhneFerien: false,
+  // Wie ein Ferienabschnitt gezählt wird, der eine Ausleihspanne verlängert
+  // (siehe ferien.verlaengerungDurchFerien): 'kalendertage' = seine volle
+  // Länge (Vorgabe), 'schultage' = nur die darin enthaltenen Schultage.
+  ferienZaehlweise: 'kalendertage',
   // Maximale Anzahl gleichzeitig offener Ausleihen pro Person, 0 = unbegrenzt.
   // Entspricht AusleihMax im Perpustakaan-Format (dort je Lesergruppe), hier
   // bewusst als einzelne globale Vorgabe – einfacher zu pflegen und deckt den
@@ -136,11 +151,14 @@ const DEFAULT_SETTINGS = {
   // eigene Lesergruppen mit jeweils passender Ausleihgrenze grob nachbilden.
   ausleihLimit: 0,
 
-  // Mahnwesen
+  // Mahnwesen: genau zwei Stufen (Abschnitt 5.1) – mahnstufen[0] ist immer
+  // die Erinnerung, mahnstufen[1] immer die Mahnung; die Rückstandsliste
+  // (Abschnitt 5.2) lässt die Kollegin bewusst wählen, welche der beiden sie
+  // für die aktuelle Auswahl erstellt, statt es automatisch pro Fall zu
+  // bestimmen.
   mahnstufen: [
-    { tageUeberfaellig: 7, gebuehr: 0.5, text: '1. Mahnung', briefText: DEFAULT_BRIEFTEXT },
-    { tageUeberfaellig: 21, gebuehr: 1.5, text: '2. Mahnung', briefText: DEFAULT_BRIEFTEXT },
-    { tageUeberfaellig: 42, gebuehr: 3.0, text: 'Letzte Mahnung', briefText: DEFAULT_BRIEFTEXT_LETZTE },
+    { tageUeberfaellig: 14, gebuehr: 0, text: 'Erinnerung', briefText: DEFAULT_BRIEFTEXT_ERINNERUNG },
+    { tageUeberfaellig: 28, gebuehr: 1.5, text: 'Mahnung', briefText: DEFAULT_BRIEFTEXT_MAHNUNG },
   ],
   // Mahngebühren sind standardmäßig aus – Mahnungen als Erinnerung bleiben
   // davon unberührt, nur die Geldseite ist optional. Ist der Schalter aus,
@@ -191,6 +209,7 @@ const ENUMS = {
   uiStyle: ['auto', 'mac', 'win', 'kde', 'gnome'],
   theme: ['auto', 'light', 'dark'],
   linuxTitlebar: ['app', 'system'],
+  ferienZaehlweise: ['kalendertage', 'schultage'],
   winBackdrop: ['mica', 'acrylic', 'tabbed', 'none'],
   vibrancy: ['under-window', 'sidebar', 'fullscreen-ui', 'hud', 'popover', 'content', 'header', 'none'],
   printPaper: ['A4', 'Letter'],
@@ -208,15 +227,22 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
     const previous = Object.hasOwn(current, key) ? current[key] : fallback;
 
     if (key === 'mahnstufen') {
+      // Genau zwei Stufen (Abschnitt 5.1: Erinnerung, Mahnung) – Index 0 ist
+      // immer die Erinnerung, Index 1 immer die Mahnung, auch beim Fallback.
       clean[key] = Array.isArray(value)
         ? value
-            .map((stufe) => ({
+            .slice(0, 2)
+            .map((stufe, i) => ({
               tageUeberfaellig: clamp(Math.round(Number(stufe?.tageUeberfaellig) || 0), 0, 365),
               gebuehr: clamp(Number(stufe?.gebuehr) || 0, 0, 1000),
-              text: typeof stufe?.text === 'string' ? stufe.text.slice(0, 80) : 'Mahnung',
-              briefText: typeof stufe?.briefText === 'string' ? stufe.briefText.slice(0, 4000) : DEFAULT_BRIEFTEXT,
+              text: typeof stufe?.text === 'string' ? stufe.text.slice(0, 80) : i === 0 ? 'Erinnerung' : 'Mahnung',
+              briefText:
+                typeof stufe?.briefText === 'string'
+                  ? stufe.briefText.slice(0, 4000)
+                  : i === 0
+                    ? DEFAULT_BRIEFTEXT_ERINNERUNG
+                    : DEFAULT_BRIEFTEXT_MAHNUNG,
             }))
-            .slice(0, 10)
         : previous;
       continue;
     }
