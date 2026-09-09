@@ -1473,6 +1473,15 @@ async function rueckgabeExport(art) {
 // laden (nur die Schwelle selbst löst einen neuen IPC-Aufruf aus).
 let mahnDaten = [];
 
+// Je Fall (Ausleihe-id) von der Kollegin übersteuerte "Mahnung?"-Checkbox
+// (Erinnerung/Mahnung-Vorschlag, Abschnitt 5.2/5.1) – renderMahnungenAktuell
+// baut die Tabelle bei jeder Suche/Filter-/Sortierungsänderung und bei jedem
+// "settings:updated" komplett neu aus mahnDaten; ohne diese Zuordnung würde
+// dabei die Checkbox stumm wieder auf den Vorschlag (row.stufeIndex)
+// zurückfallen und eine schon getroffene Entscheidung der Kollegin verloren
+// gehen, bevor sie "Erinnerung erstellen"/"Mahnung erstellen" anwendet.
+const mahnStufeUeberschreibung = new Map();
+
 /** Stufen sind nur nach ihrer Position (nicht nach Namen) eindeutig – für den Stufen-Editor in den Einstellungen (renderMahnstufen). */
 function badgeKlasseFuerStufenIndex(index, anzahlStufen) {
   if (index >= anzahlStufen - 1) return 'danger';
@@ -1559,7 +1568,12 @@ function renderMahnungenAktuell() {
         el('td', { class: 'hint' }, [zuletzt]),
         el('td', {}, [
           el('label', { class: 'checkbox-label', title: 'Angehakt: als Mahnung behandeln. Nicht angehakt: als Erinnerung. Vorbelegt nach der Schwelle in den Einstellungen, hier je Fall änderbar.' }, [
-            el('input', { type: 'checkbox', 'data-stufe-fuer-id': String(row.id), checked: row.stufeIndex === 1 }),
+            el('input', {
+              type: 'checkbox',
+              'data-stufe-fuer-id': String(row.id),
+              checked: mahnStufeUeberschreibung.has(row.id) ? mahnStufeUeberschreibung.get(row.id) : row.stufeIndex === 1,
+              onchange: (e) => mahnStufeUeberschreibung.set(row.id, e.target.checked),
+            }),
             ' Mahnung',
           ]),
         ]),
