@@ -14,6 +14,13 @@ const path = require('node:path');
 
 const MAX_BACKUPS = 10;
 const DATEI_MUSTER = /^inga_\d{8}_\d{6}_[a-z]+\.sqlite3$/;
+// Gleicher Zeitstempel-Aufbau wie eine echte Perpustakaan-Sicherung
+// (z. B. "perpustakaan_backup_20260909_124153.zip") – bewusst ohne
+// "_<Grund>"-Anhängsel wie bei den .sqlite3-Dateien oben, damit die Datei
+// auf den ersten Blick wie eine gewohnte Perpustakaan-Sicherung aussieht
+// und sich nötigenfalls auch in Perpustakaan selbst wieder einspielen ließe.
+const PERPUSTAKAAN_MAX_BACKUPS = 10;
+const PERPUSTAKAAN_DATEI_MUSTER = /^perpustakaan_backup_\d{8}_\d{6}\.zip$/;
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -32,17 +39,17 @@ function heutigesDatumFuerDateiname() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
 }
 
-function eigeneBackups(backupDir) {
+function eigeneBackups(backupDir, muster = DATEI_MUSTER) {
   try {
-    return fs.readdirSync(backupDir).filter((f) => DATEI_MUSTER.test(f)).sort();
+    return fs.readdirSync(backupDir).filter((f) => muster.test(f)).sort();
   } catch {
     return [];
   }
 }
 
-function rotiere(backupDir) {
-  const dateien = eigeneBackups(backupDir);
-  const ueberzaehlig = dateien.slice(0, Math.max(0, dateien.length - MAX_BACKUPS));
+function rotiere(backupDir, muster = DATEI_MUSTER, max = MAX_BACKUPS) {
+  const dateien = eigeneBackups(backupDir, muster);
+  const ueberzaehlig = dateien.slice(0, Math.max(0, dateien.length - max));
   for (const f of ueberzaehlig) {
     try {
       fs.unlinkSync(path.join(backupDir, f));
@@ -94,4 +101,41 @@ function listeBackups(backupDir) {
     });
 }
 
-module.exports = { sichereDatenbankSync, backupHeuteVorhanden, listeBackups };
+/**
+ * Zusätzlich zur eigenen .sqlite3-Sicherung oben: derselbe Bestand als
+ * Perpustakaan-kompatibles Zip (dieselbe Funktion wie "Als Zip
+ * exportieren …" in Import/Export) – für den Fall, dass jemand die Daten
+ * wieder in einer echten Perpustakaan-Installation braucht, oder INGA
+ * direkt auf einer eingespielten Perpustakaan-Datenbank arbeitet (siehe
+ * main.js) und trotzdem die gewohnte INGA-eigene Sicherung haben möchte.
+ * Wirft wie sichereDatenbankSync() absichtlich nie. `exportZipFn` (statt
+ * hier direkt csvio.js zu importieren) hält backup.js frei von einer
+ * Kreisabhängigkeit db.js → backup.js → csvio.js → db.js – der Aufrufer
+ * (main.js) kennt csvio.js ohnehin schon.
+ */
+function sicherePerpustakaanZipSync(db, backupDir, exportZipFn) {
+  try {
+    fs.mkdirSync(backupDir, { recursive: true });
+    const ziel = path.join(backupDir, `perpustakaan_backup_${zeitstempelFuerDateiname()}.zip`);
+    exportZipFn(db, ziel);
+    rotiere(backupDir, PERPUSTAKAAN_DATEI_MUSTER, PERPUSTAKAAN_MAX_BACKUPS);
+    return ziel;
+  } catch (err) {
+    console.error('[backup] Perpustakaan-Zip-Sicherung fehlgeschlagen:', err.message);
+    return null;
+  }
+}
+
+/** Gab es heute schon eine Perpustakaan-Zip-Sicherung? Für "einmal täglich beim Start". */
+function perpustakaanBackupHeuteVorhanden(backupDir) {
+  const heute = heutigesDatumFuerDateiname();
+  return eigeneBackups(backupDir, PERPUSTAKAAN_DATEI_MUSTER).some((f) => f.startsWith(`perpustakaan_backup_${heute}_`));
+}
+
+module.exports = {
+  sichereDatenbankSync,
+  backupHeuteVorhanden,
+  listeBackups,
+  sicherePerpustakaanZipSync,
+  perpustakaanBackupHeuteVorhanden,
+};

@@ -43,6 +43,49 @@ function serializeCsv(header, rows) {
 
 /* ------------------------------------------------------------- Import */
 
+/**
+ * Ausleihe + AuslHist zusammengeführt statt wie die übrigen Tabellen 1:1
+ * spaltenweise übernommen. Im Original (Perpustakaan) führt "Ausleihe" NUR
+ * die gerade laufenden Ausleihen – "Rueckgabe" trägt dort die FÄLLIGKEIT,
+ * kein Rückgabevermerk. Sobald ein Medium zurückkommt, wandert die Zeile
+ * nach "AuslHist" (dort ist "Rueckgabe" dann das tatsächliche
+ * Rückgabedatum) und verschwindet aus "Ausleihe". INGA führt dagegen beides
+ * in EINER Tabelle (offen = "Rueckgabe" NULL, siehe repo.js) – ohne diese
+ * Zusammenführung würden importierte laufende Ausleihen fälschlich als
+ * bereits zurückgegeben gelten (ihre Fälligkeit stünde ja schon in
+ * "Rueckgabe"), und die komplette Rückgabehistorie ("AuslHist" ist keine
+ * INGA-native Tabelle) verschwände unbemerkt in den unverstandenen Altdaten
+ * (legacy_rows) – beides ist beim echten Import einer Perpustakaan-
+ * Sicherung ("Perpustakaan Light") tatsächlich beobachtet worden. Rührt
+ * keine der beiden Quelltabellen an, falls in `zip` keine von beiden
+ * enthalten ist (z. B. ein Teil-Export) – wie beim generischen Pfad für die
+ * übrigen Tabellen bleibt der bisherige INGA-Bestand dann unangetastet.
+ */
+function importAusleiheUndHistorie(db, ausleiheEntry, auslHistEntry) {
+  if (!ausleiheEntry && !auslHistEntry) return;
+  const cols = TABLES.Ausleihe; // AuslHist hat exakt dieselben Spalten
+  db.prepare(`DELETE FROM "Ausleihe"`).run();
+  const stmt = db.prepare(
+    `INSERT INTO "Ausleihe" (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
+  );
+  if (ausleiheEntry) {
+    const { rows } = parseCsv(ausleiheEntry.getData().toString('utf8'));
+    for (const row of rows) {
+      const params = {};
+      for (const c of cols) params[c] = c === 'Rueckgabe' ? null : row[c] === '' ? null : row[c];
+      stmt.run(params);
+    }
+  }
+  if (auslHistEntry) {
+    const { rows } = parseCsv(auslHistEntry.getData().toString('utf8'));
+    for (const row of rows) {
+      const params = {};
+      for (const c of cols) params[c] = row[c] === '' ? null : row[c];
+      stmt.run(params);
+    }
+  }
+}
+
 function importZip(db, filePath, { onProgress } = {}) {
   const zip = new AdmZip(filePath);
   const entries = new Map(zip.getEntries().map((e) => [e.entryName.replace(/\.csv$/i, ''), e]));
@@ -51,7 +94,12 @@ function importZip(db, filePath, { onProgress } = {}) {
     let done = 0;
     const total = Object.keys(TABLES).length;
 
+    importAusleiheUndHistorie(db, entries.get('Ausleihe'), entries.get('AuslHist'));
+    done += 2;
+    onProgress?.({ table: 'Ausleihe/AuslHist', done, total });
+
     for (const table of Object.keys(TABLES)) {
+      if (table === 'Ausleihe' || table === 'AuslHist') continue; // siehe importAusleiheUndHistorie oben
       const entry = entries.get(table);
       done += 1;
       onProgress?.({ table, done, total });
@@ -143,7 +191,18 @@ function exportZip(db, filePath) {
     let header = TABLES[table];
     let rows;
 
-    if (ID_BASIERTE_TABELLEN.has(table) || (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table))) {
+    // Gegenstück zu importAusleiheUndHistorie: offene Ausleihen (Rueckgabe
+    // NULL) gehen zurück nach "Ausleihe.csv" – ihre Fälligkeit kennt das
+    // Perpustakaan-Format dort, INGA speichert aber keine feste Fälligkeit
+    // (wird bei jeder Anzeige neu berechnet), das Feld bleibt deshalb leer,
+    // statt eine möglicherweise falsche zu raten. Abgeschlossene Ausleihen
+    // (Rueckgabe gesetzt) gehen nach "AuslHist.csv", mit dem tatsächlichen
+    // Rückgabedatum.
+    if (table === 'Ausleihe') {
+      rows = db.prepare(`SELECT "MedienNi", "LeserNi", "AuslDatum", NULL AS "Rueckgabe", "AnzVerl", "ErfassAnw" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
+    } else if (table === 'AuslHist') {
+      rows = db.prepare(`SELECT * FROM "Ausleihe" WHERE "Rueckgabe" IS NOT NULL`).all();
+    } else if (ID_BASIERTE_TABELLEN.has(table) || (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table))) {
       rows = db.prepare(`SELECT * FROM ${quoteIdent(table)}`).all();
     } else if (DERIVED_TABLES.has(table)) {
       rows = table === 'StatMedien' ? computeStatMedien(db) : [];

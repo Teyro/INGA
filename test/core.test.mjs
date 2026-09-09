@@ -64,6 +64,82 @@ test('Export nach Import erzeugt wieder alle 65 CSV-Dateien mit identischer Zeil
   db.close();
 });
 
+/**
+ * Perpustakaan führt laufende ("Ausleihe", "Rueckgabe" = Fälligkeit) und
+ * abgeschlossene ("AuslHist", "Rueckgabe" = tatsächliches Rückgabedatum)
+ * Ausleihen in ZWEI getrennten Tabellen – beobachtet an einer echten
+ * Sicherung aus "Perpustakaan Light". INGA führt beides in einer Tabelle
+ * (offen = "Rueckgabe" NULL). Ohne Zusammenführung beim Import würden
+ * laufende Ausleihen fälschlich als bereits zurückgegeben gelten.
+ */
+function baueMiniPerpustakaanZip({ ausleiheCsv, auslHistCsv } = {}) {
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip();
+  const header = 'MedienNi;LeserNi;AuslDatum;Rueckgabe;AnzVerl;ErfassAnw';
+  if (ausleiheCsv !== undefined) zip.addFile('Ausleihe.csv', Buffer.from([header, ...ausleiheCsv].join('\r\n') + '\r\n', 'utf8'));
+  if (auslHistCsv !== undefined) zip.addFile('AuslHist.csv', Buffer.from([header, ...auslHistCsv].join('\r\n') + '\r\n', 'utf8'));
+  const zipPath = path.join(tmpDir(), 'mini.zip');
+  zip.writeZip(zipPath);
+  return zipPath;
+}
+
+test('importZip: laufende Ausleihe (Perpustakaan "Ausleihe", Rueckgabe = Fälligkeit) wird als OFFEN importiert, nicht als zurückgegeben', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  const zipPath = baueMiniPerpustakaanZip({
+    ausleiheCsv: ['1352;176;2026-06-18 00:00:00.000;2026-06-25 00:00:00.000;0;teyro'],
+  });
+  importZip(db, zipPath);
+
+  const offen = db.prepare(`SELECT * FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
+  assert.equal(offen.length, 1);
+  assert.equal(offen[0].MedienNi, '1352');
+  db.close();
+});
+
+test('importZip: abgeschlossene Ausleihe (Perpustakaan "AuslHist", Rueckgabe = tatsächliche Rückgabe) wird als ZURÜCKGEGEBEN importiert', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  const zipPath = baueMiniPerpustakaanZip({
+    auslHistCsv: ['500;10;2026-07-06 00:00:00.000;2026-08-27 00:00:00.000;0;teyro'],
+  });
+  importZip(db, zipPath);
+
+  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).get().n, 0);
+  const zeile = db.prepare(`SELECT * FROM "Ausleihe" WHERE "MedienNi" = '500'`).get();
+  assert.equal(zeile.Rueckgabe.slice(0, 10), '2026-08-27');
+  db.close();
+});
+
+test('importZip + exportZip: laufende und abgeschlossene Ausleihen bleiben beim Roundtrip in der jeweils richtigen Datei', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  const zipPath = baueMiniPerpustakaanZip({
+    ausleiheCsv: ['1352;176;2026-06-18 00:00:00.000;2026-06-25 00:00:00.000;0;teyro'],
+    auslHistCsv: ['500;10;2026-07-06 00:00:00.000;2026-08-27 00:00:00.000;0;teyro'],
+  });
+  importZip(db, zipPath);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).get().n, 1);
+
+  const outZip = path.join(dir, 'export.zip');
+  exportZip(db, outZip);
+
+  const AdmZip = require('adm-zip');
+  const { parseCsv } = require('../src/main/csvio.js');
+  const exported = new AdmZip(outZip);
+  const ausleiheAus = parseCsv(exported.getEntry('Ausleihe.csv').getData().toString('utf8'));
+  const histAus = parseCsv(exported.getEntry('AuslHist.csv').getData().toString('utf8'));
+
+  assert.equal(ausleiheAus.rows.length, 1);
+  assert.equal(ausleiheAus.rows[0].MedienNi, '1352');
+  assert.equal(ausleiheAus.rows[0].Rueckgabe, '', 'INGA kennt keine feste Fälligkeit, das Feld bleibt leer statt eine falsche zu raten');
+
+  assert.equal(histAus.rows.length, 1);
+  assert.equal(histAus.rows[0].MedienNi, '500');
+  assert.equal(histAus.rows[0].Rueckgabe.slice(0, 10), '2026-08-27');
+  db.close();
+});
+
 test('Ausleihen, Verlängern, Rückgabe und Mahnung – der volle Kreislauf', () => {
   const dir = tmpDir();
   const db = openDatabase(dir);

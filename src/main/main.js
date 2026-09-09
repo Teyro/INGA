@@ -31,7 +31,7 @@ const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
-const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups } = require('./backup');
+const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden } = require('./backup');
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
@@ -938,6 +938,12 @@ if (!gotLock) {
     backupDir = path.join(userDataDir, 'backups');
     if (!backupHeuteVorhanden(backupDir, 'start')) {
       sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
+    }
+    // Zusätzlich einmal täglich eine Perpustakaan-kompatible Zip-Sicherung
+    // (dieselbe wie "Als Zip exportieren …" in Import/Export) – unabhängig
+    // von der .sqlite3-Sicherung oben, eigene Rotation/eigener Tages-Check.
+    if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
+      sicherePerpustakaanZipSync(db, backupDir, exportZip);
     }
 
     registerIpc();
