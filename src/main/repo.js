@@ -1137,6 +1137,73 @@ function distinctJahrgaenge(db) {
     .map((r) => r.jahrgang);
 }
 
+/* -------------------------------------------------- Schuljahresende (Abschluss) */
+
+/**
+ * Kinder einer Klassenstufe, die zum Schuljahresende die Schule verlassen –
+ * vergleicht `Jahrgang` als Präfix, weil das Feld Freitext ist (z. B. "4a",
+ * "4b", nicht nur "4"). Bereits in den Papierkorb verschobene Kinder stehen
+ * nicht mehr in "Leser" und tauchen hier folgerichtig nicht mehr auf.
+ */
+function abschlussKinder(db, klassenstufe) {
+  const stufe = String(klassenstufe ?? '').trim();
+  if (!stufe) return [];
+  return db.prepare(`SELECT * FROM "Leser" WHERE "Jahrgang" LIKE ? ORDER BY "Jahrgang", "Nachname", "Vorname"`).all(`${stufe}%`);
+}
+
+/**
+ * Die nächste (oder gerade laufende) Sommerferien-Eintragung – erkannt am
+ * Namen (unscharf, "sommer" case-insensitive), weil es keinen eigenen Typ
+ * "Sommerferien" gibt und Ferien frei benannt werden (siehe ferien.js). Ein
+ * bereits vorbeigegangener Eintrag (Enddatum vor heute) zählt nicht mehr.
+ * `listeFerien` liefert nach Startdatum aufsteigend sortiert, der erste
+ * Treffer ist damit automatisch der nächstliegende.
+ */
+function naechsteSommerferien(db, heuteISOStr) {
+  const heute = heuteISOStr || heuteISO();
+  return ferien.listeFerien(db).find((f) => f.typ === 'Ferien' && /sommer/i.test(f.bezeichnung) && f.enddatum.slice(0, 10) >= heute) || null;
+}
+
+/**
+ * Meldung "Kinder verlassen zum Schuljahresende die Schule": erscheint ab
+ * einen Monat vor Beginn der (nächsten eingetragenen) Sommerferien, solange
+ * es noch betroffene Kinder gibt. Liefert `null`, wenn keine Sommerferien
+ * eingetragen sind, es noch zu früh ist, oder niemand (mehr) betroffen ist
+ * (z. B. schon alle in den Papierkorb verschoben) – die Oberfläche zeigt in
+ * diesem Fall einfach keinen Hinweis an.
+ */
+function abschlussMeldung(db, einstellungen, heuteISOStr) {
+  const heute = heuteISOStr || heuteISO();
+  const sommerferien = naechsteSommerferien(db, heute);
+  if (!sommerferien) return null;
+  const start = sommerferien.startdatum.slice(0, 10);
+  if (heute < addTage(start, -30)) return null;
+  const klassenstufe = einstellungen.abschlussKlassenstufe || '';
+  const kinder = abschlussKinder(db, klassenstufe);
+  if (!kinder.length) return null;
+  return { sommerferienStart: start, sommerferienBezeichnung: sommerferien.bezeichnung, klassenstufe, kinder };
+}
+
+/**
+ * Verschiebt mehrere Kinder auf einmal in den Papierkorb (siehe deleteLeser)
+ * – ein Kind mit noch offenen Ausleihen wird übersprungen statt den ganzen
+ * Durchgang abzubrechen, damit die übrigen trotzdem verschoben werden.
+ */
+function kinderInPapierkorbVerschieben(db, leserNis, benutzer) {
+  let verschoben = 0;
+  const uebersprungen = [];
+  for (const leserNi of leserNis) {
+    try {
+      deleteLeser(db, leserNi, benutzer);
+      verschoben += 1;
+    } catch (err) {
+      const leser = getLeser(db, leserNi);
+      uebersprungen.push({ leserNi, name: leser ? `${leser.Nachname}, ${leser.Vorname}` : String(leserNi), grund: err.message });
+    }
+  }
+  return { verschoben, uebersprungen };
+}
+
 /* ---------------------------------------------------------- Papierkorb */
 
 /**
@@ -1277,6 +1344,10 @@ module.exports = {
   removeCover,
   stammdaten,
   distinctJahrgaenge,
+  abschlussKinder,
+  naechsteSommerferien,
+  abschlussMeldung,
+  kinderInPapierkorbVerschieben,
   medArtFristSpeichern,
   kennzahlen,
   papierkorbLeserListe,

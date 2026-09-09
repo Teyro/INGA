@@ -203,6 +203,62 @@ async function loadDashboard() {
   const [ueberfaellig, top10] = await Promise.all([refreshKennzahlen(), api.katalog.topAusgeliehen(10)]);
   renderVergesseneRueckgaben(ueberfaellig);
   renderTopAusgeliehen(top10);
+  await renderAbschlussHinweis();
+}
+
+/**
+ * Schuljahresende: Hinweis, dass die Kinder der Abschlussklasse (Einstellung
+ * "Abschlussklasse") die Schule verlassen – erscheint ab einen Monat vor
+ * Beginn der eingetragenen Sommerferien (siehe repo.abschlussMeldung).
+ * Bleibt einfach weg, wenn es nichts zu melden gibt.
+ */
+async function renderAbschlussHinweis() {
+  const box = document.getElementById('abschluss-hinweis');
+  const meldung = await api.leser.abschlussMeldung();
+  if (!meldung) { box.hidden = true; box.replaceChildren(); return; }
+
+  const anzahl = meldung.kinder.length;
+  const plural = (n, einzahl, mehrzahl) => (n === 1 ? einzahl : mehrzahl);
+  box.replaceChildren(
+    el('div', { class: 'hinweis-banner' }, [
+      el('span', { class: 'icon' }, ['🎓']),
+      el('div', { class: 'hinweis-banner-inhalt' }, [
+        el('div', { class: 'hinweis-banner-titel' }, [
+          `${anzahl} ${plural(anzahl, 'Kind', 'Kinder')} der Klassenstufe ${meldung.klassenstufe} ${plural(anzahl, 'verlässt', 'verlassen')} zum Schuljahresende die Schule`,
+        ]),
+        el('div', { class: 'hinweis-banner-text' }, [
+          `${meldung.sommerferienBezeichnung} beginnen am ${fmtDatum(meldung.sommerferienStart)}. Bitte rechtzeitig für die Ausleihe sperren und nach dem letzten Schultag archivieren.`,
+        ]),
+        el('div', { class: 'row-inline' }, [
+          el('button', {
+            class: 'button small',
+            onclick: async (e) => {
+              e.target.disabled = true;
+              for (const kind of meldung.kinder) await api.leser.sperren(kind.LeserNi);
+              toast(`${anzahl} ${plural(anzahl, 'Kind', 'Kinder')} für die Ausleihe gesperrt.`);
+              await refreshKennzahlen();
+              if (state.view === 'leser') await loadLeser();
+            },
+          }, ['Jetzt für die Ausleihe sperren']),
+          el('button', {
+            class: 'button small',
+            onclick: async (e) => {
+              if (!confirm(`${anzahl} ${plural(anzahl, 'Kind', 'Kinder')} wirklich in den Papierkorb verschieben? Kinder mit noch offenen Ausleihen werden dabei übersprungen (erst zurückgeben, dann erneut versuchen).`)) return;
+              e.target.disabled = true;
+              const ergebnis = await api.leser.abschlussVerschieben(meldung.kinder.map((k) => k.LeserNi));
+              let text = `${ergebnis.verschoben} ${plural(ergebnis.verschoben, 'Kind', 'Kinder')} in den Papierkorb verschoben.`;
+              if (ergebnis.uebersprungen.length) text += ` ${ergebnis.uebersprungen.length} übersprungen (noch offene Ausleihen): ${ergebnis.uebersprungen.map((u) => u.name).join(', ')}.`;
+              toast(text, ergebnis.uebersprungen.length ? 'error' : '');
+              await refreshKennzahlen();
+              await renderAbschlussHinweis();
+              if (state.view === 'leser') await loadLeser();
+            },
+          }, ['In den Papierkorb verschieben']),
+        ]),
+      ]),
+    ])
+  );
+  box.hidden = false;
 }
 
 function renderVergesseneRueckgaben(ueberfaellig) {
@@ -2170,7 +2226,7 @@ function wireEinstellungen() {
   }
   for (const id of [
     'set-fontScale', 'set-bibliotheksName',
-    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit', 'set-sperreDauerTage',
+    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit', 'set-sperreDauerTage', 'set-abschlussKlassenstufe',
     'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
     'set-mahnBetreffVorlage', 'set-mahnSchluss',
@@ -2401,6 +2457,7 @@ async function loadEinstellungen() {
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
   document.getElementById('set-ausleihLimit').value = s.ausleihLimit || 0;
   document.getElementById('set-sperreDauerTage').value = s.sperreDauerTage || 14;
+  document.getElementById('set-abschlussKlassenstufe').value = s.abschlussKlassenstufe ?? '4';
   document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
   document.getElementById('set-ferienZaehlweise').value = s.ferienZaehlweise || 'kalendertage';
@@ -2828,6 +2885,7 @@ const speichereEinstellungenFormular = debounce(async () => {
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
     ausleihLimit: Number(document.getElementById('set-ausleihLimit').value) || 0,
     sperreDauerTage: Number(document.getElementById('set-sperreDauerTage').value) || 14,
+    abschlussKlassenstufe: document.getElementById('set-abschlussKlassenstufe').value,
     verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
     ferienZaehlweise: document.getElementById('set-ferienZaehlweise').value,

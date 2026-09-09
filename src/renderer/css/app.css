@@ -148,6 +148,20 @@ button { cursor: pointer; }
   box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.05);
 }
 
+/* Dashboard-Hinweisbanner (z. B. Schuljahresende-Meldung) – auffällig, aber
+   kein Modal: liegt einfach oben in der normalen Ansicht. */
+.hinweis-banner {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 18px; margin-bottom: 18px;
+  border: 1px solid var(--warn-soft); border-left: 4px solid var(--warn);
+  border-radius: var(--radius-lg);
+  background: var(--warn-soft);
+}
+.hinweis-banner .icon { font-size: 1.4rem; flex: none; }
+.hinweis-banner-inhalt { flex: 1; min-width: 0; }
+.hinweis-banner-titel { font-weight: 700; margin-bottom: 4px; }
+.hinweis-banner-text { color: var(--text-soft); font-size: 0.88rem; margin-bottom: 10px; }
+
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .stat-card { padding: 16px 18px; }
 .stat-card .n { font-size: 1.9rem; font-weight: 700; line-height: 1.1; }

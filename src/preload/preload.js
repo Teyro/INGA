@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('inga', {
     gesperrt: (leserNi) => ipcRenderer.invoke('leser:gesperrt', leserNi),
     sperren: (leserNi, tage) => ipcRenderer.invoke('leser:sperren', { leserNi, tage }),
     entsperren: (leserNi) => ipcRenderer.invoke('leser:entsperren', leserNi),
+    abschlussMeldung: () => ipcRenderer.invoke('leser:abschluss-meldung'),
+    abschlussVerschieben: (leserNis) => ipcRenderer.invoke('leser:abschluss-verschieben', leserNis),
     offeneAusleihen: (leserNi) => ipcRenderer.invoke('leser:offene-ausleihen', leserNi),
     mahnhistorie: (leserNi) => ipcRenderer.invoke('leser:mahnhistorie', leserNi),
     vormerkungen: (leserNi) => ipcRenderer.invoke('leser:vormerkungen', leserNi),

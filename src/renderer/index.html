@@ -53,6 +53,7 @@
       <section class="view" id="view-dashboard">
         <div class="toolbar"><h1>Übersicht</h1></div>
         <div class="view">
+          <div id="abschluss-hinweis" hidden></div>
           <div class="stat-row">
             <div class="card stat-card"><div class="n" id="stat-titel">–</div><div class="label">Titel im Katalog</div></div>
             <div class="card stat-card"><div class="n" id="stat-exemplare">–</div><div class="label">Exemplare</div></div>
@@ -644,6 +645,11 @@
                     <label>Standard-Sperrdauer (Tage)</label>
                     <input type="number" id="set-sperreDauerTage" min="1" max="365" />
                     <p class="hint">Vorgabe für „Für X Tage sperren" in der Nutzerakte – läuft danach von selbst wieder ab.</p>
+                  </div>
+                  <div class="field">
+                    <label>Abschlussklasse (verlässt zum Schuljahresende die Schule)</label>
+                    <input type="text" id="set-abschlussKlassenstufe" placeholder="z.&nbsp;B. 4" style="max-width:120px" />
+                    <p class="hint">Ab einen Monat vor Beginn der (eingetragenen) Sommerferien erscheint auf der Übersicht ein Hinweis für alle Kinder, deren Klasse/Jahrgang damit beginnt (z.&nbsp;B. „4" findet „4a"/„4b"). Leer lassen, um den Hinweis auszuschalten.</p>
                   </div>
                 </div>
                 <div class="field-row">

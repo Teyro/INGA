@@ -503,6 +503,8 @@ function registerIpc() {
   ipcMain.handle('leser:gesperrt', (_e, leserNi) => repo.leserGesperrt(db, leserNi));
   ipcMain.handle('leser:sperren', sicher((_e, { leserNi, tage }) => repo.leserSperren(db, leserNi, { tage })));
   ipcMain.handle('leser:entsperren', sicher((_e, leserNi) => repo.leserEntsperren(db, leserNi)));
+  ipcMain.handle('leser:abschluss-meldung', () => repo.abschlussMeldung(db, settings()));
+  ipcMain.handle('leser:abschluss-verschieben', sicher((_e, leserNis) => repo.kinderInPapierkorbVerschieben(db, leserNis, 'inga')));
   ipcMain.handle('leser:offene-ausleihen', (_e, leserNi) => repo.offeneAusleihenVonLeser(db, leserNi));
   ipcMain.handle('leser:mahnhistorie', (_e, leserNi) => repo.mahnhistorieVonLeser(db, leserNi));
   ipcMain.handle('leser:vormerkungen', (_e, leserNi) => repo.vormerkungenVonLeser(db, leserNi));

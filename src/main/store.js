@@ -156,6 +156,10 @@ const DEFAULT_SETTINGS = {
   // Vorgabe für "Für X Tage sperren" in der Nutzerakte (siehe repo.leserSperren) –
   // die befristete Ausleihsperre läuft danach von selbst wieder ab.
   sperreDauerTage: 14,
+  // Klassenstufe, die zum Schuljahresende die Schule verlässt (Präfix-
+  // Vergleich mit Jahrgang, z. B. "4" findet "4a"/"4b") – siehe
+  // repo.abschlussMeldung/abschlussKinder. Leer = Meldung ist aus.
+  abschlussKlassenstufe: '4',
 
   // Mahnwesen: genau zwei Stufen (Abschnitt 5.1) – mahnstufen[0] ist immer
   // die Erinnerung, mahnstufen[1] immer die Mahnung. Vorgabe: unter 7 Tagen
