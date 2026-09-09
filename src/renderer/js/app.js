@@ -1482,7 +1482,7 @@ function badgeKlasseFuerStufenIndex(index, anzahlStufen) {
 
 function wireMahnungen() {
   document.getElementById('mahn-alle').addEventListener('change', (e) => {
-    for (const cb of document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]')) cb.checked = e.target.checked;
+    for (const cb of document.querySelectorAll('#mahnungen-tbody input[type="checkbox"][data-payload]')) cb.checked = e.target.checked;
   });
   document.getElementById('mahnungen-suche').addEventListener('input', debounce(renderMahnungenAktuell, 200));
   document.getElementById('mahnungen-filter-klasse').addEventListener('change', renderMahnungenAktuell);
@@ -1542,7 +1542,7 @@ function renderMahnungenAktuell() {
   tbody.replaceChildren();
   document.getElementById('mahn-alle').checked = false;
   if (!gefiltert.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 6 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✉️']), 'Keine Rückstände über der eingestellten Schwelle.'])])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colSpan: 7 }, [el('div', { class: 'empty' }, [el('div', { class: 'icon' }, ['✉️']), 'Keine Rückstände über der eingestellten Schwelle.'])])]));
     return;
   }
   for (const row of gefiltert) {
@@ -1557,6 +1557,12 @@ function renderMahnungenAktuell() {
         el('td', {}, [row.Titel]),
         el('td', { class: 'num' }, [String(row.tageUeberfaellig)]),
         el('td', { class: 'hint' }, [zuletzt]),
+        el('td', {}, [
+          el('label', { class: 'checkbox-label', title: 'Angehakt: als Mahnung behandeln. Nicht angehakt: als Erinnerung. Vorbelegt nach der Schwelle in den Einstellungen, hier je Fall änderbar.' }, [
+            el('input', { type: 'checkbox', 'data-stufe-fuer-id': String(row.id), checked: row.stufeIndex === 1 }),
+            ' Mahnung',
+          ]),
+        ]),
       ])
     );
   }
@@ -1593,10 +1599,27 @@ function baueMahnBriefeVorschau(positionen, stufeIndex) {
   });
 }
 
+/**
+ * Nimmt von den links angehakten Zeilen nur die, deren rechte "Mahnung?"-
+ * Checkbox zur gewünschten Stufe passt – so kann eine gemischte Auswahl
+ * (manche als Erinnerung, andere als Mahnung markiert) in einem Durchgang
+ * per "Alle auswählen" + beide Knöpfe nacheinander abgearbeitet werden,
+ * statt die Auswahl von Hand in zwei Durchgänge aufteilen zu müssen.
+ */
 function mahnungenVorbereiten(stufeIndex) {
-  const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"]:checked')];
+  const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"][data-payload]:checked')];
   if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
-  const positionen = checked.map((cb) => JSON.parse(cb.dataset.payload));
+  const passend = checked.filter((cb) => {
+    const payload = JSON.parse(cb.dataset.payload);
+    const stufeCb = document.querySelector(`#mahnungen-tbody input[type="checkbox"][data-stufe-fuer-id="${payload.id}"]`);
+    const alsMahnung = Boolean(stufeCb?.checked);
+    return alsMahnung === (stufeIndex === 1);
+  });
+  if (!passend.length) {
+    toast(`Von der Auswahl ist keine als „${stufeIndex === 1 ? 'Mahnung' : 'Erinnerung'}“ markiert.`, 'error');
+    return;
+  }
+  const positionen = passend.map((cb) => JSON.parse(cb.dataset.payload));
   zeigeMahnungVorschau(positionen, stufeIndex);
 }
 
@@ -2244,7 +2267,7 @@ function renderMahnstufen() {
         ]),
         el('div', { class: 'field-row' }, [
           el('div', { class: 'field' }, [
-            el('label', {}, [i === 0 ? 'Frist bis zur Erinnerung (Tage überfällig)' : 'Frist von der Erinnerung bis zur Mahnung (Tage überfällig)']),
+            el('label', {}, [i === 0 ? 'Ab wie vielen Tagen überfällig als Erinnerung vorschlagen' : 'Ab wie vielen Tagen überfällig als Mahnung vorschlagen']),
             el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } }),
           ]),
         ]),

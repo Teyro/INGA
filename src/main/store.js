@@ -152,13 +152,15 @@ const DEFAULT_SETTINGS = {
   ausleihLimit: 0,
 
   // Mahnwesen: genau zwei Stufen (Abschnitt 5.1) – mahnstufen[0] ist immer
-  // die Erinnerung, mahnstufen[1] immer die Mahnung; die Rückstandsliste
-  // (Abschnitt 5.2) lässt die Kollegin bewusst wählen, welche der beiden sie
-  // für die aktuelle Auswahl erstellt, statt es automatisch pro Fall zu
-  // bestimmen.
+  // die Erinnerung, mahnstufen[1] immer die Mahnung. Vorgabe: unter 7 Tagen
+  // überfällig eine Erinnerung, ab 7 Tagen eine Mahnung – beide Schwellen
+  // bleiben in den Einstellungen änderbar. Die Rückstandsliste zeigt das je
+  // Fall als vorbelegten, aber übersteuerbaren Vorschlag (Checkbox rechts in
+  // der Zeile) – die Kollegin kann pro Fall abweichen, bevor sie "Erinnerung
+  // erstellen"/"Mahnung erstellen" anwendet.
   mahnstufen: [
-    { tageUeberfaellig: 14, gebuehr: 0, text: 'Erinnerung', briefText: DEFAULT_BRIEFTEXT_ERINNERUNG },
-    { tageUeberfaellig: 28, gebuehr: 1.5, text: 'Mahnung', briefText: DEFAULT_BRIEFTEXT_MAHNUNG },
+    { tageUeberfaellig: 1, gebuehr: 0, text: 'Erinnerung', briefText: DEFAULT_BRIEFTEXT_ERINNERUNG },
+    { tageUeberfaellig: 7, gebuehr: 1.5, text: 'Mahnung', briefText: DEFAULT_BRIEFTEXT_MAHNUNG },
   ],
   // Mahngebühren sind standardmäßig aus – Mahnungen als Erinnerung bleiben
   // davon unberührt, nur die Geldseite ist optional. Ist der Schalter aus,
