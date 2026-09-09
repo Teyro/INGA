@@ -803,26 +803,16 @@ function openKatalogSheet(row) {
 
 /* ------------------------------------------------------- Buchdetail (Abschnitt 3) */
 
-/** Unter dieser Breite des Split-Bereichs klappt das Detail unter der Zeile auf statt daneben zu stehen (siehe app.css @container). */
-function katalogDetailSchmal() {
-  const split = document.getElementById('katalog-split');
-  return split ? split.clientWidth < 780 : false;
-}
-
 function markiereAusgewaehlteZeile() {
   for (const tr of document.querySelectorAll('#katalog-tbody tr[data-katalog-ni]')) {
     tr.classList.toggle('katalog-row-selected', Number(tr.dataset.katalogNi) === state.katalogAusgewaehltNi);
   }
 }
 
-/** Schließt das Detail (Panel oder Accordion-Zeile), OHNE die Trefferliste neu zu laden oder ihre Scrollposition zu verändern. */
+/** Schließt das Detail (Accordion-Zeile), OHNE die Trefferliste neu zu laden oder ihre Scrollposition zu verändern. */
 function schliesseBuchDetail() {
   state.katalogAusgewaehltNi = null;
   markiereAusgewaehlteZeile();
-  document.getElementById('katalog-detail-leer').hidden = false;
-  const inhaltBox = document.getElementById('katalog-detail-inhalt');
-  inhaltBox.hidden = true;
-  inhaltBox.replaceChildren();
   for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
 }
 
@@ -838,30 +828,28 @@ async function springeZuBuchDetail(katalogNi) {
   if (buch) await waehleKatalogZeile(buch);
 }
 
-/** Zeigt das Detail für `row` – je nach verfügbarer Breite im festen Panel oder als aufgeklappte Zeile direkt unter dem Titel (kein Overlay, keine verdeckte Liste). */
+/**
+ * Zeigt das Detail für `row` als aufgeklappte Zeile direkt unter der
+ * gewählten Zeile (kein Overlay, keine verdeckte Liste, keine getrennt
+ * scrollende Seitenspalte mehr – die stand auf schmaleren Bildschirmen weit
+ * weg von der angeklickten Zeile und musste extra angescrollt werden).
+ * Scrollt die aufgeklappte Zeile danach von selbst ins Bild, falls sie
+ * (z. B. ganz unten in einer langen Liste) noch nicht sichtbar ist – damit
+ * ist nie manuelles Scrollen/Wischen nötig, um das Ergebnis der eigenen
+ * Auswahl zu sehen.
+ */
 async function zeigeBuchDetail(row) {
   markiereAusgewaehlteZeile();
   for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
   const inhalt = await baueBuchDetailInhalt(row);
 
-  if (katalogDetailSchmal()) {
-    document.getElementById('katalog-detail-leer').hidden = false;
-    const panelInhalt = document.getElementById('katalog-detail-inhalt');
-    panelInhalt.hidden = true;
-    panelInhalt.replaceChildren();
-    const zeile = document.querySelector(`#katalog-tbody tr[data-katalog-ni="${row.KatalogNi}"]`);
-    if (zeile) zeile.after(el('tr', { class: 'katalog-detail-row' }, [el('td', { colSpan: 6 }, [inhalt])]));
-  } else {
-    document.getElementById('katalog-detail-leer').hidden = true;
-    const box = document.getElementById('katalog-detail-inhalt');
-    box.replaceChildren(inhalt);
-    box.hidden = false;
-    // Einzige, kurze Einblendbewegung beim Wechsel der Auswahl – kein Hover-
-    // Effekt, keine gestaffelte Animation einzelner Elemente (siehe Auftrag).
-    box.classList.remove('katalog-detail-inhalt-anim');
-    void box.offsetWidth;
-    box.classList.add('katalog-detail-inhalt-anim');
-  }
+  const zeile = document.querySelector(`#katalog-tbody tr[data-katalog-ni="${row.KatalogNi}"]`);
+  if (!zeile) return;
+  const detailTr = el('tr', { class: 'katalog-detail-row' }, [
+    el('td', { colSpan: 6 }, [el('div', { class: 'katalog-detail-inhalt-anim' }, [inhalt])]),
+  ]);
+  zeile.after(detailTr);
+  detailTr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 /**
@@ -1655,10 +1643,24 @@ function fuelleMahnungenKlassenFilter() {
   sel.value = bisher;
 }
 
+/** Zeile als Mahnung markiert (Checkbox rechts) oder – falls noch nicht angefasst – der automatische Vorschlag nach den Mahnstufen-Schwellen. Von Zeilen-Rendering UND Sortierung gleich genutzt. */
+function istAlsMahnungMarkiert(row) {
+  return mahnStufeUeberschreibung.has(row.id) ? mahnStufeUeberschreibung.get(row.id) : row.stufeIndex === 1;
+}
+
 const MAHN_SORTIERUNG = {
   tage: (a, b) => b.tageUeberfaellig - a.tageUeberfaellig,
   name: (a, b) => `${a.Nachname},${a.Vorname}`.localeCompare(`${b.Nachname},${b.Vorname}`) || b.tageUeberfaellig - a.tageUeberfaellig,
   klasse: (a, b) => (a.Jahrgang || '').localeCompare(b.Jahrgang || '') || `${a.Nachname},${a.Vorname}`.localeCompare(`${b.Nachname},${b.Vorname}`),
+  // "Vorsortiert als Mahnung/Erinnerung": beide Gruppen jeweils für sich
+  // beieinander (Mahnung-Gruppe zuerst, da dringlicher), innerhalb einer
+  // Gruppe wie gewohnt nach Tagen überfällig.
+  einstufung: (a, b) => {
+    const am = istAlsMahnungMarkiert(a);
+    const bm = istAlsMahnungMarkiert(b);
+    if (am !== bm) return am ? -1 : 1;
+    return b.tageUeberfaellig - a.tageUeberfaellig;
+  },
 };
 
 /** Rendert Suche/Klassenfilter/Sortierung aus der zuletzt geladenen Rückstandsliste neu – ein Eintrag pro überfälligem Buch, mehrere Bücher desselben Kindes stehen untereinander. */
@@ -1702,7 +1704,7 @@ function renderMahnungenAktuell() {
             el('input', {
               type: 'checkbox',
               'data-stufe-fuer-id': String(row.id),
-              checked: mahnStufeUeberschreibung.has(row.id) ? mahnStufeUeberschreibung.get(row.id) : row.stufeIndex === 1,
+              checked: istAlsMahnungMarkiert(row),
               onchange: (e) => mahnStufeUeberschreibung.set(row.id, e.target.checked),
             }),
             ' Mahnung',

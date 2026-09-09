@@ -30,8 +30,11 @@ html, body { margin: 0; height: 100%; background: var(--window); color: var(--te
 }
 .button:hover { background: var(--fill-hover); }
 .button:active { background: var(--fill-active); }
+.button:disabled { cursor: default; }
+.button:disabled:not(.primary) { opacity: 0.45; }
 .button.primary { background: var(--confirm); border-color: transparent; color: #fff; }
 .button.primary:hover { background: color-mix(in srgb, var(--confirm) 88%, white); }
+.button.primary:disabled { background: var(--fill); color: var(--text-faint); border: 1px solid var(--line-strong); }
 .icon-button {
   width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;

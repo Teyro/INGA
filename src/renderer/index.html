@@ -112,35 +112,28 @@
           <select class="filter-select" id="katalog-filter-standort"><option value="">Alle Standorte</option></select>
           <label class="field-inline">Klassenstufe <input type="text" id="katalog-filter-klassenstufe" placeholder="z. B. 2" /></label>
           <button class="button ghost small" id="katalog-filter-reset">Alle Filter zurücksetzen</button>
+          <span class="hint" style="margin-left:auto">Titel anklicken für Details – Pfeiltasten ↑ ↓ wählen, Esc schließt</span>
         </div>
         <div class="filter-chips" id="katalog-filter-chips" hidden></div>
-        <div class="view katalog-view-inner">
-          <div class="katalog-split" id="katalog-split">
-            <div class="katalog-liste-wrap">
-              <table>
-                <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
-                <tbody id="katalog-tbody"></tbody>
-              </table>
-              <div class="pagination-bar">
-                <span class="hint" id="katalog-treffer"></span>
-                <div class="row-inline">
-                  <label class="hint">Pro Seite
-                    <select id="katalog-pro-seite">
-                      <option value="25">25</option>
-                      <option value="50" selected>50</option>
-                      <option value="100">100</option>
-                      <option value="250">250</option>
-                      <option value="alle">Alle</option>
-                    </select>
-                  </label>
-                  <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
-                  <button class="button small" id="katalog-seite-vor">Weiter ›</button>
-                </div>
-              </div>
-            </div>
-            <div class="katalog-detail-panel card" id="katalog-detail-panel">
-              <div class="empty small" id="katalog-detail-leer"><div class="icon">📖</div>Titel auswählen – Klick oder Pfeiltasten ↑ ↓, Esc schließt.</div>
-              <div id="katalog-detail-inhalt" hidden></div>
+        <div class="view">
+          <table>
+            <thead><tr><th>Titel</th><th>Autor</th><th>Medienart</th><th>ISBN</th><th>Jahr</th><th class="num">Exemplare</th></tr></thead>
+            <tbody id="katalog-tbody"></tbody>
+          </table>
+          <div class="pagination-bar">
+            <span class="hint" id="katalog-treffer"></span>
+            <div class="row-inline">
+              <label class="hint">Pro Seite
+                <select id="katalog-pro-seite">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="alle">Alle</option>
+                </select>
+              </label>
+              <button class="button small" id="katalog-seite-zurueck">‹ Zurück</button>
+              <button class="button small" id="katalog-seite-vor">Weiter ›</button>
             </div>
           </div>
         </div>
@@ -349,6 +342,7 @@
           <select class="filter-select" id="mahnungen-filter-klasse"><option value="">Alle Klassen</option></select>
           <select class="filter-select" id="mahnungen-sortierung">
             <option value="tage">Sortieren: Tage überfällig</option>
+            <option value="einstufung">Sortieren: Mahnung/Erinnerung</option>
             <option value="name">Sortieren: Name</option>
             <option value="klasse">Sortieren: Klasse</option>
           </select>
