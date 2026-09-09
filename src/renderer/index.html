@@ -19,6 +19,7 @@
     </div>
     <div class="brand"><span>📚</span><span>INGA</span><span class="spruch" id="spruch" title="Klick für einen neuen Spruch">–&nbsp;…</span></div>
     <div class="spacer"></div>
+    <div class="uhr" id="uhr" title="Ein-/Ausblenden in den Einstellungen (Aussehen und weitere App-Einstellungen)">–&thinsp;:&thinsp;–&thinsp;:&thinsp;–</div>
     <div class="caption-space"></div>
   </div>
 
@@ -620,6 +621,8 @@
                     <p class="hint">Erscheint als Platzhalter <code>{Bibliothek}</code> in Mahntexten.</p>
                   </div>
                 </div>
+                <label class="checkbox-label"><input type="checkbox" id="set-uhrAnzeigen" /> Uhr in der Kopfleiste anzeigen</label>
+                <p class="hint">Digitaluhr mit Sekunden oben rechts, zeigt sich kurz vor Pausenende (10:15–10:20 Uhr) über Gelb/Orange bis Rot-blinkend an.</p>
               </div>
 
               <div class="section-title">Ausleihe</div>
@@ -634,6 +637,13 @@
                     <label>Max. gleichzeitige Ausleihen pro Person</label>
                     <input type="number" id="set-ausleihLimit" min="0" max="999" />
                     <p class="hint">0 = unbegrenzt. Wird beim Ausleihen geprüft, unabhängig von Medienart oder Klasse.</p>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label>Standard-Sperrdauer (Tage)</label>
+                    <input type="number" id="set-sperreDauerTage" min="1" max="365" />
+                    <p class="hint">Vorgabe für „Für X Tage sperren" in der Nutzerakte – läuft danach von selbst wieder ab.</p>
                   </div>
                 </div>
                 <div class="field-row">

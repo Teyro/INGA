@@ -326,12 +326,18 @@ function searchLeser(db, { query, leserGruNi, zweigId, jahrgang, aktiveAusleihen
   const offeneAusleihenAusdruck = `(SELECT COUNT(*) FROM "Ausleihe" ao WHERE ao."LeserNi" = l."LeserNi" AND ao."Rueckgabe" IS NULL)`;
   if (aktiveAusleihen === '0') bedingungen.push(`${offeneAusleihenAusdruck} = 0`);
   else if (aktiveAusleihen === '1+') bedingungen.push(`${offeneAusleihenAusdruck} > 0`);
+  // IngaGesperrt/IngaGesperrtBis: eigene, befristbare Ausleihsperre (siehe
+  // leserGesperrt/leserSperren) – zusätzlich zu den bereits vorhandenen
+  // Perpustakaan-Feldern SperrungNi (statischer Sperrgrund) und AusleihBis
+  // (allgemeine Ausleihberechtigung).
   const gesperrtAusdruck = `(
-    (l."SperrungNi" IS NOT NULL AND l."SperrungNi" != 0 AND EXISTS (SELECT 1 FROM "Sperrung" s WHERE s."SperrungNi" = l."SperrungNi"))
+    COALESCE(l."IngaGesperrt", 0) = 1
+    OR (l."IngaGesperrtBis" IS NOT NULL AND l."IngaGesperrtBis" != '' AND substr(l."IngaGesperrtBis", 1, 10) >= ?)
+    OR (l."SperrungNi" IS NOT NULL AND l."SperrungNi" != 0 AND EXISTS (SELECT 1 FROM "Sperrung" s WHERE s."SperrungNi" = l."SperrungNi"))
     OR (l."AusleihBis" IS NOT NULL AND l."AusleihBis" != '' AND substr(l."AusleihBis", 1, 10) < ?)
   )`;
-  if (gesperrt === 'gesperrt') { bedingungen.push(gesperrtAusdruck); params.push(todayStr().slice(0, 10)); }
-  else if (gesperrt === 'aktiv') { bedingungen.push(`NOT ${gesperrtAusdruck}`); params.push(todayStr().slice(0, 10)); }
+  if (gesperrt === 'gesperrt') { bedingungen.push(gesperrtAusdruck); params.push(todayStr().slice(0, 10), todayStr().slice(0, 10)); }
+  else if (gesperrt === 'aktiv') { bedingungen.push(`NOT ${gesperrtAusdruck}`); params.push(todayStr().slice(0, 10), todayStr().slice(0, 10)); }
   const where = bedingungen.join(' AND ');
 
   const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM "Leser" l WHERE ${where}`).get(...params).n;
@@ -397,18 +403,52 @@ function deleteLeser(db, leserNi, benutzer) {
   db.prepare(`DELETE FROM "Leser" WHERE "LeserNi" = ?`).run(leserNi);
 }
 
-/** Läuft eine Sperrung oder ist das Ausleih-Enddatum überschritten? */
+/**
+ * Ist die Ausleihe für diese Person gerade gesperrt – und warum? Prüft der
+ * Reihe nach: die eigene, unbefristete Sperre (IngaGesperrt, manuell per
+ * Klick gesetzt), die eigene befristete Sperre (IngaGesperrtBis, siehe
+ * leserSperren), die Perpustakaan-Sperrgrund-Stammdaten (SperrungNi) und
+ * zuletzt die allgemeine Ausleihberechtigung (AusleihBis).
+ */
 function leserGesperrt(db, leserNi) {
   const leser = getLeser(db, leserNi);
   if (!leser) return { gesperrt: true, grund: 'unbekannter Leser' };
+  const heute = todayStr().slice(0, 10);
+  if (leser.IngaGesperrt) return { gesperrt: true, grund: 'gesperrt' };
+  if (leser.IngaGesperrtBis && String(leser.IngaGesperrtBis).slice(0, 10) >= heute) {
+    return { gesperrt: true, grund: `gesperrt bis ${String(leser.IngaGesperrtBis).slice(0, 10)}` };
+  }
   if (leser.SperrungNi && leser.SperrungNi !== 0) {
     const sperr = db.prepare(`SELECT * FROM "Sperrung" WHERE "SperrungNi" = ?`).get(leser.SperrungNi);
     if (sperr) return { gesperrt: true, grund: sperr.SperrungBz || 'gesperrt' };
   }
-  if (leser.AusleihBis && String(leser.AusleihBis).slice(0, 10) < todayStr().slice(0, 10)) {
+  if (leser.AusleihBis && String(leser.AusleihBis).slice(0, 10) < heute) {
     return { gesperrt: true, grund: 'Ausleihberechtigung abgelaufen' };
   }
   return { gesperrt: false, grund: null };
+}
+
+/**
+ * Sperrt eine Person für die Ausleihe – entweder unbefristet (manuell per
+ * Klick, bleibt bis zum bewussten Entsperren) oder befristet für `tage` Tage
+ * ab heute (läuft danach von selbst wieder ab, ohne dass jemand entsperren
+ * müsste). `tage` überschreibt eine evtl. vorhandene unbefristete Sperre
+ * NICHT gleichzeitig mit auf – wer befristet sperrt, während schon
+ * unbefristet gesperrt ist, bleibt weiter unbefristet gesperrt (strengere
+ * Sperre gewinnt); "Entsperren" hebt in jedem Fall beides auf.
+ */
+function leserSperren(db, leserNi, { tage } = {}) {
+  if (tage) {
+    const bis = addTage(todayStr().slice(0, 10), Math.max(1, Math.round(Number(tage))) - 1);
+    db.prepare(`UPDATE "Leser" SET "IngaGesperrtBis" = ? WHERE "LeserNi" = ?`).run(bis, leserNi);
+    return { gesperrtBis: bis };
+  }
+  db.prepare(`UPDATE "Leser" SET "IngaGesperrt" = 1 WHERE "LeserNi" = ?`).run(leserNi);
+  return { gesperrtBis: null };
+}
+
+function leserEntsperren(db, leserNi) {
+  db.prepare(`UPDATE "Leser" SET "IngaGesperrt" = 0, "IngaGesperrtBis" = NULL WHERE "LeserNi" = ?`).run(leserNi);
 }
 
 /* ---------------------------------------------------------- Ausleihe */
@@ -1200,6 +1240,8 @@ module.exports = {
   saveLeser,
   deleteLeser,
   leserGesperrt,
+  leserSperren,
+  leserEntsperren,
   offeneAusleihenVonLeser,
   alleOffenenAusleihen,
   umlaufliste,

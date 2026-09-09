@@ -115,6 +115,9 @@ const DEFAULT_SETTINGS = {
   fontScale: 100,
   reduceTransparency: false,
   highContrast: false,
+  // Digitaluhr oben rechts in der Kopfleiste (mit Sekunden, siehe app.js
+  // wireUhr) – ein-/ausblendbar.
+  uhrAnzeigen: true,
   // Name der Bibliothek, wie er den Kolleginnen gegenüber angezeigt wird und
   // als {Bibliothek}-Platzhalter in den Mahntexten zur Verfügung steht
   // (siehe DEFAULT_BRIEFTEXT/store.sanitizeSettings – generische String-
@@ -150,6 +153,9 @@ const DEFAULT_SETTINGS = {
   // Alltag ab; wer unterschiedliche Limits je Gruppe braucht, kann das über
   // eigene Lesergruppen mit jeweils passender Ausleihgrenze grob nachbilden.
   ausleihLimit: 0,
+  // Vorgabe für "Für X Tage sperren" in der Nutzerakte (siehe repo.leserSperren) –
+  // die befristete Ausleihsperre läuft danach von selbst wieder ab.
+  sperreDauerTage: 14,
 
   // Mahnwesen: genau zwei Stufen (Abschnitt 5.1) – mahnstufen[0] ist immer
   // die Erinnerung, mahnstufen[1] immer die Mahnung. Vorgabe: unter 7 Tagen

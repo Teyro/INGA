@@ -200,7 +200,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const MIGRATIONS = [
   {
     version: 2,
@@ -318,6 +318,25 @@ const MIGRATIONS = [
       const spalten = db.prepare(`PRAGMA table_info("Mahnung")`).all().map((c) => c.name);
       if (!spalten.includes('IngaStufe')) {
         db.exec(`ALTER TABLE "Mahnung" ADD COLUMN "IngaStufe" INTEGER`);
+      }
+    },
+  },
+  {
+    version: 8,
+    beschreibung: 'Leser: eigene Ausleihsperre (manuell oder befristet) unabhängig von SperrungNi/AusleihBis',
+    up(db) {
+      // Additiv wie IngaStufe oben: kein Perpustakaan-Feld, taucht deshalb
+      // nicht in schema/perpustakaan-tables.json auf und bleibt beim Export
+      // unberücksichtigt. Bewusst NICHT SperrungNi (statische Sperrgrund-
+      // Stammdaten, kein Zeitbezug) oder AusleihBis (Ausleihberechtigung
+      // allgemein, nicht "vorübergehend gesperrt") wiederverwendet – siehe
+      // repo.leserGesperrt().
+      const spalten = db.prepare(`PRAGMA table_info("Leser")`).all().map((c) => c.name);
+      if (!spalten.includes('IngaGesperrt')) {
+        db.exec(`ALTER TABLE "Leser" ADD COLUMN "IngaGesperrt" INTEGER`);
+      }
+      if (!spalten.includes('IngaGesperrtBis')) {
+        db.exec(`ALTER TABLE "Leser" ADD COLUMN "IngaGesperrtBis" TEXT`);
       }
     },
   },

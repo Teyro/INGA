@@ -48,6 +48,7 @@ async function boot() {
   maximizeButton.addEventListener('click', async () => setMaximizedState(await api.window.toggleMaximize()));
   api.on('window:state', ({ maximized }) => setMaximizedState(maximized));
   wireSpruch();
+  wireUhr();
 
   for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => showView(item.dataset.view));
@@ -101,6 +102,39 @@ function wireSpruch() {
   naechsterSpruch();
 }
 
+/**
+ * Digitaluhr oben rechts in der Kopfleiste, mit Sekunden. Warnt kurz vor
+ * Pausenende: ab 10:15 Uhr gelb, ab 10:18 Uhr orange, ab 10:19 Uhr
+ * rot-blinkend, ab 10:20 Uhr wieder normal. Feste Randzeiten (keine eigene
+ * Einstellung dafür, nur die Uhr selbst ist ein-/ausblendbar) – bei Bedarf
+ * hier anpassen.
+ */
+const UHR_GELB_AB = 10 * 60 + 15; // 10:15 Uhr, in Minuten seit Mitternacht
+const UHR_ORANGE_AB = 10 * 60 + 18; // 10:18 Uhr
+const UHR_ROT_AB = 10 * 60 + 19; // 10:19 Uhr
+const UHR_NORMAL_AB = 10 * 60 + 20; // 10:20 Uhr
+
+function uhrFarbKlasse(stunden, minuten) {
+  const m = stunden * 60 + minuten;
+  if (m >= UHR_ROT_AB && m < UHR_NORMAL_AB) return 'uhr-rot';
+  if (m >= UHR_ORANGE_AB && m < UHR_ROT_AB) return 'uhr-orange';
+  if (m >= UHR_GELB_AB && m < UHR_ORANGE_AB) return 'uhr-gelb';
+  return '';
+}
+
+function aktualisiereUhr() {
+  const uhrEl = document.getElementById('uhr');
+  const jetzt = new Date();
+  const zwei = (n) => String(n).padStart(2, '0');
+  uhrEl.textContent = `${zwei(jetzt.getHours())}:${zwei(jetzt.getMinutes())}:${zwei(jetzt.getSeconds())}`;
+  uhrEl.className = `uhr ${uhrFarbKlasse(jetzt.getHours(), jetzt.getMinutes())}`.trim();
+}
+
+function wireUhr() {
+  aktualisiereUhr();
+  setInterval(aktualisiereUhr, 1000);
+}
+
 function applyChrome(data) {
   const root = document.documentElement;
   root.dataset.ui = data.ui;
@@ -113,6 +147,7 @@ function applyChrome(data) {
     root.style.setProperty('--accent-rgb', `${(int >> 16) & 255} ${(int >> 8) & 255} ${int & 255}`);
   }
   if (data.settings.reduceTransparency) root.dataset.transparency = 'reduced';
+  document.getElementById('uhr').hidden = data.settings.uhrAnzeigen === false;
 }
 
 function onMenuAction(action) {
@@ -1090,12 +1125,40 @@ async function openLeserSheet(row) {
 
   let historyBox = null;
   if (row?.LeserNi) {
-    const [offen, historie, vormerkungen] = await Promise.all([
+    const [offen, historie, vormerkungen, sperre] = await Promise.all([
       api.leser.offeneAusleihen(row.LeserNi),
       api.leser.mahnhistorie(row.LeserNi),
       api.leser.vormerkungen(row.LeserNi),
+      api.leser.gesperrt(row.LeserNi),
+    ]);
+    const neuLaden = async () => openLeserSheet(await api.leser.get(row.LeserNi));
+    const sperreDauer = state.settings.sperreDauerTage || 14;
+    const sperreBox = el('div', {}, [
+      el('div', { class: 'section-title', style: { marginTop: '0' } }, ['Ausleihsperre']),
+      sperre.gesperrt
+        ? el('div', { class: 'row-inline', style: { flexWrap: 'wrap' } }, [
+            el('span', { class: 'badge danger' }, [sperre.grund || 'gesperrt']),
+            el('button', {
+              class: 'button small',
+              onclick: async () => { await api.leser.entsperren(row.LeserNi); toast('Entsperrt.'); await neuLaden(); },
+            }, ['Entsperren']),
+          ])
+        : el('div', { class: 'row-inline', style: { flexWrap: 'wrap' } }, [
+            el('span', { class: 'badge ok' }, ['nicht gesperrt']),
+            el('button', {
+              class: 'button small',
+              title: 'Bleibt gesperrt, bis bewusst entsperrt wird',
+              onclick: async () => { await api.leser.sperren(row.LeserNi); toast('Für die Ausleihe gesperrt.'); await neuLaden(); },
+            }, ['Sperren']),
+            el('button', {
+              class: 'button small',
+              title: `Läuft nach ${sperreDauer} Tagen von selbst wieder ab (Vorgabe in den Einstellungen änderbar)`,
+              onclick: async () => { await api.leser.sperren(row.LeserNi, sperreDauer); toast(`Für ${sperreDauer} Tage gesperrt.`); await neuLaden(); },
+            }, [`Für ${sperreDauer} Tage sperren`]),
+          ]),
     ]);
     historyBox = el('div', {}, [
+      sperreBox,
       offen.length
         ? el('div', {}, [
             el('div', { class: 'section-title' }, ['Offene Ausleihen']),
@@ -2107,7 +2170,7 @@ function wireEinstellungen() {
   }
   for (const id of [
     'set-fontScale', 'set-bibliotheksName',
-    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit',
+    'set-leihfristTage', 'set-maxVerlaengerung', 'set-verlaengerungDauerTage', 'set-leihfristOffsetTage', 'set-ausleihLimit', 'set-sperreDauerTage',
     'set-mahnGebuehrProTag', 'set-mahnGebuehrMax', 'set-mahnKarenztage',
     'set-absenderName', 'set-absenderAdresse', 'set-absenderEmail', 'set-absenderTelefon',
     'set-mahnBetreffVorlage', 'set-mahnSchluss',
@@ -2115,7 +2178,7 @@ function wireEinstellungen() {
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv']) {
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv', 'set-uhrAnzeigen']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
@@ -2332,10 +2395,12 @@ async function loadEinstellungen() {
   document.getElementById('set-theme').value = s.theme;
   document.getElementById('set-fontScale').value = s.fontScale || 100;
   document.getElementById('set-bibliotheksName').value = s.bibliotheksName || '';
+  document.getElementById('set-uhrAnzeigen').checked = s.uhrAnzeigen !== false;
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
   document.getElementById('set-ausleihLimit').value = s.ausleihLimit || 0;
+  document.getElementById('set-sperreDauerTage').value = s.sperreDauerTage || 14;
   document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked = Boolean(s.verlaengerungGesperrtBeiVormerkung);
   document.getElementById('set-leihfristOffsetTage').value = s.leihfristOffsetTage || 0;
   document.getElementById('set-ferienZaehlweise').value = s.ferienZaehlweise || 'kalendertage';
@@ -2757,10 +2822,12 @@ const speichereEinstellungenFormular = debounce(async () => {
     theme: document.getElementById('set-theme').value,
     fontScale: Number(document.getElementById('set-fontScale').value) || 100,
     bibliotheksName: document.getElementById('set-bibliotheksName').value,
+    uhrAnzeigen: document.getElementById('set-uhrAnzeigen').checked,
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,
     ausleihLimit: Number(document.getElementById('set-ausleihLimit').value) || 0,
+    sperreDauerTage: Number(document.getElementById('set-sperreDauerTage').value) || 14,
     verlaengerungGesperrtBeiVormerkung: document.getElementById('set-verlaengerungGesperrtBeiVormerkung').checked,
     leihfristOffsetTage: Number(document.getElementById('set-leihfristOffsetTage').value) || 0,
     ferienZaehlweise: document.getElementById('set-ferienZaehlweise').value,

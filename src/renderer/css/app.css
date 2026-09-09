@@ -52,6 +52,29 @@ button { cursor: pointer; }
 .titlebar .spacer { flex: 1; }
 .caption-space { -webkit-app-region: no-drag; }
 
+/* Digitaluhr oben rechts (mit Sekunden) – wechselt kurz vor einer festen
+   Uhrzeit (Vorgabe: Ende der Pause um 10:20 Uhr) über Gelb/Orange auf
+   Rot-blinkend, siehe app.js wireUhr()/aktualisiereUhr(). Ein-/ausblendbar
+   in den Einstellungen. */
+.uhr {
+  -webkit-app-region: no-drag;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 0 12px;
+  color: var(--ok);
+  transition: color var(--duration) var(--ease);
+  white-space: nowrap;
+}
+.uhr[hidden] { display: none; }
+.uhr.uhr-gelb { color: var(--uhr-gelb); }
+.uhr.uhr-orange { color: var(--warn); }
+.uhr.uhr-rot { color: var(--danger); animation: uhr-blinken 1s step-start infinite; }
+@keyframes uhr-blinken { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .uhr.uhr-rot { animation: none; }
+}
+
 .window-controls .icon-button {
   -webkit-app-region: no-drag;
   width: 28px; height: 28px;

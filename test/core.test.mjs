@@ -15,6 +15,7 @@ const { openDatabase, TABLES } = require('../src/main/db.js');
 const { importZip, exportZip } = require('../src/main/csvio.js');
 const repo = require('../src/main/repo.js');
 const { DEFAULT_SETTINGS } = require('../src/main/store.js');
+const { addTage, heuteISO } = require('../src/main/date-utils.js');
 
 const einstellungen = { ...DEFAULT_SETTINGS, leihfristTage: 28, maxVerlaengerung: 2 };
 
@@ -124,6 +125,63 @@ test('Gesperrte Nutzer dürfen nicht ausleihen', () => {
   const leserNi = repo.saveLeser(db, { Nachname: 'Gesperrt', Vorname: 'Peter', SperrungNi: sperrungNi });
 
   assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, einstellungen }), /Gebühren offen/);
+  db.close();
+});
+
+test('leserSperren: unbefristet gesperrt bleibt gesperrt, bis explizit entsperrt', () => {
+  const db = openDatabase(tmpDir());
+  const leserNi = repo.saveLeser(db, { Nachname: 'Test', Vorname: 'Tim', AusweisId: 'S-1' });
+  assert.equal(repo.leserGesperrt(db, leserNi).gesperrt, false);
+
+  repo.leserSperren(db, leserNi);
+  const gesperrt = repo.leserGesperrt(db, leserNi);
+  assert.equal(gesperrt.gesperrt, true);
+  assert.equal(gesperrt.grund, 'gesperrt');
+
+  repo.leserEntsperren(db, leserNi);
+  assert.equal(repo.leserGesperrt(db, leserNi).gesperrt, false);
+  db.close();
+});
+
+test('leserSperren: befristete Sperre (Tage) läuft von selbst wieder ab', () => {
+  const db = openDatabase(tmpDir());
+  const leserNi = repo.saveLeser(db, { Nachname: 'Test', Vorname: 'Tina', AusweisId: 'S-2' });
+
+  repo.leserSperren(db, leserNi, { tage: 14 });
+  const leser = repo.getLeser(db, leserNi);
+  // "für 14 Tage ab heute" -> gesperrt bis einschließlich heute + 13 Tage.
+  assert.equal(leser.IngaGesperrtBis, addTage(heuteISO(), 13));
+  assert.equal(repo.leserGesperrt(db, leserNi).gesperrt, true);
+
+  // Eine bereits abgelaufene Frist (simuliert: gestern) sperrt nicht mehr.
+  db.prepare(`UPDATE "Leser" SET "IngaGesperrtBis" = ? WHERE "LeserNi" = ?`).run(addTage(heuteISO(), -1), leserNi);
+  assert.equal(repo.leserGesperrt(db, leserNi).gesperrt, false);
+  db.close();
+});
+
+test('ausleihen(): eine über leserSperren gesetzte Sperre blockiert die Ausleihe genauso wie SperrungNi', () => {
+  const db = openDatabase(tmpDir());
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Testbuch 3' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'T-0003' });
+  const leserNi = repo.saveLeser(db, { Nachname: 'Gesperrt', Vorname: 'Petra' });
+  repo.leserSperren(db, leserNi, { tage: 7 });
+  assert.throws(() => repo.ausleihen(db, { medienNi, leserNi, einstellungen }), /gesperrt/);
+  db.close();
+});
+
+test('searchLeser: Filter "gesperrt"/"aktiv" berücksichtigt auch die neue Sperre (IngaGesperrt/IngaGesperrtBis)', () => {
+  const db = openDatabase(tmpDir());
+  const gesperrtNi = repo.saveLeser(db, { Nachname: 'Gesperrt', Vorname: 'Kind', AusweisId: 'F-1' });
+  const freiNi = repo.saveLeser(db, { Nachname: 'Frei', Vorname: 'Kind', AusweisId: 'F-2' });
+  repo.leserSperren(db, gesperrtNi, { tage: 5 });
+
+  const gesperrt = repo.searchLeser(db, { gesperrt: 'gesperrt' });
+  assert.equal(gesperrt.gesamt, 1);
+  assert.equal(gesperrt.rows[0].LeserNi, gesperrtNi);
+
+  const aktiv = repo.searchLeser(db, { gesperrt: 'aktiv' });
+  assert.equal(aktiv.gesamt, 1);
+  assert.equal(aktiv.rows[0].LeserNi, freiNi);
   db.close();
 });
 
