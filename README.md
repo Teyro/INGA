@@ -60,6 +60,10 @@ Ferienschließzeit.
 
 ### Katalog & Buchdetail (NELE)
 
+- Klick auf einen Titel klappt das Detail direkt unter der Zeile auf
+  (Titel/Autor/Status je Exemplar zuerst, Katalogdaten darunter) und
+  scrollt sich von selbst ins Bild – kein Flyout über der Liste, kein
+  Verlust der Scrollposition, per Pfeiltasten/Escape bedienbar
 - Titel anlegen, durchsuchen, filtern nach Medienart, Kategorie,
   Klassenstufe, Standort und Status (verfügbar / ausgeliehen / überfällig /
   nicht verfügbar) – echte Seitennavigation (25/50/100/250/Alle) statt einer
@@ -122,15 +126,29 @@ Probedruck auf normalem Papier gegen das Licht.*
 - Schüler:innen und Lehrkräfte, Gruppen, Zweige, Sperrungen,
   Ausleihberechtigung mit Ablaufdatum, freies **Notizen**-Feld je Nutzer:in
   (z. B. Sondervereinbarungen)
+- **Ausleihsperre je Nutzer:in** direkt in der Nutzerakte: unbefristet
+  ("Sperren", bleibt bis zum bewussten "Entsperren") oder befristet ("Für
+  X Tage sperren", läuft danach von selbst wieder ab – Vorgabe 14 Tage,
+  änderbar unter Einstellungen)
 - Filter nach Klasse, Gruppe, Zweig, Status (aktiv / gesperrt / **mit
   Rückstand**) und Anzahl aktiver Ausleihen – echte Seitennavigation, Filter
   als Chips, Export als CSV/Excel
 - Nutzer mit überfälligen Ausleihen sind in der Liste rot markiert
+- **Schuljahresende**: ab einen Monat vor Beginn der eingetragenen
+  Sommerferien erscheint auf der Übersicht ein Hinweis für die
+  Abschlussklasse (Einstellung "Abschlussklasse", Vorgabe "4") mit Knöpfen
+  zum Sperren bzw. – nach Sicherheitsabfrage – Verschieben in den Papierkorb
 
 ### Ausleihe & Rückgabe
 
-- Ausleihe per Barcode-Scanner oder Tastatur
-- Leihfrist je Medienart, konfigurierbare Verlängerung
+- Ausleihe per Barcode-Scanner oder Tastatur, oder per **Namenssuche**:
+  die Felder "Kind"/"Buch" akzeptieren Nummer oder Klartext, mit
+  unscharfer, tastaturbedienbarer Vorschlagsliste ab dem zweiten Zeichen
+  ("Meier" findet auch "Meyer"/"Maier") – bereits ausgeliehene Exemplare
+  bleiben markiert sichtbar statt ausgeblendet zu werden
+- Leihfrist je Medienart, konfigurierbare Verlängerung – verlängert sich
+  außerdem automatisch um die Länge jedes Ferien-/Schließzeit-Abschnitts,
+  der die Ausleihspanne berührt (Kalender- oder Schultage wählbar)
 - **Ausleihlimit**: maximale Anzahl gleichzeitig offener Ausleihen pro
   Person, einstellbar unter Einstellungen → Ausleihe (Vorgabe: 0 =
   unbegrenzt)
@@ -158,13 +176,24 @@ Mahnliste.
 
 ### Mahnwesen (JÖRN)
 
-- Beliebig viele Mahnstufen, sortier- und löschbar, jede mit eigener Gebühr
-  und eigenem **Brieftext** (Platzhalter: `{Vorname}` `{Nachname}` `{Titel}`
-  `{Tage}` `{Gebuehr}` `{Datum}` `{Faellig}` `{Stufe}`, live Vorschau direkt
-  im Editor) – dazu 4 vorgefertigte **Textvorlagen** zur Auswahl (freundlich,
-  bestimmt/formell, sowie zwei in **einfacher Sprache** für Kinder oder
-  Nutzer:innen, denen der Standardtext schwerer verständlich ist), die den
-  Brieftext einer Stufe auf Wunsch ersetzen
+- Genau zwei Stufen: **Erinnerung** (freundlich, ans Kind gerichtet, keine
+  Gebühr) und **Mahnung** (sachlich, an die Eltern gerichtet, mit Hinweis
+  auf Ersatz bei Verlust) – Vorgabe: unter 7 Tagen überfällig eine
+  Erinnerung, ab 7 Tagen eine Mahnung, beide Schwellen und Brieftexte
+  änderbar (Platzhalter: `{Vorname}` `{Nachname}` `{Titel}` `{Tage}`
+  `{Gebuehr}` `{Datum}` `{Faellig}` `{Stufe}` `{Bibliothek}`, live Vorschau
+  direkt im Editor) – dazu 4 vorgefertigte **Textvorlagen** zur Auswahl
+  (freundlich, bestimmt/formell, sowie zwei in **einfacher Sprache** für
+  Kinder oder Nutzer:innen, denen der Standardtext schwerer verständlich
+  ist)
+- **Rückstandsliste** zum Abarbeiten: einstellbare Schwelle ("überfällig
+  seit mindestens X Tagen", Vorgabe 1), ein Eintrag pro überfälligem Buch,
+  sortierbar nach Tagen/Name/Klasse/Einstufung. Je Fall zeigt und
+  übersteuert eine Checkbox rechts, ob Erinnerung oder Mahnung erstellt
+  wird (vorbelegt nach der Schwelle, änderbar); "Erinnerung erstellen" und
+  "Mahnung erstellen" nehmen sich aus der Auswahl automatisch nur die
+  passend markierten Fälle. Vorschau vor dem Drucken, protokolliert je Fall
+  welche Stufe wann verschickt wurde
 - Eigener Briefkopf: Absender, E-Mail, Telefon, Betreff-Vorlage,
   Schlusstext, Logo
 - Formeller Brief per **PDF-Export**, **direktem Druckauftrag**, **per
@@ -176,33 +205,42 @@ Mahnliste.
   (Vorgabe `soed.hamburg.de`), Anmeldung per Benutzername/Passwort (nur das
   dabei ausgestellte Zugangstoken wird gespeichert, nie das Passwort) oder
   direkt per Zugangstoken für ein Bot-Konto – siehe Einstellungen →
-  „Element (Matrix)"
-- Filter nach Stufe und Freitextsuche in der Mahnliste
+  Mahnungen
 
 ### Einstellungen
 
-- Oberfläche (macOS/Windows/KDE/GNOME/automatisch, Hell/Dunkel)
-- Standard-Leihfrist und maximale Verlängerungen
-- **Fristverschiebung**: ein Tage-Offset, der sofort auf jede berechnete
-  Fälligkeit wirkt (offene und künftige Ausleihen) – z. B. `+14` während
-  einer kurzfristigen, noch nicht als Ferieneintrag erfassten Schließzeit
-- **Einmalige Verschiebung**: verschiebt das Ausleihdatum aller aktuell
-  offenen Ausleihen um X Tage, ohne die Standardfrist dauerhaft zu ändern
-- **Ferien & Schließzeiten**: eigene Verwaltung für Ferien, Feiertage und
-  Schließzeiten – manuell gepflegt, per ICS-Datei/URL importiert oder für
-  Hamburg automatisch abgerufen (laufendes plus die nächsten drei
-  Schuljahre, mit Vorschau vor der Übernahme). Fällt eine berechnete
-  Rückgabefrist in einen solchen Zeitraum oder auf ein Wochenende, wird sie
-  automatisch auf den nächsten echten Schultag danach verschoben – auch über
-  mehrere direkt aneinandergrenzende Zeiträume hinweg (z. B. Ferien direkt
-  gefolgt von einem Feiertag). Der Grund erscheint als Hinweis in der
-  Rückgabeliste ("+12 Tage wegen Herbstferien"). Zusätzlich abschaltbar:
-  Ferientage als Verzugstage nicht mitzählen
-- **Datensicherung**: automatisches Backup einmal täglich beim Programmstart
-  und vor jeder Migration (Rotation: die letzten 10 bleiben erhalten), dazu
-  „Backup jetzt“ und „Sicherung einspielen“ (aus der Liste oder aus einer
-  beliebigen Datei) direkt in den Einstellungen – Einspielen sichert vorher
-  automatisch noch einmal den aktuellen Stand und startet INGA neu
+Ein Menüpunkt „Einstellungen“ mit genau drei Unterpunkten – links eine
+schmale Liste, rechts der Inhalt des gewählten Punkts, keine verstreuten
+Dialoge:
+
+- **Ferien**: Übersicht bündelt zusammenhängende Tage zu Abschnitten und
+  gruppiert nach Schuljahr (Accordion, standardmäßig bis aufs laufende
+  zugeklappt, vergangene ausblendbar, ganzes Schuljahr auf einmal
+  löschbar) – manuell gepflegt, per ICS-Datei/URL importiert oder für
+  Hamburg automatisch abgerufen, mit Vorschau vor der Übernahme
+  ("Schuljahr 2027/28: 6 Abschnitte, davon 2 schon vorhanden", Dubletten
+  werden übersprungen). Fällt eine Ausleihfrist ganz oder teilweise in
+  Ferien oder eine Schließzeit, verschiebt sich die Fälligkeit automatisch
+  um deren Länge (Kalender- oder Schultage wählbar) – der Grund erscheint
+  als Hinweis in der Rückgabeliste ("+12 Ferientage wegen Herbstferien").
+  Zusätzlich abschaltbar: Ferientage als Verzugstage nicht mitzählen
+- **Mahnungen**: die beiden Mahnstufen samt Fristen/Brieftexten (siehe
+  oben), Briefkopf/Absender und der Versand über Element (Matrix)
+- **Aussehen und weitere App-Einstellungen**: Oberfläche
+  (macOS/Windows/KDE/GNOME/automatisch, Hell/Dunkel), Schriftgröße,
+  Bibliotheksname (Platzhalter `{Bibliothek}` in Mahntexten),
+  **Kopfleisten-Uhr** ein-/ausblendbar, Standard-Leihfrist und maximale
+  Verlängerungen, Standard-Sperrdauer und Abschlussklasse (siehe
+  Nutzerverwaltung), **Fristverschiebung** (ein Tage-Offset, der sofort auf
+  jede berechnete Fälligkeit wirkt – z. B. `+14` während einer
+  kurzfristigen, noch nicht als Ferieneintrag erfassten Schließzeit),
+  **einmalige Verschiebung** des Ausleihdatums aller offenen Ausleihen um
+  X Tage, sowie die **Datensicherung**: automatisches Backup einmal
+  täglich beim Programmstart und vor jeder Migration (Rotation: die
+  letzten 10 bleiben erhalten, zusätzlich eine Perpustakaan-kompatible
+  Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in
+  den Einstellungen – Einspielen sichert vorher automatisch noch einmal
+  den aktuellen Stand und startet INGA neu
 
 ### Papierkorb
 

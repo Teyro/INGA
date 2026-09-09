@@ -11,6 +11,11 @@ const state = {
   // geladene Trefferliste (für die Pfeiltasten-Navigation), siehe wireKatalog.
   katalogAusgewaehltNi: null,
   katalogZeilen: [],
+  // Direktsprung (Dashboard/Statistik -> Katalog, siehe springeZuBuchDetail):
+  // erzwingt, dass genau dieser Titel im Treffer stehen bleibt, egal welche
+  // Seite/Filter zuvor aktiv war – sonst würde die Detailzeile lautlos nicht
+  // erscheinen, weil sie gar nicht im sichtbaren #katalog-tbody steckt.
+  katalogSprungNi: null,
 };
 
 /**
@@ -525,9 +530,20 @@ const KATALOG_FILTER_FELDER = [
   feldChip('katalog-filter-kategorie', 'Kategorie', { neuLaden: () => beiKatalogFilterAenderung() }),
   feldChip('katalog-filter-standort', 'Standort', { neuLaden: () => beiKatalogFilterAenderung() }),
   feldChip('katalog-filter-klassenstufe', 'Klassenstufe', { neuLaden: () => beiKatalogFilterAenderung() }),
+  // Kein <input>/<select> dahinter, sondern state.katalogSprungNi (siehe
+  // springeZuBuchDetail) – trotzdem als Chip sichtbar, damit klar ist, wieso
+  // die Liste nur einen Titel zeigt, und übers ✕ oder "Filter zurücksetzen"
+  // normal wieder aufhebbar.
+  {
+    istAktiv: () => state.katalogSprungNi !== null,
+    text: () => 'Direktsprung: 1 Titel',
+    zuruecksetzen: () => { state.katalogSprungNi = null; },
+    neuLaden: () => beiKatalogFilterAenderung(),
+  },
 ];
 
 function beiKatalogFilterAenderung() {
+  state.katalogSprungNi = null;
   state.katalogSeite = 1;
   loadKatalog();
 }
@@ -540,8 +556,8 @@ function wireKatalog() {
   document.getElementById('katalog-filter-klassenstufe').addEventListener('input', debounce(beiKatalogFilterAenderung, 200));
   wireFilterReset('katalog-filter-reset', KATALOG_FILTER_FELDER, beiKatalogFilterAenderung);
   document.getElementById('katalog-pro-seite').addEventListener('change', beiKatalogFilterAenderung);
-  document.getElementById('katalog-seite-zurueck').addEventListener('click', () => { state.katalogSeite = Math.max(1, state.katalogSeite - 1); loadKatalog(); });
-  document.getElementById('katalog-seite-vor').addEventListener('click', () => { state.katalogSeite += 1; loadKatalog(); });
+  document.getElementById('katalog-seite-zurueck').addEventListener('click', () => { state.katalogSprungNi = null; state.katalogSeite = Math.max(1, state.katalogSeite - 1); loadKatalog(); });
+  document.getElementById('katalog-seite-vor').addEventListener('click', () => { state.katalogSprungNi = null; state.katalogSeite += 1; loadKatalog(); });
   document.getElementById('katalog-neu').addEventListener('click', () => openKatalogSheet(null));
   document.getElementById('katalog-csv').addEventListener('click', () => katalogExport('csv'));
   document.getElementById('katalog-xlsx').addEventListener('click', () => katalogExport('xlsx'));
@@ -581,6 +597,9 @@ async function katalogAktuellerFilter() {
   // zentral ermittelt (siehe repo.katalogNiMitUeberfaelligemExemplar).
   if (status === 'ueberfaellig') filter.katalogNiIn = await api.katalog.ueberfaelligeNi();
   else if (status) filter.verfuegbarkeit = status;
+  // Direktsprung siehe springeZuBuchDetail/KATALOG_FILTER_FELDER: zwingt den
+  // Treffer auf genau diesen einen Titel, egal was sonst noch im Filter steht.
+  if (state.katalogSprungNi !== null) filter.katalogNiIn = [state.katalogSprungNi];
   return filter;
 }
 
@@ -809,8 +828,17 @@ function markiereAusgewaehlteZeile() {
   }
 }
 
+// Schutz gegen Wettlauf bei schnell aufeinanderfolgender Auswahl (z. B.
+// gehaltene Pfeiltaste): jede zeigeBuchDetail()-Anfrage bekommt eine
+// aufsteigende Nummer und prüft nach ihrem await, ob sie noch die aktuellste
+// ist – sonst würde ein spät auflösender Aufruf für Zeile A eine
+// zwischenzeitlich für Zeile B aufgeklappte Detailzeile wieder verdrängen,
+// obwohl B markiert bleibt.
+let letzteBuchDetailAnfrage = 0;
+
 /** Schließt das Detail (Accordion-Zeile), OHNE die Trefferliste neu zu laden oder ihre Scrollposition zu verändern. */
 function schliesseBuchDetail() {
+  letzteBuchDetailAnfrage += 1;
   state.katalogAusgewaehltNi = null;
   markiereAusgewaehlteZeile();
   for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
@@ -821,11 +849,26 @@ async function waehleKatalogZeile(row) {
   await zeigeBuchDetail(row);
 }
 
-/** Von woanders (Dashboard, Statistik) direkt zu einem Titel im Katalog springen und ihn dort auswählen. */
+/**
+ * Von woanders (Dashboard, Statistik) direkt zu einem Titel im Katalog
+ * springen und ihn dort auswählen. Setzt dafür den Direktsprung-Filter
+ * (state.katalogSprungNi), damit der Titel garantiert im Treffer steht –
+ * unabhängig davon, welche Seite/Suche/Filter im Katalog zuvor aktiv war.
+ * Sonst würde zeigeBuchDetail() die Zeile stumm nicht finden, wenn der Titel
+ * z. B. auf einer anderen Seite oder außerhalb eines aktiven Filters liegt.
+ */
 async function springeZuBuchDetail(katalogNi) {
   showView('katalog');
   const buch = await api.katalog.get(katalogNi);
-  if (buch) await waehleKatalogZeile(buch);
+  if (!buch) return;
+  // Andere Filter (Suche, Medienart, …) würden mit dem Direktsprung-Filter
+  // UND-verknüpft und könnten den Titel sonst trotzdem verstecken – deshalb
+  // vorher zurücksetzen, damit die Zeile sicher erscheint.
+  for (const f of KATALOG_FILTER_FELDER) f.zuruecksetzen();
+  state.katalogSprungNi = katalogNi;
+  state.katalogSeite = 1;
+  await loadKatalog();
+  await waehleKatalogZeile(buch);
 }
 
 /**
@@ -839,10 +882,15 @@ async function springeZuBuchDetail(katalogNi) {
  * Auswahl zu sehen.
  */
 async function zeigeBuchDetail(row) {
+  const anfrageId = (letzteBuchDetailAnfrage += 1);
   markiereAusgewaehlteZeile();
-  for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
   const inhalt = await baueBuchDetailInhalt(row);
+  // Zwischenzeitlich kam eine neuere Auswahl an (oder das Detail wurde
+  // geschlossen) – diese hier ist überholt und darf nichts mehr am DOM
+  // ändern, siehe letzteBuchDetailAnfrage oben.
+  if (anfrageId !== letzteBuchDetailAnfrage) return;
 
+  for (const tr of document.querySelectorAll('.katalog-detail-row')) tr.remove();
   const zeile = document.querySelector(`#katalog-tbody tr[data-katalog-ni="${row.KatalogNi}"]`);
   if (!zeile) return;
   const detailTr = el('tr', { class: 'katalog-detail-row' }, [
@@ -1705,7 +1753,11 @@ function renderMahnungenAktuell() {
               type: 'checkbox',
               'data-stufe-fuer-id': String(row.id),
               checked: istAlsMahnungMarkiert(row),
-              onchange: (e) => mahnStufeUeberschreibung.set(row.id, e.target.checked),
+              // Neu rendern, nicht nur den Wert merken: bei "Sortieren:
+              // Mahnung/Erinnerung" hängt die Gruppierung genau an dieser
+              // Markierung – sonst bliebe eine umgestellte Zeile bis zum
+              // nächsten Such-/Filterwechsel optisch in der falschen Gruppe.
+              onchange: (e) => { mahnStufeUeberschreibung.set(row.id, e.target.checked); renderMahnungenAktuell(); },
             }),
             ' Mahnung',
           ]),

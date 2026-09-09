@@ -6,6 +6,65 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.4.0 – 2026-09-09
+
+### Neu
+- **Kopfleisten-Uhr**: Digitaluhr mit Sekunden oben rechts, warnt kurz vor
+  Pausenende (10:15–10:18 Uhr gelb, 10:18–10:19 Uhr orange, 10:19–10:20 Uhr
+  rot-blinkend, danach wieder normal) – ein-/ausblendbar unter Einstellungen
+  → Aussehen und weitere App-Einstellungen.
+- **Ausleihsperre je Kind**: in der Nutzerakte unbefristet („Sperren“) oder
+  befristet („Für X Tage sperren“, Vorgabe 14 Tage, änderbar) sperrbar –
+  eine befristete Sperre läuft von selbst wieder ab. Der bestehende Filter
+  „Gesperrt“ in der Nutzerliste berücksichtigt das mit (Datenbank-Migration
+  Version 8, `Leser.IngaGesperrt`/`IngaGesperrtBis`, zusätzlich zu den
+  bestehenden Perpustakaan-Feldern `SperrungNi`/`AusleihBis`).
+- **Schuljahresende-Meldung**: ab einen Monat vor Beginn der eingetragenen
+  Sommerferien ein Hinweis auf der Übersicht für die Abschlussklasse
+  (Einstellung „Abschlussklasse“, Vorgabe „4“) mit Knöpfen zum Sperren bzw.
+  – nach Sicherheitsabfrage – Verschieben in den Papierkorb.
+- **Perpustakaan-kompatible Zip-Sicherung beim Start**: zusätzlich zur
+  eigenen .sqlite3-Sicherung legt INGA jetzt einmal täglich beim
+  Programmstart auch eine `perpustakaan_backup_…zip` im selben
+  Sicherungsordner an – für den Fall, dass die Daten einmal wieder in einer
+  echten Perpustakaan-Installation gebraucht werden.
+- Mahnungen: neue Sortierung „Mahnung/Erinnerung“ – gruppiert die
+  Rückstandsliste so, dass beide Einstufungen jeweils für sich beieinander
+  stehen (Mahnung-Gruppe zuerst), innerhalb einer Gruppe weiter nach Tagen
+  überfällig.
+
+### Behoben
+- **Import laufender Ausleihen aus echten Perpustakaan-Sicherungen**: das
+  Original führt laufende („Ausleihe“, „Rueckgabe“ = Fälligkeit) und
+  abgeschlossene Ausleihen („AuslHist“, „Rueckgabe“ = tatsächliches
+  Rückgabedatum) in zwei getrennten Tabellen. Beim Import wurde
+  „Ausleihe.csv“ bisher 1:1 spaltenweise übernommen – jede laufende
+  Ausleihe hatte danach fälschlich ein gesetztes „Rueckgabe“ und galt als
+  bereits zurückgegeben, die komplette Rückgabehistorie („AuslHist“, keine
+  INGA-native Tabelle) ging unbemerkt verloren. Import und Export führen
+  beide Tabellen jetzt korrekt zusammen bzw. spalten sie wieder auf.
+- Deaktivierte „Bestätigen“-Knöpfe (`.button.primary:disabled`) wurden per
+  Transparenz abgedunkelt – mischte sich mit dem Hintergrund zu einem
+  unklaren „Grau mit Orange-Stich“ statt erkennbar „gerade nicht
+  klickbar“. Jetzt eine feste, eindeutige Deaktiviert-Optik, auch in den
+  Druckfenstern.
+- Buchdetail (Katalog): das feste Seitenpanel neben der Trefferliste
+  scrollte auf kleineren Bildschirmen unabhängig von der Liste und lag oft
+  weit weg von der angeklickten Zeile. Das Detail klappt jetzt immer direkt
+  unter der gewählten Zeile auf und scrollt sich danach von selbst ins
+  Bild – keine Fensterbreiten-Fallunterscheidung mehr nötig.
+- Sprung vom Dashboard/Statistik zu einem Titel im Katalog blieb wirkungslos,
+  wenn dieser gerade durch eine andere Seite/Suche/Filter verdeckt war (die
+  Detailzeile hätte sich unter eine gar nicht sichtbare Tabellenzeile
+  hängen müssen). Der Sprung setzt die Katalog-Filter jetzt selbst zurück
+  und sorgt so dafür, dass der Titel garantiert im Treffer steht.
+- Mahnungen: das Ankreuzen/Entfernen von „Mahnung“ bei einer einzelnen Zeile
+  wirkte sich bei der Sortierung „Mahnung/Erinnerung“ erst nach dem
+  nächsten Such- oder Filterwechsel auf die Gruppierung aus.
+- Katalog: schnell aufeinanderfolgende Auswahl (z. B. gehaltene Pfeiltaste)
+  konnte dazu führen, dass die aufgeklappte Detailzeile zur falschen Zeile
+  gehörte, wenn eine ältere Anfrage später als eine neuere fertig wurde.
+
 ## 0.3.0 – 2026-09-09
 
 ### Neu
