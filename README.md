@@ -69,11 +69,14 @@ Ferienschließzeit.
   Signatur/den Barcode einzelner Exemplare ab
 - Exemplare mit Barcode/Etikett verwalten, Ausleihstatus pro Exemplar –
   Etiketten dafür direkt ausdrucken, siehe „Etiketten“ unten
-- **Buchcover**: automatischer Download per ISBN/EAN von
-  [Open Library](https://openlibrary.org/dev/docs/api/covers) (frei, ohne
-  Konto), alternativ manueller Upload – einzeln pro Titel oder als
-  Sammel-Download für den ganzen Bestand (mit Fortschrittsanzeige, unter
-  „Import / Export“)
+- **Buchcover**: automatischer Download per ISBN/EAN, probiert dafür
+  mehrere freie Quellen nacheinander ([Open Library](https://openlibrary.org/dev/docs/api/covers),
+  danach [Google Books](https://developers.google.com/books)), beide ohne
+  Konto – alternativ manueller Upload. Einzeln pro Titel, als Sammel-Download
+  für den ganzen Bestand (mit Fortschrittsanzeige, unter „Import / Export“ –
+  dort wird nach jedem Bestandsimport aktiv nachgefragt), oder automatisch
+  beim Anlegen eines neuen Titels mit ISBN/EAN. Ohne Treffer bei keiner
+  Quelle zeigt INGA ein generisches Platzhalterbild statt einer Lücke.
 - Ausleihstatistik je Titel („insgesamt N× ausgeliehen“)
 - **Antolin-Klassenstufe** je Titel (freies Feld) für Titel mit
   Antolin-Lesequiz

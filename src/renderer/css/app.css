@@ -173,10 +173,23 @@ button { cursor: pointer; }
 .rank-cover {
   flex: none; width: 32px; height: 44px;
   border-radius: 3px; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--fill); font-size: 1.1rem;
+  background: var(--fill);
 }
 .rank-cover img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Generisches Cover-Platzhalterbild – überall wo (noch) kein echtes Cover
+   vorliegt, statt einer Emoji-Notlösung (rendert je nach System-Emoji-Font
+   unterschiedlich und wirkt weniger wie "ein Bild"). Neutrales Buch-Symbol,
+   funktioniert unverändert in Hell und Dunkel. */
+.cover-platzhalter-bild {
+  width: 100%; height: 100%;
+  background-color: var(--fill);
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%2398a2b3%22%20d%3D%22M6%203h11a3%203%200%200%201%203%203v15H9a3%203%200%200%201-3-3V3z%22%2F%3E%3Cpath%20fill%3D%22%237c8797%22%20d%3D%22M6%203h2.4v18H9a3%203%200%200%201-3-3V3z%22%2F%3E%3Crect%20x%3D%2211.4%22%20y%3D%227.4%22%20width%3D%227%22%20height%3D%221.3%22%20rx%3D%22.65%22%20fill%3D%22%23fff%22%20opacity%3D%22.55%22%2F%3E%3Crect%20x%3D%2211.4%22%20y%3D%2210.6%22%20width%3D%227%22%20height%3D%221.3%22%20rx%3D%22.65%22%20fill%3D%22%23fff%22%20opacity%3D%22.55%22%2F%3E%3Crect%20x%3D%2211.4%22%20y%3D%2213.8%22%20width%3D%224.6%22%20height%3D%221.3%22%20rx%3D%22.65%22%20fill%3D%22%23fff%22%20opacity%3D%22.55%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 42%;
+}
+.rank-cover .cover-platzhalter-bild { background-size: 55%; }
 
 .empty.small { padding: 26px 10px; }
 .empty.small .icon { font-size: 1.6rem; margin-bottom: 6px; }
@@ -332,7 +345,6 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   border: 1px solid var(--line);
 }
 .cover-frame img { width: 100%; height: 100%; object-fit: cover; }
-.cover-placeholder { font-size: 2.4rem; opacity: 0.5; }
 .cover-actions { display: flex; flex-direction: column; gap: 6px; }
 .cover-actions .button { width: 100%; }
 

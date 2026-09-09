@@ -201,7 +201,7 @@ function renderTopAusgeliehen(top10) {
     return;
   }
   top10.forEach((row, i) => {
-    const cover = el('div', { class: 'rank-cover' }, [el('span', {}, ['📕'])]);
+    const cover = el('div', { class: 'rank-cover' }, [el('div', { class: 'cover-platzhalter-bild' })]);
     box.appendChild(
       el('div', { class: 'list-row', onclick: () => springeZuBuchDetail(row.KatalogNi) }, [
         el('div', { class: 'rank' }, [String(i + 1)]),
@@ -606,7 +606,7 @@ function buildIsbnLookupBlock() {
 }
 
 function buildCoverPanel(row) {
-  const frame = el('div', { class: 'cover-frame' }, [el('span', { class: 'cover-placeholder' }, ['📕'])]);
+  const frame = el('div', { class: 'cover-frame' }, [el('div', { class: 'cover-platzhalter-bild' })]);
   const panel = el('div', { class: 'cover-panel' }, [frame]);
 
   if (!row?.KatalogNi) {
@@ -622,7 +622,7 @@ function buildCoverPanel(row) {
   async function refreshFrame({ neuLaden } = {}) {
     if (neuLaden) invalidiereCover(row.KatalogNi);
     const dataUrl = await holeCoverGecacht(row.KatalogNi);
-    frame.replaceChildren(dataUrl ? el('img', { src: dataUrl, alt: '' }) : el('span', { class: 'cover-placeholder' }, ['📕']));
+    frame.replaceChildren(dataUrl ? el('img', { src: dataUrl, alt: '' }) : el('div', { class: 'cover-platzhalter-bild' }));
     removeBtn.hidden = !dataUrl;
   }
 
@@ -630,7 +630,7 @@ function buildCoverPanel(row) {
     downloadBtn.disabled = true;
     const result = await api.cover.fetchOne(row.KatalogNi);
     downloadBtn.disabled = false;
-    if (result.ok) { toast('Cover geladen.'); await refreshFrame({ neuLaden: true }); }
+    if (result.ok) { toast(`Cover geladen${result.quelle ? ` (${result.quelle})` : ''}.`); await refreshFrame({ neuLaden: true }); }
     else toast(`Kein Cover gefunden (${result.grund || 'unbekannt'}).`, 'error');
   });
   uploadBtn.addEventListener('click', async () => {
@@ -681,10 +681,22 @@ function openKatalogSheet(row) {
     wide: true,
     onSave: async (values) => {
       const payload = row ? { ...values, KatalogNi: row.KatalogNi } : values;
-      await api.katalog.save(payload);
+      const katalogNi = await api.katalog.save(payload);
       await loadKatalog();
       await refreshKennzahlen();
       toast('Gespeichert.');
+      // Bei neuen Titeln mit ISBN/EAN automatisch nach einem Cover suchen –
+      // im Hintergrund (nicht abgewartet), damit das Sheet nicht erst auf den
+      // Netzwerkaufruf warten muss. Beim Bearbeiten bestehender Titel nicht:
+      // ein vorhandenes/bewusst entferntes Cover soll nicht überraschend
+      // wieder auftauchen.
+      if (!row && (payload.ISBN || payload.EAN)) {
+        api.cover.fetchOne(katalogNi).then((result) => {
+          if (!result.ok) return;
+          invalidiereCover(katalogNi);
+          toast(`Cover automatisch gefunden${result.quelle ? ` (${result.quelle})` : ''}.`);
+        });
+      }
     },
     onDelete: row
       ? async () => {
@@ -2010,6 +2022,31 @@ function aktualisiereCoverFortschritt(p) {
   statusEl.textContent = `${p.done}/${p.total} geprüft – ${p.gefunden} Cover gefunden, ${p.fehler} ohne Treffer.`;
 }
 
+/**
+ * Sammel-Cover-Download (Open Library, dann Google Books – siehe
+ * cover-quellen.js) – dieselbe Aktion wie der Knopf "Cover herunterladen …"
+ * in Import/Export, wiederverwendet für die aktive Nachfrage direkt nach
+ * einem Bestandsimport.
+ */
+async function starteCoverBulkDownload(nurFehlende) {
+  const startBtn = document.getElementById('cover-download-start');
+  const cancelBtn = document.getElementById('cover-download-abbrechen');
+  const statusEl = document.getElementById('cover-download-status');
+  const track = document.getElementById('cover-progress-track');
+  const fill = document.getElementById('cover-progress-fill');
+  startBtn.disabled = true;
+  cancelBtn.hidden = false;
+  track.hidden = false;
+  fill.style.width = '0%';
+  statusEl.textContent = 'Starte Download …';
+  const result = await api.cover.fetchAll({ nurFehlende });
+  startBtn.disabled = false;
+  cancelBtn.hidden = true;
+  statusEl.textContent = `Fertig: ${result.gefunden} Cover geladen, ${result.fehler} ohne Treffer, von ${result.total} geprüften Titeln${result.abgebrochen ? ' (abgebrochen)' : ''}.`;
+  toast(`${result.gefunden} Cover heruntergeladen.`);
+  return result;
+}
+
 function wireBestand() {
   document.getElementById('bestand-import').addEventListener('click', async () => {
     try {
@@ -2019,6 +2056,12 @@ function wireBestand() {
       state.stammdaten = await api.stammdaten.get();
       await fuelleAlleFilter();
       await refreshKennzahlen();
+      // Aktiv nachfragen statt stumm zu verlinken – ein frischer Import bringt
+      // meist etliche Titel ohne Cover mit. "Nur fehlende" ist hier immer
+      // richtig: gerade importierte Titel haben ohnehin noch keins.
+      if (confirm('Sollen jetzt automatisch Buchcover für die importierten Titel heruntergeladen werden?\n\nVersucht dafür mehrere Quellen nacheinander (Open Library, Google Books) und kann je nach Bestandsgröße einige Minuten dauern.')) {
+        await starteCoverBulkDownload(true);
+      }
     } catch (err) {
       toast(`Import fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}. Ist die Datei ein gültiges Perpustakaan-Export-Zip?`, 'error');
     }
@@ -2033,26 +2076,10 @@ function wireBestand() {
     }
   });
 
-  const startBtn = document.getElementById('cover-download-start');
-  const cancelBtn = document.getElementById('cover-download-abbrechen');
-  const statusEl = document.getElementById('cover-download-status');
-  const track = document.getElementById('cover-progress-track');
-  const fill = document.getElementById('cover-progress-fill');
-
-  startBtn.addEventListener('click', async () => {
-    const nurFehlende = !document.getElementById('cover-alle-neu').checked;
-    startBtn.disabled = true;
-    cancelBtn.hidden = false;
-    track.hidden = false;
-    fill.style.width = '0%';
-    statusEl.textContent = 'Starte Download …';
-    const result = await api.cover.fetchAll({ nurFehlende });
-    startBtn.disabled = false;
-    cancelBtn.hidden = true;
-    statusEl.textContent = `Fertig: ${result.gefunden} Cover geladen, ${result.fehler} ohne Treffer, von ${result.total} geprüften Titeln${result.abgebrochen ? ' (abgebrochen)' : ''}.`;
-    toast(`${result.gefunden} Cover heruntergeladen.`);
+  document.getElementById('cover-download-start').addEventListener('click', () => {
+    starteCoverBulkDownload(!document.getElementById('cover-alle-neu').checked);
   });
-  cancelBtn.addEventListener('click', () => api.cover.fetchAllCancel());
+  document.getElementById('cover-download-abbrechen').addEventListener('click', () => api.cover.fetchAllCancel());
 }
 
 /* ---------------------------------------------------------- Einstellungen */

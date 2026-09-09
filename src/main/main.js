@@ -36,6 +36,7 @@ const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
 const { holeBuchdaten } = require('./isbn');
+const { coverFuerIsbnLaden } = require('./cover-quellen');
 const matrix = require('./matrix');
 
 /** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
@@ -294,30 +295,27 @@ async function coverDataUrl(katalogNi) {
   }
 }
 
-/** Lädt das Cover eines Titels per ISBN/EAN von Open Library (frei, ohne API-Key). */
+/**
+ * Lädt das Cover eines Titels per ISBN/EAN – probiert dafür mehrere freie
+ * Quellen nacheinander (siehe cover-quellen.js: Open Library, dann Google
+ * Books), damit ein Titel, den die erste Quelle nicht kennt, noch eine
+ * zweite Chance bekommt, bevor er als „kein Cover gefunden“ gilt.
+ */
 async function downloadCoverForKatalog(katalogNiRoh) {
   const katalogNi = alsKatalogNi(katalogNiRoh);
   const katalog = repo.getKatalog(db, katalogNi);
-  const isbn = String(katalog?.ISBN || katalog?.EAN || '').replace(/[^0-9Xx]/g, '');
-  if (!isbn) return { ok: false, grund: 'keine ISBN/EAN hinterlegt' };
+  const isbn = katalog?.ISBN || katalog?.EAN || '';
+  if (!String(isbn).replace(/[^0-9Xx]/g, '')) return { ok: false, grund: 'keine ISBN/EAN hinterlegt' };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const res = await fetch(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, { signal: controller.signal });
-    if (!res.ok) return { ok: false, grund: 'kein Cover gefunden' };
-    const buf = Buffer.from(await res.arrayBuffer());
-    // Open Library liefert bei unbekannter ISBN gelegentlich ein winziges
-    // Platzhalterbild statt eines Fehlers – daran erkennen wir „nicht gefunden“.
-    if (buf.byteLength < 900) return { ok: false, grund: 'kein Cover gefunden' };
+    const ergebnis = await coverFuerIsbnLaden(isbn);
+    if (!ergebnis.ok) return ergebnis;
     const dateiname = `${katalogNi}.jpg`;
-    await fs.writeFile(path.join(coversDir, dateiname), buf);
-    repo.setCover(db, katalogNi, dateiname, 'openlibrary');
-    return { ok: true };
+    await fs.writeFile(path.join(coversDir, dateiname), ergebnis.buf);
+    repo.setCover(db, katalogNi, dateiname, ergebnis.quelle);
+    return { ok: true, quelle: ergebnis.quelleName };
   } catch (err) {
-    return { ok: false, grund: err.name === 'AbortError' ? 'Zeitüberschreitung' : err.message };
-  } finally {
-    clearTimeout(timeout);
+    return { ok: false, grund: err.message };
   }
 }
 
