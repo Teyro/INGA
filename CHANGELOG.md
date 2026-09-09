@@ -6,6 +6,8 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.2.0 – 2026-09-09
+
 ### Neu
 - **Mahnungen über Element (Matrix) verschicken**: vierte Option neben
   Druck/PDF/E-Mail im Mahnungen-Druckfenster. Adresse wird automatisch aus
