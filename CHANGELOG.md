@@ -6,6 +6,68 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.3.0 – 2026-09-09
+
+### Neu
+- **Einstellungen zusammengefasst**: ein Menüpunkt „Einstellungen“ mit genau
+  drei Unterpunkten (Ferien / Mahnungen / Aussehen und weitere
+  App-Einstellungen) statt verstreuter Dialoge – links eine schmale Liste,
+  rechts der Inhalt. Neue Felder Schriftgröße und Bibliotheksname (neuer
+  Platzhalter `{Bibliothek}` in Mahntexten).
+- **Ferien**: Übersicht bündelt zusammenhängende Tage zu Abschnitten und
+  gruppiert nach Schuljahr (Accordion, standardmäßig bis aufs laufende
+  zugeklappt, vergangene ausblendbar, ganzes Schuljahr auf einmal löschbar).
+  Import zeigt vorher, was dazukommt, und überspringt Dubletten. **Der
+  eigentliche Zweck der Ferienverwaltung**: eine Ausleihfrist verlängert
+  sich jetzt automatisch um die Länge jedes Ferien-/Schließzeit-Abschnitts,
+  der die Ausleihspanne berührt (Kalender- oder Schultage wählbar) – wirkt
+  auch auf Mahnfristen.
+- **Buchdetail ruhiger**: fester Detailbereich neben der Trefferliste statt
+  eines Flyouts darüber (Accordion-Fallback bei schmalem Fenster). Liste
+  bleibt sichtbar und behält ihre Scrollposition, Pfeiltasten/Escape
+  bedienbar, Status (verfügbar/ausgeliehen an wen/bis wann) steht vor den
+  reinen Katalogdaten.
+- **Ausleihe mit Namenssuche**: die Felder „Kind“/„Buch“ akzeptieren jetzt
+  Nummer oder Klartext, mit unscharfer, tastaturbedienbarer Vorschlagsliste
+  (neues `suche.js`, Levenshtein-basiert, ohne neue Abhängigkeit – findet
+  „Meier“ auch bei „Meyer“/„Maier“). Bereits ausgeliehene Exemplare bleiben
+  markiert sichtbar statt ausgeblendet zu werden.
+- **Mahnungen überarbeitet**: nur noch zwei Stufen (Erinnerung ans Kind,
+  Mahnung an die Eltern, Vorgabe ab 7 Tagen). Rückstandsliste mit
+  einstellbarer Schwelle und je Fall übersteuerbarer Erinnerung/Mahnung-
+  Markierung (Checkbox rechts in der Zeile), Sammel-Erstellung je Kind mit
+  Vorschau vor dem Drucken, protokolliert je Fall, welche Stufe wann
+  verschickt wurde (Datenbank-Migration Version 7, `Mahnung.IngaStufe`).
+- **Buchcover aus mehreren Quellen**: probiert jetzt Open Library und danach
+  Google Books. Nach jedem Bestandsimport aktive Nachfrage, ob die Cover
+  gleich mit heruntergeladen werden sollen; neue Titel mit ISBN/EAN suchen
+  ihr Cover automatisch im Hintergrund. Generisches Platzhalterbild ersetzt
+  die bisherige Emoji-Notlösung.
+- **Kopfleisten-Uhr**: Digitaluhr mit Sekunden oben rechts, warnt kurz vor
+  Pausenende (10:15–10:18 Uhr gelb, 10:18–10:19 Uhr orange, 10:19–10:20 Uhr
+  rot-blinkend, danach wieder normal) – ein-/ausblendbar.
+- **Ausleihsperre je Kind**: in der Nutzerakte unbefristet („Sperren“) oder
+  befristet („Für X Tage sperren“, Vorgabe 14 Tage, änderbar) sperrbar –
+  eine befristete Sperre läuft von selbst wieder ab. Der bestehende Filter
+  „Gesperrt“ in der Nutzerliste berücksichtigt das mit (Datenbank-Migration
+  Version 8, `Leser.IngaGesperrt`/`IngaGesperrtBis`).
+- **Schuljahresende-Meldung**: ab einen Monat vor Beginn der eingetragenen
+  Sommerferien ein Hinweis auf der Übersicht für die Abschlussklasse
+  (Einstellung „Abschlussklasse“, Vorgabe „4“) mit Knöpfen zum Sperren bzw.
+  – nach Sicherheitsabfrage – Verschieben in den Papierkorb.
+
+### Behoben
+- `searchLeser`: ein SQL-Bug (Drei-Wert-Logik bei NULL-Vergleichen) ließ
+  Nutzer:innen ohne jede Sperre im Filter „Aktiv“ fälschlich gar nicht
+  auftauchen.
+- Mahnungen: eine per Checkbox gesetzte Erinnerung/Mahnung-Übersteuerung
+  ging beim Neu-Rendern der Rückstandsliste (Suche/Filter, oder nach dem
+  ersten der beiden „…erstellen“-Knöpfe) wieder verloren.
+- Druckfenster (Mahnungen/Im Umlauf/Etiketten) hatten `app.css` nie
+  mitgeladen und zeigten dadurch unstylisierte Browser-Standardknöpfe ohne
+  jeden Kontrast – jetzt mit denselben Stilen wie das Hauptfenster, dazu
+  eine eigene, kräftige Farbe für alle „Bestätigen“-Knöpfe.
+
 ## 0.2.0 – 2026-09-09
 
 ### Neu
