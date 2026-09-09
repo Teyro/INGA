@@ -348,3 +348,79 @@ test('Papierkorb: Exemplar lässt sich nicht wiederherstellen, wenn der Titel in
   assert.throws(() => repo.medienWiederherstellen(db, eintrag.id), /Titel wurde inzwischen gelöscht/);
   db.close();
 });
+
+/**
+ * Medienarten: unsere Bücherei verleiht nur Bücher und Hörbuch-/Audio-CDs –
+ * alles andere ist standardmäßig aus Katalog-Auswahl/-Filter ausgeblendet
+ * ("MedArt"."verbergen", ein natives, bisher ungenutztes Perpustakaan-Feld).
+ * Echte Perpustakaan-Sicherungen lassen diese Spalte immer leer, deshalb
+ * trägt der Import die Standard-Klassifizierung nach, sofern noch keine
+ * bewusste Wahl vorliegt.
+ */
+function baueMiniMedArtZip(zeilen) {
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip();
+  zip.addFile('MedArt.csv', Buffer.from(['MedArtKb;MedArtBz;Frist;FristVerl;verbergen', ...zeilen].join('\r\n') + '\r\n', 'utf8'));
+  const zipPath = path.join(tmpDir(), 'medart.zip');
+  zip.writeZip(zipPath);
+  return zipPath;
+}
+
+test('importZip: Medienarten ohne "verbergen" in der Sicherung bekommen die Standard-Sichtbarkeit (nur Buch/Hörbuch-CD sichtbar)', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  const zipPath = baueMiniMedArtZip(['Buc;Buch;;;', 'HB;Hörbuch-CD;;;', 'DVD;DVD;;;']);
+  importZip(db, zipPath);
+
+  const verbergen = (kb) => db.prepare(`SELECT "verbergen" AS v FROM "MedArt" WHERE "MedArtKb" = ?`).get(kb).v;
+  assert.equal(Number(verbergen('Buc')), 0);
+  assert.equal(Number(verbergen('HB')), 0);
+  assert.equal(Number(verbergen('DVD')), 1);
+  db.close();
+});
+
+test('importZip: ein in der Sicherung explizit gesetztes "verbergen" wird nicht durch die Standard-Klassifizierung überschrieben', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  // Zeitschrift würde nach dem Namen ausgeblendet, ist hier aber bereits
+  // explizit auf sichtbar (0) gesetzt und muss das auch bleiben.
+  const zipPath = baueMiniMedArtZip(['ZS;Zeitschrift;;;0']);
+  importZip(db, zipPath);
+  assert.equal(Number(db.prepare(`SELECT "verbergen" AS v FROM "MedArt" WHERE "MedArtKb" = 'ZS'`).get().v), 0);
+  db.close();
+});
+
+test('medArtEinstellungenSpeichern: Frist, Verlängerung und "verbergen" lassen sich einzeln setzen und wieder auf Vorgabe zurücksetzen', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  db.prepare(`INSERT INTO "MedArt" ("MedArtKb","MedArtBz") VALUES ('DVD', 'DVD')`).run();
+
+  repo.medArtEinstellungenSpeichern(db, 'DVD', { frist: '21', fristVerl: '7', verbergen: true });
+  let art = db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = 'DVD'`).get();
+  assert.equal(art.Frist, 21);
+  assert.equal(art.FristVerl, 7);
+  assert.equal(Number(art.verbergen), 1);
+
+  repo.medArtEinstellungenSpeichern(db, 'DVD', { frist: '', fristVerl: '', verbergen: false });
+  art = db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = 'DVD'`).get();
+  assert.equal(art.Frist, null, 'leer = Vorgabe aus den Einstellungen gilt wieder');
+  assert.equal(Number(art.verbergen), 0);
+  db.close();
+});
+
+test('Export/Import-Umlauf: eine bewusst eingeblendete Medienart bleibt auch nach einem vollen Roundtrip sichtbar (SQLite liefert "verbergen" danach als Text-"0", nicht als Zahl)', () => {
+  const dir = tmpDir();
+  const db = openDatabase(dir);
+  db.prepare(`INSERT INTO "MedArt" ("MedArtKb","MedArtBz") VALUES ('ZS', 'Zeitschrift')`).run();
+  repo.medArtEinstellungenSpeichern(db, 'ZS', { frist: '', fristVerl: '', verbergen: false });
+
+  const outZip = path.join(dir, 'export.zip');
+  exportZip(db, outZip);
+  importZip(db, outZip);
+
+  const nachImport = db.prepare(`SELECT "verbergen" AS v FROM "MedArt" WHERE "MedArtKb" = 'ZS'`).get().v;
+  assert.equal(typeof nachImport, 'string', 'Testannahme: aus der CSV importierte Werte kommen als Text zurück');
+  assert.equal(nachImport, '0');
+  assert.equal(Number(nachImport), 0, 'Number(...) statt roher Wahrheitswert ist Pflicht, siehe medArtIstVerborgen() im Renderer');
+  db.close();
+});

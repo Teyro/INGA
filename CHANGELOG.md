@@ -6,6 +6,23 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.5.0 – 2026-09-09
+
+### Neu
+- **Medienarten aus- und einblenden**: unsere Bücherei verleiht nur Bücher
+  und Hörbuch-/Audio-CDs – Katalog-Auswahl (Neuanlage/Bearbeiten) und
+  -Filter zeigen deshalb standardmäßig nur diese beiden, alle anderen
+  Medienarten (Zeitschrift, DVD, Spiel, Software, …) sind ausgeblendet.
+  Einzeln wieder einblendbar unter Einstellungen → Aussehen und weitere
+  App-Einstellungen → Medienarten, direkt neben den schon vorhandenen
+  Leih-/Verlängerungsfristen je Medienart. Bereits katalogisierte Titel
+  bleiben unabhängig davon immer sichtbar/bearbeitbar. Nutzt ein natives,
+  bisher ungenutztes Perpustakaan-Feld (`MedArt.verbergen`) – bleibt beim
+  Export/Import erhalten, eine echte Perpustakaan-Sicherung liefert es
+  aber praktisch immer leer, weshalb der Import fehlende Werte einmalig
+  nach Bezeichnung vorbelegt (bestehende Datenbanken erhalten dieselbe
+  Vorbelegung per Migration).
+
 ## 0.4.0 – 2026-09-09
 
 ### Neu

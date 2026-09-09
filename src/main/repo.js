@@ -1111,12 +1111,18 @@ function removeCover(db, katalogNi) {
 
 /* ---------------------------------------------------------- Stammdaten */
 
-/** Abweichende Leih-/Verlängerungsfrist einer Medienart speichern (leer = Vorgabe aus den Einstellungen gilt wieder). */
-function medArtFristSpeichern(db, medArtKb, { frist, fristVerl }) {
+/**
+ * Medienart-Einstellungen speichern: abweichende Leih-/Verlängerungsfrist
+ * (leer = Vorgabe aus den Einstellungen gilt wieder) sowie ob sie in
+ * Katalog-Auswahl/-Filter auftaucht ("verbergen" – ein natives
+ * Perpustakaan-Feld, siehe medArtStandardVerbergen()/Migration Version 9).
+ */
+function medArtEinstellungenSpeichern(db, medArtKb, { frist, fristVerl, verbergen }) {
   const zuNullOderZahl = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
-  db.prepare(`UPDATE "MedArt" SET "Frist" = ?, "FristVerl" = ? WHERE "MedArtKb" = ?`).run(
+  db.prepare(`UPDATE "MedArt" SET "Frist" = ?, "FristVerl" = ?, "verbergen" = ? WHERE "MedArtKb" = ?`).run(
     zuNullOderZahl(frist),
     zuNullOderZahl(fristVerl),
+    verbergen ? 1 : 0,
     medArtKb
   );
 }
@@ -1348,7 +1354,7 @@ module.exports = {
   naechsteSommerferien,
   abschlussMeldung,
   kinderInPapierkorbVerschieben,
-  medArtFristSpeichern,
+  medArtEinstellungenSpeichern,
   kennzahlen,
   papierkorbLeserListe,
   papierkorbMedienListe,

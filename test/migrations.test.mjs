@@ -101,6 +101,30 @@ test('Migration Version 4: StandOrt-Altdaten aus legacy_rows (Perpustakaan-Impor
   db.close();
 });
 
+test('Migration Version 9: nur Buch/Hörbuch-CD werden beim Upgrade sichtbar, alles andere ausgeblendet – eine bereits getroffene Wahl bleibt unangetastet', () => {
+  const dir = tmpDir();
+
+  let db = openDatabase(dir);
+  const insert = db.prepare(`INSERT INTO "MedArt" ("MedArtKb","MedArtBz","verbergen") VALUES (?, ?, ?)`);
+  insert.run('Buc', 'Buch', null);
+  insert.run('HB', 'Hörbuch-CD', null);
+  insert.run('DVD', 'DVD', null);
+  insert.run('CDR', 'CD-ROM', null);
+  insert.run('ZS', 'Zeitschrift', 0); // bereits bewusst eingeblendet – Migration darf das nicht überschreiben
+  db.prepare(`UPDATE inga_meta SET value = '8' WHERE key = 'schema_version'`).run();
+  db.close();
+
+  db = openDatabase(dir);
+  assert.equal(gespeicherteSchemaVersion(db), SCHEMA_VERSION);
+  const verbergen = (kb) => db.prepare(`SELECT "verbergen" AS v FROM "MedArt" WHERE "MedArtKb" = ?`).get(kb).v;
+  assert.equal(verbergen('Buc'), 0, 'Buch soll sichtbar sein');
+  assert.equal(verbergen('HB'), 0, 'Hörbuch-CD soll sichtbar sein');
+  assert.equal(verbergen('DVD'), 1, 'DVD soll ausgeblendet sein');
+  assert.equal(verbergen('CDR'), 1, 'CD-ROM (Software) soll trotz "CD" im Namen ausgeblendet sein');
+  assert.equal(verbergen('ZS'), 0, 'eine bereits getroffene Wahl darf die Migration nicht überschreiben');
+  db.close();
+});
+
 test('Migration Version 5: Vormerkung-Altdaten aus legacy_rows gehen beim Upgrade nicht verloren', () => {
   const dir = tmpDir();
 

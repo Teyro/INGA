@@ -405,8 +405,31 @@ function closeSheet() {
 
 /* -------------------------------------------------------------- Katalog */
 
-function medArtOptions() {
-  return (state.stammdaten.MedArt || []).map((m) => ({ value: m.MedArtKb, label: m.MedArtBz }));
+/**
+ * Medienarten für Auswahllisten – standardmäßig ohne die in den Einstellungen
+ * ausgeblendeten (siehe renderMedArtFristen(): unsere Bücherei verleiht nur
+ * Bücher und Hörbuch-CDs, den Rest braucht in der täglichen Auswahl
+ * niemand). `mitAuchKb` hält beim Bearbeiten eines vorhandenen Titels dessen
+ * eigene Medienart trotzdem in der Liste, auch wenn sie ausgeblendet ist –
+ * sonst würde ein Speichern sie unbemerkt auf eine andere Art umstellen.
+ */
+/**
+ * "MedArt"."verbergen" kommt aus SQLite mal als Zahl (0/1, direkt über
+ * medArtEinstellungenSpeichern geschrieben), mal als numerische Zeichenkette
+ * ("0"/"1", nach einem Export-Import-Umlauf über die Perpustakaan-CSV, die
+ * grundsätzlich nur Text kennt) – "0" ist in JavaScript aber wahr
+ * (truthy!), ein einfaches `!m.verbergen` würde eine bewusst eingeblendete
+ * Medienart nach genau so einem Umlauf fälschlich wieder als ausgeblendet
+ * behandeln. Number(...) macht den Vergleich unabhängig von der Herkunft.
+ */
+function medArtIstVerborgen(m) {
+  return Number(m?.verbergen) === 1;
+}
+
+function medArtOptions({ mitAuchKb } = {}) {
+  return (state.stammdaten.MedArt || [])
+    .filter((m) => !medArtIstVerborgen(m) || m.MedArtKb === mitAuchKb)
+    .map((m) => ({ value: m.MedArtKb, label: m.MedArtBz }));
 }
 function systematikOptions() {
   return (state.stammdaten.Systematik || []).map((s) => ({ value: s.SystemId, label: s.SystemBz }));
@@ -777,7 +800,7 @@ function openKatalogSheet(row) {
     { name: 'ErschJahr', label: 'Erscheinungsjahr', type: 'number' },
     { name: 'ISBN', label: 'ISBN' },
     { name: 'EAN', label: 'EAN' },
-    { name: 'MedArtKb', label: 'Medienart', type: 'select', options: medArtOptions() },
+    { name: 'MedArtKb', label: 'Medienart', type: 'select', options: medArtOptions({ mitAuchKb: row?.MedArtKb }) },
     { name: 'SystemId', label: 'Systematik', type: 'select', options: systematikOptions() },
     { name: 'Schlagwort', label: 'Schlagworte' },
     { name: 'KlasseAnto', label: 'Antolin-Klassenstufe' },
@@ -2539,7 +2562,14 @@ async function loadEinstellungen() {
   loadBackups();
 }
 
-/** Abweichende Fristen je Medienart – kleine Liste direkt in den Einstellungen, kein eigener Bereich nötig. */
+/**
+ * Medienarten: je Zeile ob sie in Katalog-Auswahl/-Filter auftaucht (die
+ * meisten Büchereien verleihen nur einen Teil der aus Perpustakaan
+ * importierten Medienarten – standardmäßig sind nur Buch und Hörbuch/
+ * Audio-CD angehakt, siehe STANDARD_SICHTBARE_MEDIENART_MUSTER) sowie ihre
+ * abweichenden Fristen. Direkt in den Einstellungen, kein eigener Bereich
+ * nötig.
+ */
 function renderMedArtFristen() {
   const box = document.getElementById('medart-fristen-liste');
   box.replaceChildren();
@@ -2550,16 +2580,25 @@ function renderMedArtFristen() {
   }
   for (const art of arten) {
     const speichern = debounce(async () => {
-      await api.medart.fristSpeichern({
+      await api.medart.einstellungenSpeichern({
         medArtKb: art.MedArtKb,
         frist: document.getElementById(`medart-frist-${art.MedArtKb}`).value,
         fristVerl: document.getElementById(`medart-fristverl-${art.MedArtKb}`).value,
+        verbergen: !document.getElementById(`medart-anzeigen-${art.MedArtKb}`).checked,
       });
-      toast(`Frist für „${art.MedArtBz}“ gespeichert.`);
+      toast(`„${art.MedArtBz}“ gespeichert.`);
+      state.stammdaten = await api.stammdaten.get();
+      renderMedArtFristen();
+      fuelleAlleFilter();
     }, 400);
     box.appendChild(
       el('div', { class: 'field-row', style: { alignItems: 'flex-end' } }, [
-        el('div', { class: 'field' }, [el('label', {}, [art.MedArtBz || art.MedArtKb])]),
+        el('div', { class: 'field' }, [
+          el('label', { class: 'checkbox-label' }, [
+            el('input', { id: `medart-anzeigen-${art.MedArtKb}`, type: 'checkbox', checked: !medArtIstVerborgen(art), onchange: speichern }),
+            ` ${art.MedArtBz || art.MedArtKb}`,
+          ]),
+        ]),
         el('div', { class: 'field' }, [
           el('label', {}, ['Leihfrist (Tage)']),
           el('input', { id: `medart-frist-${art.MedArtKb}`, type: 'number', min: '0', max: '365', value: art.Frist ?? '', placeholder: 'Vorgabe', onchange: speichern }),

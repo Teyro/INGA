@@ -659,8 +659,8 @@ function registerIpc() {
     return ergebnisse;
   });
 
-  ipcMain.handle('medart:frist-speichern', sicher((_e, { medArtKb, frist, fristVerl }) => {
-    repo.medArtFristSpeichern(db, medArtKb, { frist, fristVerl });
+  ipcMain.handle('medart:einstellungen-speichern', sicher((_e, { medArtKb, frist, fristVerl, verbergen }) => {
+    repo.medArtEinstellungenSpeichern(db, medArtKb, { frist, fristVerl, verbergen });
     return { ok: true };
   }));
 

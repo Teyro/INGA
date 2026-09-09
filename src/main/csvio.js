@@ -10,7 +10,7 @@
  */
 
 const AdmZip = require('adm-zip');
-const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, ID_BASIERTE_TABELLEN, TABLES, quoteIdent } = require('./db');
+const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, ID_BASIERTE_TABELLEN, TABLES, quoteIdent, medArtStandardVerbergen } = require('./db');
 
 function parseCsv(text) {
   const lines = text.split(/\r\n|\n/).filter((l) => l.length > 0);
@@ -132,6 +132,18 @@ function importZip(db, filePath, { onProgress } = {}) {
           const params = {};
           for (const c of cols) params[c] = row[c] === '' ? null : row[c];
           stmt.run(params);
+        }
+        // "verbergen" kennt das echte Perpustakaan nicht (kommt aus einer
+        // Sicherung fast immer leer) – ohne diesen Schritt stünden nach jedem
+        // Import wieder alle Medienarten in der Katalog-Auswahl, egal was in
+        // den Einstellungen zuletzt bewusst gewählt wurde. Siehe
+        // medArtStandardVerbergen() in db.js.
+        if (table === 'MedArt') {
+          const nachtragen = db.prepare(`UPDATE "MedArt" SET "verbergen" = ? WHERE "MedArtKb" = ? AND "verbergen" IS NULL`);
+          for (const row of rows) {
+            if (row.verbergen !== '' && row.verbergen !== undefined) continue;
+            nachtragen.run(medArtStandardVerbergen(row.MedArtBz) ? 1 : 0, row.MedArtKb);
+          }
         }
         continue;
       }

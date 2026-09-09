@@ -231,11 +231,16 @@ Dialoge:
   Bibliotheksname (Platzhalter `{Bibliothek}` in Mahntexten),
   **Kopfleisten-Uhr** ein-/ausblendbar, Standard-Leihfrist und maximale
   Verlängerungen, Standard-Sperrdauer und Abschlussklasse (siehe
-  Nutzerverwaltung), **Fristverschiebung** (ein Tage-Offset, der sofort auf
-  jede berechnete Fälligkeit wirkt – z. B. `+14` während einer
-  kurzfristigen, noch nicht als Ferieneintrag erfassten Schließzeit),
-  **einmalige Verschiebung** des Ausleihdatums aller offenen Ausleihen um
-  X Tage, sowie die **Datensicherung**: automatisches Backup einmal
+  Nutzerverwaltung). Dort außerdem je **Medienart** an-/abwählbar, ob sie in
+  Katalog-Auswahl und -Filter überhaupt zur Wahl steht (Vorbelegung: nur
+  Buch und Hörbuch/Audio-CD, alles andere ausgeblendet – bereits
+  katalogisierte Titel bleiben davon unberührt), samt ihrer abweichenden
+  Leih-/Verlängerungsfristen. Außerdem **Fristverschiebung** (ein
+  Tage-Offset, der sofort auf jede berechnete Fälligkeit wirkt – z. B.
+  `+14` während einer kurzfristigen, noch nicht als Ferieneintrag
+  erfassten Schließzeit), **einmalige Verschiebung** des Ausleihdatums
+  aller offenen Ausleihen um X Tage, sowie die **Datensicherung**:
+  automatisches Backup einmal
   täglich beim Programmstart und vor jeder Migration (Rotation: die
   letzten 10 bleiben erhalten, zusätzlich eine Perpustakaan-kompatible
   Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in

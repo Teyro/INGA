@@ -78,6 +78,24 @@ function quoteIdent(name) {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/**
+ * Standard-Sichtbarkeit einer Medienart anhand ihrer Bezeichnung, für
+ * "MedArt"."verbergen" (natives Perpustakaan-Feld, bisher ungenutzt): unsere
+ * Bücherei verleiht nur Bücher und Hörbuch-/Audio-CDs, alles andere
+ * (Zeitschriften, Spiele, DVDs, Software, …) ist deshalb standardmäßig aus
+ * Katalog-Auswahl und -Filter ausgeblendet – über die Einstellungen aber
+ * jederzeit einzeln wieder einblendbar (repo.medArtEinstellungenSpeichern).
+ * Angewendet, wo "verbergen" noch NICHT gesetzt ist: Migration Version 9
+ * unten für bereits vorhandene Medienarten, csvio.js beim Import für neu
+ * hinzukommende. Eine bewusste Wahl in den Einstellungen bleibt davon
+ * unberührt, weil dort immer explizit 0 oder 1 gespeichert wird.
+ */
+function medArtStandardVerbergen(medArtBz) {
+  const bz = String(medArtBz || '').toLowerCase();
+  if (/cd-?rom/.test(bz)) return true; // Software auf CD, kein Hörbuch
+  return !/buch|hörbuch|hoerbuch|hör.?cd|audio.?cd|\bcd\b/.test(bz);
+}
+
 function createSchema(db) {
   // Der Perpustakaan-Namenskonvention nach sind *Ni-Spalten durchlaufende
   // Nummern (KatalogNi, MedienNi, LeserNi, LeserGruNi …) – die werden als
@@ -200,7 +218,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 const MIGRATIONS = [
   {
     version: 2,
@@ -340,6 +358,17 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 9,
+    beschreibung: 'Medienarten: nur Buch/Hörbuch-CD standardmäßig in Katalog-Auswahl/-Filter sichtbar (natives Feld "MedArt"."verbergen")',
+    up(db) {
+      // Nur Zeilen ohne bisherigen Wert – eine schon getroffene Wahl (0 oder
+      // 1) bleibt unangetastet, siehe medArtStandardVerbergen() oben.
+      const arten = db.prepare(`SELECT "MedArtKb", "MedArtBz" FROM "MedArt" WHERE "verbergen" IS NULL`).all();
+      const setzen = db.prepare(`UPDATE "MedArt" SET "verbergen" = ? WHERE "MedArtKb" = ?`);
+      for (const art of arten) setzen.run(medArtStandardVerbergen(art.MedArtBz) ? 1 : 0, art.MedArtKb);
+    },
+  },
 ];
 
 function gespeicherteSchemaVersion(db) {
@@ -428,6 +457,7 @@ module.exports = {
   upsert,
   nextId,
   quoteIdent,
+  medArtStandardVerbergen,
   NATIVE_TABLES,
   DERIVED_TABLES,
   LEGACY_TABLES,
