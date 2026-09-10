@@ -74,13 +74,18 @@ Ferienschließzeit.
 - Exemplare mit Barcode/Etikett verwalten, Ausleihstatus pro Exemplar –
   Etiketten dafür direkt ausdrucken, siehe „Etiketten“ unten
 - **Buchcover**: automatischer Download per ISBN/EAN, probiert dafür
-  mehrere freie Quellen nacheinander ([Open Library](https://openlibrary.org/dev/docs/api/covers),
-  danach [Google Books](https://developers.google.com/books)), beide ohne
-  Konto – alternativ manueller Upload. Einzeln pro Titel, als Sammel-Download
-  für den ganzen Bestand (mit Fortschrittsanzeige, unter „Import / Export“ –
-  dort wird nach jedem Bestandsimport aktiv nachgefragt), oder automatisch
-  beim Anlegen eines neuen Titels mit ISBN/EAN. Ohne Treffer bei keiner
-  Quelle zeigt INGA ein generisches Platzhalterbild statt einer Lücke.
+  mehrere freie Quellen nacheinander – zuerst [Open Library](https://openlibrary.org/dev/docs/api/covers)
+  und [Google Books](https://developers.google.com/books) (beide ohne
+  Konto, extra für Bücher vorgesehen, über die ISBN), als Rückfallebene
+  danach die Bildersuche von DuckDuckGo und Qwant per Titel/Autor (für
+  Titel, die keine der beiden Buch-APIs kennt – kein offiziell
+  dokumentiertes Interface, kann gelegentlich nichts liefern, kostet dann
+  aber nur einen übersprungenen Versuch) – alternativ manueller Upload.
+  Einzeln pro Titel, als Sammel-Download für den ganzen Bestand (mit
+  Fortschrittsanzeige, unter „Import / Export“ – dort wird nach jedem
+  Bestandsimport aktiv nachgefragt), oder automatisch beim Anlegen eines
+  neuen Titels mit ISBN/EAN. Ohne Treffer bei keiner Quelle zeigt INGA ein
+  generisches Platzhalterbild statt einer Lücke.
 - Ausleihstatistik je Titel („insgesamt N× ausgeliehen“)
 - **Antolin-Klassenstufe** je Titel (freies Feld) für Titel mit
   Antolin-Lesequiz

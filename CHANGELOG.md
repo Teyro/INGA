@@ -6,6 +6,23 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.6.0 – 2026-09-10
+
+### Neu
+- **Cover-Suche: DuckDuckGo und Qwant als zusätzliche Quellen**. Findet
+  weder Open Library noch Google Books ein Cover zur ISBN (kleine/
+  regionale Verlage, Lehr-/Arbeitshefte, ältere Ausgaben), probiert INGA
+  jetzt zusätzlich die allgemeine Bildersuche von DuckDuckGo und Qwant –
+  per Titel/Autor statt ISBN, da beide keine ISBN-Datenbank sind. Beide
+  sind kein offiziell dokumentiertes Interface (dieselben Anfragen wie die
+  jeweils eigene Weboberfläche), deshalb bewusst nur als letzte
+  Rückfallebene hinter den beiden echten Buch-APIs, mit derselben
+  Fehlertoleranz wie jede andere Quelle: liefert eine nichts, wird ohne
+  Umweg die nächste probiert. Qwant blockiert Anfragen ohne echten Browser
+  inzwischen per Bot-Erkennung (Captcha) und liefert deshalb in der Praxis
+  meist kein Ergebnis – bleibt trotzdem als kostenloser, für den Ablauf
+  ungefährlicher Versuch in der Kette, falls sich das wieder ändert.
+
 ## 0.5.0 – 2026-09-09
 
 ### Neu

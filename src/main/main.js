@@ -297,9 +297,10 @@ async function coverDataUrl(katalogNi) {
 
 /**
  * Lädt das Cover eines Titels per ISBN/EAN – probiert dafür mehrere freie
- * Quellen nacheinander (siehe cover-quellen.js: Open Library, dann Google
- * Books), damit ein Titel, den die erste Quelle nicht kennt, noch eine
- * zweite Chance bekommt, bevor er als „kein Cover gefunden“ gilt.
+ * Quellen nacheinander (siehe cover-quellen.js: Open Library, Google Books,
+ * dann als Rückfallebene die Bildersuche von DuckDuckGo und Qwant per
+ * Titel/Autor), damit ein Titel, den die erste Quelle nicht kennt, noch
+ * eine weitere Chance bekommt, bevor er als „kein Cover gefunden“ gilt.
  */
 async function downloadCoverForKatalog(katalogNiRoh) {
   const katalogNi = alsKatalogNi(katalogNiRoh);
@@ -308,7 +309,7 @@ async function downloadCoverForKatalog(katalogNiRoh) {
   if (!String(isbn).replace(/[^0-9Xx]/g, '')) return { ok: false, grund: 'keine ISBN/EAN hinterlegt' };
 
   try {
-    const ergebnis = await coverFuerIsbnLaden(isbn);
+    const ergebnis = await coverFuerIsbnLaden(isbn, { titel: katalog?.Titel, autor: katalog?.Autor });
     if (!ergebnis.ok) return ergebnis;
     const dateiname = `${katalogNi}.jpg`;
     await fs.writeFile(path.join(coversDir, dateiname), ergebnis.buf);

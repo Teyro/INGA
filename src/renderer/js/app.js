@@ -2219,10 +2219,10 @@ function aktualisiereCoverFortschritt(p) {
 }
 
 /**
- * Sammel-Cover-Download (Open Library, dann Google Books – siehe
- * cover-quellen.js) – dieselbe Aktion wie der Knopf "Cover herunterladen …"
- * in Import/Export, wiederverwendet für die aktive Nachfrage direkt nach
- * einem Bestandsimport.
+ * Sammel-Cover-Download (Open Library, Google Books, dann als Rückfallebene
+ * DuckDuckGo/Qwant – siehe cover-quellen.js) – dieselbe Aktion wie der
+ * Knopf "Cover herunterladen …" in Import/Export, wiederverwendet für die
+ * aktive Nachfrage direkt nach einem Bestandsimport.
  */
 async function starteCoverBulkDownload(nurFehlende) {
   const startBtn = document.getElementById('cover-download-start');

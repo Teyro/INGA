@@ -9,9 +9,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { coverFuerIsbnLaden } = require('../src/main/cover-quellen.js');
+const { coverFuerIsbnLaden, duckDuckGo, qwant, COVER_QUELLEN } = require('../src/main/cover-quellen.js');
 
-/** Kleiner fetch()-Mock: Handler bekommt die URL, gibt {status, json?, bytes?} zurück. */
+/** Kleiner fetch()-Mock: Handler bekommt die URL, gibt {status, json?, text?, bytes?} zurück. */
 function mitGemocktemFetch(handler, fn) {
   const original = global.fetch;
   global.fetch = async (url) => {
@@ -20,6 +20,7 @@ function mitGemocktemFetch(handler, fn) {
       ok: antwort.status >= 200 && antwort.status < 300,
       status: antwort.status,
       json: async () => antwort.json,
+      text: async () => antwort.text ?? '',
       arrayBuffer: async () => antwort.bytes?.buffer ?? new ArrayBuffer(antwort.groesse ?? 0),
     };
   };
@@ -106,4 +107,77 @@ test('coverFuerIsbnLaden: ISBN wird von Trennzeichen befreit, bevor sie in die Q
     () => coverFuerIsbnLaden('978-3-551-55678-1')
   );
   assert.ok(angefragteUrls[0].includes('9783551556781'), `URL sollte die bereinigte ISBN enthalten: ${angefragteUrls[0]}`);
+});
+
+test('COVER_QUELLEN: DuckDuckGo und Qwant stehen als Rückfallebene HINTER den beiden Buch-APIs', () => {
+  const ids = COVER_QUELLEN.map((q) => q.id);
+  assert.deepEqual(ids, ['openlibrary', 'google-books', 'duckduckgo', 'qwant']);
+});
+
+test('coverFuerIsbnLaden: weder Open Library noch Google Books kennen die ISBN -> DuckDuckGo-Bildersuche liefert ein Cover', async () => {
+  await mitGemocktemFetch(
+    (url) => {
+      if (url.includes('covers.openlibrary.org') || url.includes('googleapis.com/books')) return { status: 404 };
+      if (url.startsWith('https://duckduckgo.com/?q=')) return { status: 200, text: `<script>vqd="1234-5678"</script>` };
+      if (url.startsWith('https://duckduckgo.com/i.js')) return { status: 200, json: { results: [{ image: 'https://bilder.example/cover.jpg' }] } };
+      if (url === 'https://bilder.example/cover.jpg') return { status: 200, groesse: 4000 };
+      return { status: 404 };
+    },
+    async () => {
+      const ergebnis = await coverFuerIsbnLaden('9780000000001', { titel: 'Die kleine Hexe', autor: 'Otfried Preußler' });
+      assert.equal(ergebnis.ok, true);
+      assert.equal(ergebnis.quelle, 'duckduckgo');
+      assert.equal(ergebnis.buf.byteLength, 4000);
+    }
+  );
+});
+
+test('coverFuerIsbnLaden: auch DuckDuckGo findet nichts -> Qwant-Bildersuche als letzte Quelle liefert ein Cover', async () => {
+  await mitGemocktemFetch(
+    (url) => {
+      if (url.includes('covers.openlibrary.org') || url.includes('googleapis.com/books') || url.includes('duckduckgo.com')) return { status: 404 };
+      if (url.startsWith('https://api.qwant.com/v3/search/images')) {
+        return { status: 200, json: { data: { result: { items: [{ media: 'https://bilder.example/qwant.jpg' }] } } } };
+      }
+      if (url === 'https://bilder.example/qwant.jpg') return { status: 200, groesse: 6000 };
+      return { status: 404 };
+    },
+    async () => {
+      const ergebnis = await coverFuerIsbnLaden('9780000000002', { titel: 'Die kleine Hexe' });
+      assert.equal(ergebnis.ok, true);
+      assert.equal(ergebnis.quelle, 'qwant');
+      assert.equal(ergebnis.buf.byteLength, 6000);
+    }
+  );
+});
+
+test('duckDuckGo(): kein "vqd"-Token auf der Trefferseite gefunden -> gilt als "nichts gefunden", kein Absturz', async () => {
+  await mitGemocktemFetch(
+    () => ({ status: 200, text: '<html>keine Bildertreffer</html>' }),
+    async () => {
+      const buf = await duckDuckGo('9780000000003', { titel: 'Unbekannter Titel' });
+      assert.equal(buf, null);
+    }
+  );
+});
+
+test('qwant(): Suchbegriff nutzt Titel+Autor statt der ISBN, wenn beide bekannt sind', async () => {
+  const angefragteUrls = [];
+  await mitGemocktemFetch(
+    (url) => { angefragteUrls.push(url); return { status: 404 }; },
+    () => qwant('9780000000004', { titel: 'Die kleine Hexe', autor: 'Otfried Preußler' })
+  );
+  const query = decodeURIComponent(angefragteUrls[0]);
+  assert.ok(query.includes('Die kleine Hexe Otfried Preußler'), `Suchbegriff sollte Titel+Autor enthalten: ${query}`);
+  assert.ok(!query.includes('9780000000004'), 'die ISBN soll nur als Notlösung im Suchbegriff stehen, nicht zusätzlich zu Titel/Autor');
+});
+
+test('qwant(): ohne Titel/Autor dient die ISBN als Suchbegriff', async () => {
+  const angefragteUrls = [];
+  await mitGemocktemFetch(
+    (url) => { angefragteUrls.push(url); return { status: 404 }; },
+    () => qwant('9780000000005', {})
+  );
+  const query = decodeURIComponent(angefragteUrls[0]);
+  assert.ok(query.includes('9780000000005'), `Suchbegriff sollte auf die ISBN zurückfallen: ${query}`);
 });
