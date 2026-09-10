@@ -90,9 +90,15 @@ Ferienschließzeit.
 - **Antolin-Klassenstufe** je Titel (freies Feld) für Titel mit
   Antolin-Lesequiz
 - **Buchdaten per ISBN nachschlagen**: Titel/Untertitel/Autor/Verlag/Jahr
-  über [Open Library](https://openlibrary.org/dev/docs/api/books) laden –
-  füllt nur das gerade offene Formular, gespeichert wird erst durch
-  bewusstes Bestätigen (Klick auf „Speichern“)
+  über [Open Library](https://openlibrary.org/dev/docs/api/books), bei
+  keinem Treffer zusätzlich [Google Books](https://developers.google.com/books)
+  laden. Beim Katalogisieren eines neuen Titels **automatisch**, sobald im
+  ISBN-Feld eine vollständige, gültige ISBN steht (getippt oder per
+  Scanner) – füllt dabei nur noch LEERE Felder, eine bereits eingetippte
+  Angabe wird nie überschrieben. Für bestehende Titel oder ein erneutes
+  Nachschlagen weiterhin auch per Knopf „Buchdaten übernehmen“ auslösbar.
+  Füllt in jedem Fall nur das gerade offene Formular, gespeichert wird
+  erst durch bewusstes Bestätigen (Klick auf „Speichern“)
 
 ### Etiketten
 

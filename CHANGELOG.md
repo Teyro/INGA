@@ -6,6 +6,26 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.7.0 – 2026-09-10
+
+### Neu
+- **Buchdaten automatisch beim Katalogisieren ergänzen**: sobald beim
+  Anlegen eines neuen Titels im ISBN-Feld eine vollständige, gültige ISBN
+  steht (getippt oder per Scanner eingelesen), werden Titel/Untertitel/
+  Autor/Verlag/Erscheinungsjahr automatisch nachgeschlagen und in die noch
+  leeren Felder eingetragen – ganz ohne eigenen Knopf-Klick. Bereits
+  eingetippte Angaben werden nie überschrieben, gespeichert wird
+  weiterhin erst durch bewusstes Bestätigen. Die Nachschlage-Quelle nutzt
+  jetzt zusätzlich Google Books als zweite Chance, wenn Open Library
+  nichts findet (siehe „Buchdaten per ISBN nachschlagen“ oben im
+  Katalog). Der bestehende Knopf „Buchdaten übernehmen“ bleibt für
+  bestehende Titel und ein bewusstes erneutes Nachschlagen erhalten.
+  (Vorschläge bereits während des Tippens einzelner ISBN-Ziffern wurden
+  geprüft, sind mit den verfügbaren kostenlosen Quellen aber nicht
+  zuverlässig möglich – Google Books blockt anonyme Anfragen schnell,
+  und keine der beiden Quellen unterstützt eine ISBN-Teilzeichenketten-
+  Suche.)
+
 ## 0.6.0 – 2026-09-10
 
 ### Neu

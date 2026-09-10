@@ -784,6 +784,60 @@ function buildCoverPanel(row) {
 }
 
 /**
+ * Prüfsumme einer ISBN-10 (letzte Stelle darf "X" sein) oder ISBN-13 –
+ * true nur bei einer wirklich VOLLSTÄNDIGEN, korrekten ISBN. Tippfehler und
+ * Zwischenstände beim Tippen liefern false, lösen also (siehe
+ * wireIsbnAutofill()) keinen unnötigen Netzwerkaufruf aus.
+ */
+function istVollstaendigeIsbn(isbnRoh) {
+  const isbn = String(isbnRoh || '').toUpperCase();
+  if (/^\d{9}[\dX]$/.test(isbn)) {
+    let summe = 0;
+    for (let i = 0; i < 10; i += 1) summe += (isbn[i] === 'X' ? 10 : Number(isbn[i])) * (10 - i);
+    return summe % 11 === 0;
+  }
+  if (/^\d{13}$/.test(isbn)) {
+    let summe = 0;
+    for (let i = 0; i < 13; i += 1) summe += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
+    return summe % 10 === 0;
+  }
+  return false;
+}
+
+/**
+ * Automatisches Ausfüllen beim Katalogisieren (Abschnitt 6): sobald im
+ * ISBN-Feld eine vollständige, gültige ISBN steht – ob getippt oder per
+ * Scanner eingelesen – werden Titel/Untertitel/Autor/Verlag/Erscheinungs-
+ * jahr automatisch nachgeschlagen, ganz ohne Klick auf einen eigenen Knopf.
+ * Nur die noch LEEREN Felder werden befüllt: eine bereits eingetippte
+ * Kollegin-Eingabe wird nie überschrieben. Läuft nur auf ein echtes
+ * `input`-Ereignis an, nicht beim Öffnen des Sheets mit einer bereits
+ * vorhandenen ISBN (Bearbeiten eines vorhandenen Titels) – dafür bleibt
+ * der Knopf "Buchdaten übernehmen" in buildIsbnLookupBlock() als bewusster,
+ * jederzeit wiederholbarer manueller Weg bestehen.
+ */
+function wireIsbnAutofill() {
+  const feld = document.getElementById('f-ISBN');
+  if (!feld) return;
+  let zuletztNachgeschlagen = '';
+  const nachschlagen = debounce(async () => {
+    const isbn = feld.value.replace(/[^0-9Xx]/g, '');
+    if (!istVollstaendigeIsbn(isbn) || isbn === zuletztNachgeschlagen) return;
+    zuletztNachgeschlagen = isbn;
+    const result = await api.katalog.isbnNachschlagen(isbn);
+    if (!result.ok) return; // stumm: das Feld war ja nur ein Zwischenstand, kein bewusstes Nachschlagen
+    let uebernommen = 0;
+    for (const [name, wert] of Object.entries(result.daten)) {
+      if (!wert) continue;
+      const input = document.getElementById(`f-${name}`);
+      if (input && !input.value) { input.value = wert; uebernommen += 1; }
+    }
+    if (uebernommen) toast(`Buchdaten automatisch ergänzt (${result.quelleName || 'ISBN-Suche'}).`);
+  }, 500);
+  feld.addEventListener('input', nachschlagen);
+}
+
+/**
  * Metadaten bearbeiten (Titel/Autor/Verlag/ISBN/…) – bewusst noch das
  * modale Sheet, weil das Katalogisieren eine bewusste, eher seltene Aktion
  * ist. Der Alltag an der Theke (Status ansehen, Exemplare/Vormerkungen
@@ -841,6 +895,7 @@ function openKatalogSheet(row) {
         }
       : null,
   });
+  wireIsbnAutofill();
 }
 
 /* ------------------------------------------------------- Buchdetail (Abschnitt 3) */
