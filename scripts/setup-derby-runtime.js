@@ -21,7 +21,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const { execFileSync } = require('node:child_process');
-const zlib = require('node:zlib');
 
 const DERBY_VERSION = '10.17.1.0';
 const JRE_MAJOR = '21';
@@ -90,12 +89,13 @@ function entpacken(archivPfad, zielOrdner) {
   }
 }
 
-/** Adoptium-Archive enthalten einen einzigen Wurzelordner (z. B. "jdk-21.0.12.1+1-jre") – dessen Inhalt braucht INGA direkt unter derby-runtime/jre. */
+/** Adoptium-Archive enthalten einen einzigen Wurzelordner (z. B. "jdk-21.0.12.1+1-jre") – dessen Inhalt braucht INGA direkt unter derby-runtime/jre. Räumt den (nach dem Verschieben leeren bzw. bei abweichender Struktur übrig gebliebenen) Entpack-Ordner danach weg, statt ihn als Datenleiche liegen zu lassen. */
 function verschiebeWurzelinhalt(entpackterOrdner, zielOrdner) {
   const eintraege = fs.readdirSync(entpackterOrdner);
   const wurzel = eintraege.length === 1 ? path.join(entpackterOrdner, eintraege[0]) : entpackterOrdner;
   fs.rmSync(zielOrdner, { recursive: true, force: true });
   fs.renameSync(wurzel, zielOrdner);
+  fs.rmSync(entpackterOrdner, { recursive: true, force: true });
 }
 
 async function holeJre(plattform) {

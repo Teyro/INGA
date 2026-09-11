@@ -98,6 +98,49 @@ async function perpustakaanLiveBereitPruefen() {
   return perpustakaanLiveStatus;
 }
 
+/**
+ * Fasst die drei möglichen Ausgangslagen zusammen (aus/aktiv ohne Ordner/
+ * aktiv mit Ordner) – von main.js' Start UND vom "jetzt-pruefen"-IPC-Handler
+ * genutzt, damit beide exakt denselben Status berechnen (vorher zwei fast,
+ * aber nicht ganz gleiche Kopien dieser Verzweigung).
+ */
+async function perpustakaanLiveStatusAktualisieren() {
+  const s = settings();
+  if (!s.perpustakaanLiveAktiv) {
+    perpustakaanLiveStatus = { aktiv: false };
+    return perpustakaanLiveStatus;
+  }
+  if (!s.perpustakaanLiveDbPfad) {
+    // Aktiviert, aber noch kein Ordner gewählt: eigener, unterscheidbarer
+    // Zustand – "aktiv: false" wäre hier irreführend, da der Haken ja
+    // bereits gesetzt ist.
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: 'Noch kein Ordner der Perpustakaan-Datenbank ausgewählt.' };
+    return perpustakaanLiveStatus;
+  }
+  return perpustakaanLiveBereitPruefen();
+}
+
+/**
+ * Frische Zugriffsprüfung unmittelbar vor "Jetzt lesen"/"Jetzt schreiben"
+ * (der Status aus perpustakaanLiveBereitPruefen()/-StatusAktualisieren()
+ * kann inzwischen veraltet sein – Perpustakaan könnte zwischenzeitlich
+ * geöffnet worden sein). Hält perpustakaanLiveStatus nebenbei aktuell und
+ * liefert bei einem Problem direkt das Fehlerobjekt, das der jeweilige
+ * IPC-Handler unverändert zurückgeben kann – `null`, wenn alles klar ist.
+ * (Vorher zwei fast, aber nicht ganz gleiche Kopien dieser Prüfung in den
+ * beiden Handlern.)
+ */
+async function perpustakaanLiveZugriffPruefenOderFehler(dbPfad) {
+  const zugriff = await perpustakaanLive.pruefeZugriff(dbPfad);
+  perpustakaanLiveStatus = zugriff.ok
+    ? { aktiv: true, bereit: true }
+    : { aktiv: true, bereit: false, gesperrt: Boolean(zugriff.gesperrt), grund: zugriff.gesperrt ? 'Perpustakaan scheint gerade geöffnet zu sein.' : zugriff.fehler };
+  if (zugriff.ok) return null;
+  return zugriff.gesperrt
+    ? { ok: false, gesperrt: true, fehler: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen und erneut versuchen.' }
+    : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
+}
+
 function isDark() {
   const mode = settings().theme;
   if (mode === 'light') return false;
@@ -902,14 +945,7 @@ function registerIpc() {
    * aktiviert) – dieselbe Sicherung+Prüfung wie beim Programmstart, damit
    * die Statusanzeige nicht bis zum nächsten Neustart veraltet bleibt.
    */
-  ipcMain.handle('perpustakaan-live:jetzt-pruefen', sicher(async () => {
-    const s = settings();
-    if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) {
-      perpustakaanLiveStatus = { aktiv: false };
-      return perpustakaanLiveStatus;
-    }
-    return perpustakaanLiveBereitPruefen();
-  }));
+  ipcMain.handle('perpustakaan-live:jetzt-pruefen', sicher(() => perpustakaanLiveStatusAktualisieren()));
 
   ipcMain.handle('perpustakaan-live:pfad-waehlen', sicher(async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -925,16 +961,16 @@ function registerIpc() {
   ipcMain.handle('perpustakaan-live:jetzt-lesen', sicher(async () => {
     const s = settings();
     if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
-    const zugriff = await perpustakaanLive.pruefeZugriff(s.perpustakaanLiveDbPfad);
-    perpustakaanLiveStatus = zugriff.ok
-      ? { aktiv: true, bereit: true }
-      : { aktiv: true, bereit: false, gesperrt: Boolean(zugriff.gesperrt), grund: zugriff.gesperrt ? 'Perpustakaan scheint gerade geöffnet zu sein.' : zugriff.fehler };
-    if (!zugriff.ok) {
-      return zugriff.gesperrt
-        ? { ok: false, gesperrt: true, fehler: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen und erneut versuchen.' }
-        : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
+    const fehler = await perpustakaanLiveZugriffPruefenOderFehler(s.perpustakaanLiveDbPfad);
+    if (fehler) return fehler;
+    // Vor dem Überschreiben des eigenen Bestands per Import: Rückfall-
+    // möglichkeit sichern und deren Erfolg auch wirklich prüfen (anders als
+    // bei den täglichen Backups oben darf hier ein Fehlschlag nicht
+    // stillschweigend durchgehen – sonst gäbe es beim Import keinen
+    // Sicherheitsnetz mehr).
+    if (!sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-perpustakaan-lesen' })) {
+      return { ok: false, fehler: 'Sicherung des aktuellen INGA-Bestands fehlgeschlagen – aus Sicherheitsgründen abgebrochen, es wurde nichts importiert.' };
     }
-    sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-perpustakaan-lesen' });
     const zielZip = path.join(os.tmpdir(), `inga-perpustakaan-dump-${Date.now()}.zip`);
     try {
       const ergebnis = await perpustakaanLive.dumpNachZip(s.perpustakaanLiveDbPfad, TABLES, zielZip);
@@ -950,23 +986,23 @@ function registerIpc() {
    * Schreibt INGAs aktuellen Stand in die echte Perpustakaan-Datenbank –
    * exakt derselbe Export-Weg wie "Bestand exportieren" (csvio.exportZip),
    * nur dass das Ergebnis-Zip statt auf die Festplatte über die Java-
-   * Bridge in die Datenbank geladen wird. Sehr bewusst KEIN eigener
-   * "Bist du sicher?"-Text hier: das gehört in die Oberfläche (mehrfache,
-   * unmissverständliche Bestätigung), dieser Handler tut, worum er
-   * gebeten wird, prüft aber die Sperre frisch und lehnt ohne aktive
-   * Einstellung grundsätzlich ab.
+   * Bridge in die Datenbank geladen wird. Sichert die Original-Datenbank
+   * VOR JEDEM Schreibversuch noch einmal frisch (nicht nur einmal beim
+   * Programmstart, siehe perpustakaanLiveBereitPruefen) – in einer langen
+   * Sitzung mit mehreren Schreibversuchen wäre sonst nur der allererste
+   * durch einen wirklich aktuellen Stand abgesichert. Sehr bewusst KEIN
+   * eigener "Bist du sicher?"-Text hier: das gehört in die Oberfläche
+   * (mehrfache, unmissverständliche Bestätigung), dieser Handler tut, worum
+   * er gebeten wird, prüft aber die Sperre frisch und lehnt ohne aktive
+   * Einstellung oder fehlgeschlagene Sicherung grundsätzlich ab.
    */
   ipcMain.handle('perpustakaan-live:jetzt-schreiben', sicher(async () => {
     const s = settings();
     if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
-    const zugriff = await perpustakaanLive.pruefeZugriff(s.perpustakaanLiveDbPfad);
-    perpustakaanLiveStatus = zugriff.ok
-      ? { aktiv: true, bereit: true }
-      : { aktiv: true, bereit: false, gesperrt: Boolean(zugriff.gesperrt), grund: zugriff.gesperrt ? 'Perpustakaan scheint gerade geöffnet zu sein.' : zugriff.fehler };
-    if (!zugriff.ok) {
-      return zugriff.gesperrt
-        ? { ok: false, gesperrt: true, fehler: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen und erneut versuchen.' }
-        : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
+    const fehler = await perpustakaanLiveZugriffPruefenOderFehler(s.perpustakaanLiveDbPfad);
+    if (fehler) return fehler;
+    if (!sichereOriginalPerpustakaanDbSync(s.perpustakaanLiveDbPfad, backupDir)) {
+      return { ok: false, fehler: 'Sicherung der Original-Perpustakaan-Datenbank fehlgeschlagen – aus Sicherheitsgründen abgebrochen, es wurde nichts geschrieben.' };
     }
     const quellZip = path.join(os.tmpdir(), `inga-perpustakaan-schreiben-${Date.now()}.zip`);
     try {
@@ -1067,10 +1103,8 @@ if (!gotLock) {
     // siehe backup.js) die ECHTE Perpustakaan-Datenbank sichern, BEVOR
     // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
     // diese Sicherung fehl, bleibt der Live-Zugriff für diesen Start
-    // gesperrt (perpustakaanLiveBereitPruefen() unten).
-    if (settings().perpustakaanLiveAktiv && settings().perpustakaanLiveDbPfad) {
-      await perpustakaanLiveBereitPruefen();
-    }
+    // gesperrt (perpustakaanLiveStatusAktualisieren() -> perpustakaanLiveBereitPruefen()).
+    await perpustakaanLiveStatusAktualisieren();
 
     registerIpc();
     buildMenu();

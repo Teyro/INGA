@@ -175,43 +175,130 @@ public class Bridge {
     druckeJson("{\"ok\":true,\"tabellen\":" + schema.size() + "}");
   }
 
-  static void load(String dbPfad, String zipQuelle) throws Exception {
-    Connection c = verbinde(dbPfad);
-    int tabellenGeladen = 0;
-    try {
-      c.setAutoCommit(false);
-      try (ZipFile zip = new ZipFile(zipQuelle)) {
-        Enumeration<? extends ZipEntry> entries = zip.entries();
-        while (entries.hasMoreElements()) {
-          ZipEntry entry = entries.nextElement();
-          if (entry.isDirectory() || !entry.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) continue;
-          String tabelle = entry.getName().replaceAll("\\.[Cc][Ss][Vv]$", "");
-          try (BufferedReader reader = new BufferedReader(new InputStreamReader(zip.getInputStream(entry), StandardCharsets.UTF_8))) {
-            String kopf = reader.readLine();
-            if (kopf == null || kopf.isEmpty()) continue; // leere Datei, nichts zu tun
-            String[] spalten = kopf.split(";", -1);
-            String spaltenSql = String.join(", ", Arrays.stream(spalten).map(Bridge::quoteIdent).toArray(String[]::new));
-            String platzhalter = String.join(", ", Collections.nCopies(spalten.length, "?"));
-            try (Statement del = c.createStatement()) {
-              del.execute("DELETE FROM " + quoteIdent(tabelle));
-            }
-            try (PreparedStatement ins = c.prepareStatement(
-                "INSERT INTO " + quoteIdent(tabelle) + " (" + spaltenSql + ") VALUES (" + platzhalter + ")")) {
-              String zeile;
-              while ((zeile = reader.readLine()) != null) {
-                String[] werte = zeile.split(";", -1);
-                for (int i = 0; i < spalten.length; i++) {
-                  String wert = i < werte.length ? werte[i] : "";
-                  if (wert.isEmpty()) ins.setNull(i + 1, Types.VARCHAR); else ins.setString(i + 1, wert);
-                }
-                ins.addBatch();
-              }
-              ins.executeBatch();
-            }
-          }
-          tabellenGeladen++;
+  /** Eine aus dem Zip gelesene Tabelle, bereit zum Laden (siehe load()). */
+  static class TabellenDaten {
+    final String name;
+    final String[] spalten;
+    final List<String[]> zeilen;
+    TabellenDaten(String name, String[] spalten, List<String[]> zeilen) { this.name = name; this.spalten = spalten; this.zeilen = zeilen; }
+  }
+
+  static List<TabellenDaten> leseZip(String zipQuelle) throws IOException {
+    List<TabellenDaten> ergebnis = new ArrayList<>();
+    try (ZipFile zip = new ZipFile(zipQuelle)) {
+      Enumeration<? extends ZipEntry> entries = zip.entries();
+      while (entries.hasMoreElements()) {
+        ZipEntry entry = entries.nextElement();
+        if (entry.isDirectory() || !entry.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) continue;
+        String tabelle = entry.getName().replaceAll("\\.[Cc][Ss][Vv]$", "");
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(zip.getInputStream(entry), StandardCharsets.UTF_8))) {
+          String kopf = reader.readLine();
+          if (kopf == null || kopf.isEmpty()) continue; // leere Datei, nichts zu tun
+          String[] spalten = kopf.split(";", -1);
+          List<String[]> zeilen = new ArrayList<>();
+          String zeile;
+          while ((zeile = reader.readLine()) != null) zeilen.add(zeile.split(";", -1));
+          ergebnis.add(new TabellenDaten(tabelle, spalten, zeilen));
         }
       }
+    }
+    return ergebnis;
+  }
+
+  static void loescheTabelle(Connection c, TabellenDaten t) throws SQLException {
+    try (Statement del = c.createStatement()) {
+      del.execute("DELETE FROM " + quoteIdent(t.name));
+    }
+  }
+
+  static void fuegeTabelleEin(Connection c, TabellenDaten t) throws SQLException {
+    if (t.zeilen.isEmpty()) return;
+    String spaltenSql = String.join(", ", Arrays.stream(t.spalten).map(Bridge::quoteIdent).toArray(String[]::new));
+    String platzhalter = String.join(", ", Collections.nCopies(t.spalten.length, "?"));
+    try (PreparedStatement ins = c.prepareStatement(
+        "INSERT INTO " + quoteIdent(t.name) + " (" + spaltenSql + ") VALUES (" + platzhalter + ")")) {
+      for (String[] werte : t.zeilen) {
+        for (int i = 0; i < t.spalten.length; i++) {
+          String wert = i < werte.length ? werte[i] : "";
+          if (wert.isEmpty()) ins.setNull(i + 1, Types.VARCHAR); else ins.setString(i + 1, wert);
+        }
+        ins.addBatch();
+      }
+      ins.executeBatch();
+    }
+  }
+
+  /** SQLState 23503 = Fremdschlüssel-Constraint-Verletzung (verschachtelt wie bei istGesperrtFehler oben – DerbySQLIntegrityConstraintViolationException kommt über getNextException()). */
+  static boolean istFremdschluesselFehler(SQLException e) {
+    SQLException cur = e;
+    while (cur != null) {
+      if ("23503".equals(cur.getSQLState())) return true;
+      cur = cur.getNextException();
+    }
+    return false;
+  }
+
+  /**
+   * Führt `aktion` für jede Tabelle in `tabellen` aus – schlägt eine an
+   * einer Fremdschlüssel-Verletzung fehl (SQLState 23503), wandert sie ans
+   * Ende der Warteschlange und wird später erneut versucht, statt den
+   * ganzen Vorgang abzubrechen. Funktioniert OHNE das Schema/die
+   * Fremdschlüssel-Topologie selbst zu kennen: die Datenbank sagt über
+   * ihre eigene Fehlermeldung, wann eine Reihenfolge (noch) nicht passt.
+   * Bricht ab, sobald ein voller Umlauf durch die Warteschlange KEINE
+   * einzige Tabelle mehr voranbringt (echter Fehler oder ein Zyklus, den
+   * keine Reihenfolge auflösen kann) oder ein andersartiger Fehler
+   * auftritt (dafür gibt es kein "später nochmal versuchen").
+   */
+  interface TabellenAktion { void anwenden(Connection c, TabellenDaten t) throws SQLException; }
+
+  static void mitFremdschluesselRetry(Connection c, List<TabellenDaten> tabellen, TabellenAktion aktion) throws SQLException {
+    Deque<TabellenDaten> warteschlange = new ArrayDeque<>(tabellen);
+    int versucheOhneFortschritt = 0;
+    while (!warteschlange.isEmpty()) {
+      TabellenDaten t = warteschlange.poll();
+      try {
+        aktion.anwenden(c, t);
+        versucheOhneFortschritt = 0;
+      } catch (SQLException e) {
+        if (istFremdschluesselFehler(e) && versucheOhneFortschritt < warteschlange.size() + 1) {
+          warteschlange.offer(t);
+          versucheOhneFortschritt++;
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  /**
+   * Lädt ein Perpustakaan-Zip in die Datenbank, ALLES in EINER Transaktion
+   * (entweder komplett oder gar nicht). Zwei Durchgänge, nicht "DELETE+
+   * INSERT je Tabelle nacheinander": bei Fremdschlüssel-Constraints ist
+   * schon das reine LEEREN reihenfolgeabhängig (eine "Eltern"-Tabelle lässt
+   * sich erst leeren, wenn referenzierende Zeilen in der "Kind"-Tabelle
+   * schon weg sind), UND unabhängig davon auch das BEFÜLLEN (eine neue
+   * "Kind"-Zeile lässt sich erst einfügen, wenn die "Eltern"-Zeile, auf die
+   * sie verweist, schon existiert) – mit nur einem Durchgang widersprechen
+   * sich diese beiden Anforderungen bei sich selbst referenzierenden
+   * Datensätzen zwangsläufig (das Kind braucht die alte ODER neue
+   * Eltern-Zeile, je nachdem, in welcher Reihenfolge gerade gearbeitet
+   * wird). Deshalb: zuerst ALLE Tabellen leeren (mitFremdschluesselRetry
+   * findet dabei von selbst eine Reihenfolge, in der Kinder vor Eltern
+   * geleert werden), danach ALLE Tabellen befüllen (hier findet sich
+   * symmetrisch eine Reihenfolge, in der Eltern vor Kindern befüllt
+   * werden) – kein Wissen über das tatsächliche Schema nötig, die
+   * Datenbank sagt über ihre eigene Fehlermeldung (SQLState 23503), wann
+   * eine Reihenfolge (noch) nicht passt. Gegen eine echte Fremdschlüssel-
+   * Testdatenbank geprüft (siehe derby-bridge/README.md).
+   */
+  static void load(String dbPfad, String zipQuelle) throws Exception {
+    List<TabellenDaten> tabellen = leseZip(zipQuelle);
+    Connection c = verbinde(dbPfad);
+    try {
+      c.setAutoCommit(false);
+      mitFremdschluesselRetry(c, tabellen, Bridge::loescheTabelle);
+      mitFremdschluesselRetry(c, tabellen, Bridge::fuegeTabelleEin);
       c.commit();
     } catch (Exception e) {
       try { c.rollback(); } catch (SQLException ignored) { /* Verbindung eventuell schon defekt – nichts mehr zu retten */ }
@@ -220,6 +307,6 @@ public class Bridge {
       c.close();
       fahreHerunter(dbPfad);
     }
-    druckeJson("{\"ok\":true,\"tabellen\":" + tabellenGeladen + "}");
+    druckeJson("{\"ok\":true,\"tabellen\":" + tabellen.size() + "}");
   }
 }
