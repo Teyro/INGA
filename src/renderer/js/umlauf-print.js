@@ -12,14 +12,25 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+const SPALTEN_ANZAHL = 11;
+
+/** Zweizeilige Zelle: fette Hauptzeile + kleinere, gedämpfte Nebenzeile darunter – Vorbild: die Nachname/Titel-Gruppierung einer vom Nutzer gezeigten Perpustakaan-Säumnisliste, hier auf "Kind" (Name/Klasse) UND "Buch" (Titel/Autor) angewendet. */
+function zweizeiler(haupt, neben) {
+  return el('td', {}, [
+    el('div', { class: 'zeile-haupt' }, [haupt || '']),
+    neben ? el('div', { class: 'zeile-neben' }, [neben]) : null,
+  ]);
+}
+
 function zeile(z) {
   return el('tr', {}, [
     el('td', { class: 'num' }, [String(z.id)]),
-    el('td', {}, [z.Titel || '']),
-    el('td', {}, [z.Autor || '']),
+    zweizeiler(`${z.Nachname || ''}, ${z.Vorname || ''}`, z.Jahrgang),
+    el('td', {}, [z.FonPrivat || '']),
+    el('td', {}, [z.FonGesch || '']),
+    zweizeiler(z.Titel, z.Autor),
     el('td', {}, [z.MedienEtik || '']),
-    el('td', {}, [`${z.Nachname || ''}, ${z.Vorname || ''}`]),
-    el('td', {}, [z.Jahrgang || '']),
+    el('td', {}, [z.MedArtKb || '']),
     el('td', {}, [fmtDatum(z.AuslDatum)]),
     el('td', {}, [fmtDatum(z.faelligAm)]),
     el('td', { class: 'num' }, [z.tageUeberfaellig > 0 ? String(z.tageUeberfaellig) : '']),
@@ -31,7 +42,7 @@ function tabelle(gruppen) {
   const tbody = el('tbody', {}, []);
   for (const gruppe of gruppen) {
     if (gruppe.titel) {
-      tbody.appendChild(el('tr', { class: 'gruppe-kopf' }, [el('td', { colSpan: 10 }, [gruppe.titel])]));
+      tbody.appendChild(el('tr', { class: 'gruppe-kopf' }, [el('td', { colSpan: SPALTEN_ANZAHL }, [gruppe.titel])]));
     }
     for (const z of gruppe.zeilen) tbody.appendChild(zeile(z));
   }
@@ -39,9 +50,16 @@ function tabelle(gruppen) {
     el('thead', {}, [
       el('tr', {}, [
         el('th', { class: 'num' }, ['Ausleihe-Nr.']),
-        el('th', {}, ['Buchtitel']), el('th', {}, ['Autor']), el('th', {}, ['Signatur/Barcode']),
-        el('th', {}, ['Kind']), el('th', {}, ['Klasse']), el('th', {}, ['Ausgeliehen am']),
-        el('th', {}, ['Rückgabe bis']), el('th', { class: 'num' }, ['Tage überfällig']), el('th', { class: 'num' }, ['Verlängerungen']),
+        el('th', {}, ['Kind / Klasse']),
+        el('th', {}, ['Telefon privat']),
+        el('th', {}, ['Telefon geschäftlich']),
+        el('th', {}, ['Buch / Autor']),
+        el('th', {}, ['Signatur/Barcode']),
+        el('th', {}, ['MA']),
+        el('th', {}, ['Ausgeliehen am']),
+        el('th', {}, ['Rückgabe bis']),
+        el('th', { class: 'num' }, ['Tage überfällig']),
+        el('th', { class: 'num' }, ['Verlängerungen']),
       ]),
     ]),
     tbody,

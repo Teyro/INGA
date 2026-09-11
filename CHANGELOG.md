@@ -6,6 +6,17 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.8.6 – 2026-09-12
+
+### Neu
+- **„Im Umlauf“ um Telefonnummern und Medienart erweitert**: der Ausdruck
+  (und CSV-/XLSX-Export) zeigt jetzt zusätzlich Telefon privat/
+  geschäftlich sowie die Medienart-Kurzbezeichnung je Zeile – nachgezogen
+  aus einer vom Nutzer gezeigten Perpustakaan-Säumnisliste, die diese
+  Angaben enthielt. Kind und Buch stehen dafür jetzt platzsparend
+  zweizeilig (Name/Klasse bzw. Titel/Autor) statt in eigenen breiten
+  Spalten, damit trotz mehr Information nichts unübersichtlicher wird.
+
 ## 0.8.5 – 2026-09-11
 
 ### Neu

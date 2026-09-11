@@ -40,6 +40,45 @@ test('umlaufliste: enthält Klasse, Kind, Fälligkeit und Verlängerungen für j
   assert.equal(zeile.Jahrgang, '4a');
   assert.equal(zeile.AnzVerl, 0);
   assert.ok(zeile.faelligAm);
+  assert.ok(Number.isInteger(zeile.id), 'Ausleihe-Nr. (id) muss enthalten sein, für den Druck der Umlaufliste');
+  db.close();
+});
+
+/**
+ * Nachgezogen aus einer vom Nutzer gezeigten Perpustakaan-Säumnisliste
+ * ("Liste säumiger Leser"): die enthielt Telefonnummern (privat/
+ * geschäftlich) und die Medienart-Kurzbezeichnung ("MA"), die INGAs
+ * Umlaufliste bis dahin nicht zeigte.
+ */
+test('umlaufliste: enthält Telefonnummern (privat/geschäftlich) und Medienart-Kürzel', () => {
+  const db = openDatabase(tmpDir());
+  db.prepare(`INSERT INTO "MedArt" ("MedArtKb","MedArtBz") VALUES ('Buc', 'Buch')`).run();
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Telefonbuch-Test', MedArtKb: 'Buc' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'U-0003' });
+  const leserNi = repo.saveLeser(db, {
+    Nachname: 'Anruf', Vorname: 'Anna', AusweisId: 'U-L-3',
+    FonPrivat: '040 1234567', FonGesch: '040 7654321',
+  });
+  repo.ausleihen(db, { medienNi, leserNi, einstellungen: basisEinstellungen });
+
+  const zeile = repo.umlaufliste(db, basisEinstellungen)[0];
+  assert.equal(zeile.FonPrivat, '040 1234567');
+  assert.equal(zeile.FonGesch, '040 7654321');
+  assert.equal(zeile.MedArtKb, 'Buc');
+  db.close();
+});
+
+test('umlaufliste: fehlende Telefonnummern/Medienart liefern leere Zeichenketten statt null (druckfreundlich)', () => {
+  const db = openDatabase(tmpDir());
+  const katalogNi = repo.saveKatalog(db, { Titel: 'Ohne Telefon' });
+  const medienNi = repo.saveMedium(db, { KatalogNi: katalogNi, MedienEtik: 'U-0004' });
+  const leserNi = repo.saveLeser(db, { Nachname: 'Still', Vorname: 'Stefan', AusweisId: 'U-L-4' });
+  repo.ausleihen(db, { medienNi, leserNi, einstellungen: basisEinstellungen });
+
+  const zeile = repo.umlaufliste(db, basisEinstellungen)[0];
+  assert.equal(zeile.FonPrivat, '');
+  assert.equal(zeile.FonGesch, '');
+  assert.equal(zeile.MedArtKb, '');
   db.close();
 });
 

@@ -105,6 +105,8 @@ html, body { margin: 0; height: 100%; background: var(--window); color: var(--te
 .umlauf-tabelle thead { display: table-header-group; } /* wiederholt sich auf jeder gedruckten Seite */
 .umlauf-tabelle tr { page-break-inside: avoid; }
 .umlauf-tabelle tr.gruppe-kopf td { font-weight: 700; background: #f0f0f0; border-bottom: 1px solid #ccc; padding-top: 10px; }
+.umlauf-tabelle .zeile-haupt { font-weight: 700; }
+.umlauf-tabelle .zeile-neben { font-size: 8pt; color: #666; }
 
 @media print {
   .umlauf-blatt { box-shadow: none; width: auto; min-height: auto; padding: 0; }

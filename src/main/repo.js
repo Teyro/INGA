@@ -476,9 +476,9 @@ function offeneAusleihenVonLeser(db, leserNi) {
 function alleOffenenAusleihen(db) {
   return db
     .prepare(
-      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor",
+      `SELECT a.*, m."MedienEtik", k."KatalogNi", k."Titel", k."Autor", k."MedArtKb",
          ma."Frist" AS medArtFrist, ma."FristVerl" AS medArtFristVerl,
-         l."Nachname", l."Vorname", l."Jahrgang"
+         l."Nachname", l."Vorname", l."Jahrgang", l."FonPrivat", l."FonGesch"
        FROM "Ausleihe" a
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
@@ -493,9 +493,12 @@ function alleOffenenAusleihen(db) {
 /**
  * Umlaufliste ("Was ist gerade unterwegs?"): alle offenen Ausleihen mit
  * allen Spalten, die die gedruckte/exportierte Liste braucht – Klasse
- * (Jahrgang), Tage überfällig und Anzahl Verlängerungen inklusive. Nutzt
- * dieselbe zentrale, ferienbewusste Fälligkeitsberechnung wie überall sonst
- * (Ferienliste einmal geladen, nicht pro Zeile). Bewusst ohne eigene
+ * (Jahrgang), Telefonnummern, Medienart, Tage überfällig und Anzahl
+ * Verlängerungen inklusive (nachgezogen aus einer vom Nutzer gezeigten
+ * Perpustakaan-Säumnisliste: die enthielt Privat-/Geschäftlich-Telefon und
+ * die Medienart-Kurzbezeichnung, die INGAs Ausdruck bis dahin nicht zeigte).
+ * Nutzt dieselbe zentrale, ferienbewusste Fälligkeitsberechnung wie überall
+ * sonst (Ferienliste einmal geladen, nicht pro Zeile). Bewusst ohne eigene
  * Pagination: die Liste ist für den Druck "auf einen Blick" gedacht und in
  * einer Grundschulbibliothek realistisch immer klein genug (offene Ausleihen
  * insgesamt, nicht der ganze Bestand).
@@ -511,9 +514,12 @@ function umlaufliste(db, einstellungen) {
       Titel: a.Titel,
       Autor: a.Autor,
       MedienEtik: a.MedienEtik,
+      MedArtKb: a.MedArtKb || '',
       Nachname: a.Nachname,
       Vorname: a.Vorname,
       Jahrgang: a.Jahrgang || '',
+      FonPrivat: a.FonPrivat || '',
+      FonGesch: a.FonGesch || '',
       AuslDatum: a.AuslDatum,
       faelligAm,
       tageUeberfaellig: Math.max(0, tageDifferenz(faelligAm, heute)),

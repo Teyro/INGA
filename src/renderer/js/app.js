@@ -1990,11 +1990,15 @@ function schliesseMahnungVorschau() {
 
 /** Für Export (CSV/XLSX) UND Druckvorschau identisch – Spaltenreihenfolge/-titel an einer Stelle. */
 const UMLAUF_SPALTEN = [
+  { schluessel: 'id', titel: 'Ausleihe-Nr.' },
   { schluessel: 'Titel', titel: 'Buchtitel' },
   { schluessel: 'Autor', titel: 'Autor' },
   { schluessel: 'MedienEtik', titel: 'Signatur/Barcode' },
+  { schluessel: 'MedArtKb', titel: 'Medienart' },
   { schluessel: 'Kind', titel: 'Kind' },
   { schluessel: 'Jahrgang', titel: 'Klasse' },
+  { schluessel: 'FonPrivat', titel: 'Telefon privat' },
+  { schluessel: 'FonGesch', titel: 'Telefon geschäftlich' },
   { schluessel: 'AuslDatumFmt', titel: 'Ausgeliehen am' },
   { schluessel: 'faelligAmFmt', titel: 'Rückgabe bis' },
   { schluessel: 'tageUeberfaellig', titel: 'Tage überfällig' },
@@ -2101,11 +2105,15 @@ function umlaufFuerExport() {
   for (const gruppe of umlaufGruppiert(umlaufSortiert(umlaufGefiltert()))) {
     for (const z of gruppe.zeilen) {
       zeilen.push({
+        id: z.id,
         Titel: z.Titel || '',
         Autor: z.Autor || '',
         MedienEtik: z.MedienEtik || '',
+        MedArtKb: z.MedArtKb || '',
         Kind: `${z.Nachname || ''}, ${z.Vorname || ''}`,
         Jahrgang: z.Jahrgang || '',
+        FonPrivat: z.FonPrivat || '',
+        FonGesch: z.FonGesch || '',
         AuslDatumFmt: fmtDatum(z.AuslDatum),
         faelligAmFmt: fmtDatum(z.faelligAm),
         tageUeberfaellig: z.tageUeberfaellig || 0,

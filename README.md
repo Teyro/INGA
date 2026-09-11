@@ -185,15 +185,17 @@ Probedruck auf normalem Papier gegen das Licht.*
 ### Im Umlauf
 
 „Was ist gerade unterwegs?“ – alle offenen Ausleihen auf einen Blick:
-Ausleihe-Nummer, Buchtitel, Autor, Signatur/Barcode, Kind, Klasse,
-Ausleih-/Rückgabedatum, Tage überfällig und Anzahl Verlängerungen.
-Filterbar per Freitext, gruppierbar nach Klasse oder nach Kind (praktisch,
-um die Liste klassenweise auszudrucken), Export als CSV (Excel-freundlich:
-Semikolon, UTF-8-BOM) und als XLSX (Kopfzeile fett, Autofilter, passende
-Spaltenbreiten) sowie Direktdruck/PDF im Querformat mit Briefkopf (Logo aus
-den Mahnungs-Einstellungen, Schulname, Datum/Uhrzeit, aktiver Filter) und
-Fußzeile (Seitenzahl). Schnellzugriff über die Startseite und die
-Mahnliste.
+Ausleihe-Nummer, Buchtitel, Autor, Signatur/Barcode, Medienart, Kind,
+Klasse, Telefon privat/geschäftlich, Ausleih-/Rückgabedatum, Tage
+überfällig und Anzahl Verlängerungen. Filterbar per Freitext, gruppierbar
+nach Klasse oder nach Kind (praktisch, um die Liste klassenweise
+auszudrucken), Export als CSV (Excel-freundlich: Semikolon, UTF-8-BOM)
+und als XLSX (Kopfzeile fett, Autofilter, passende Spaltenbreiten) sowie
+Direktdruck/PDF im Querformat mit Briefkopf (Logo aus den Mahnungs-
+Einstellungen, Schulname, Datum/Uhrzeit, aktiver Filter) und Fußzeile
+(Seitenzahl) – Kind und Buch jeweils zweizeilig (Name/Klasse bzw. Titel/
+Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
+über die Startseite und die Mahnliste.
 
 ### Mahnwesen (JÖRN)
 
