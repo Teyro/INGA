@@ -207,6 +207,16 @@ const DEFAULT_SETTINGS = {
   // Drucken
   printPaper: 'A4',
   lastExportReveal: false,
+
+  // EXPERIMENTELL (Branch feature/perpustakaan-live-db, Version 0.9): siehe
+  // src/main/perpustakaan-live.js. Standardmäßig aus – wer nicht gezielt in
+  // den Einstellungen unter "Experimentell" zustimmt, bekommt INGAs
+  // gewohntes, ausschließlich auf Zip-Sicherungen basierendes Verhalten,
+  // unverändert.
+  perpustakaanLiveAktiv: false,
+  // Ordner der echten Apache-Derby-Datenbank (z. B. "…\Perpustakaan\db"),
+  // per Dateidialog gewählt – kein Freitextfeld, um Tippfehler zu vermeiden.
+  perpustakaanLiveDbPfad: '',
 };
 
 function defaultSettingsFor(style, accent) {

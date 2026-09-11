@@ -1,7 +1,7 @@
 {
   "name": "inga",
   "productName": "INGA",
-  "version": "0.8.6",
+  "version": "1.0.0",
   "description": "INGA Ist Nicht Genehmigungspflichtige Anschaffung – freie Schulbibliotheksverwaltung",
   "main": "src/main/main.js",
   "//desktopName": "Electron leitet daraus unter Linux die app_id und WM_CLASS ab; muss zum Namen der .desktop-Datei passen, sonst ordnen GNOME und KDE das laufende Fenster nicht dem Starter zu.",
@@ -23,9 +23,10 @@
     "test": "node --test test/*.test.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac --win --linux",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win nsis:x64 nsis:arm64 portable:x64",
-    "dist:linux": "electron-builder --linux AppImage:x64 deb:x64 rpm:x64"
+    "dist:mac": "node scripts/setup-derby-runtime.js && electron-builder --mac",
+    "dist:win": "node scripts/setup-derby-runtime.js && electron-builder --win nsis:x64 nsis:arm64 portable:x64",
+    "dist:linux": "node scripts/setup-derby-runtime.js && electron-builder --linux AppImage:x64 deb:x64 rpm:x64",
+    "setup:derby-runtime": "node scripts/setup-derby-runtime.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -51,6 +52,10 @@
     "files": [
       "src/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      { "from": "derby-runtime", "to": "derby-runtime", "filter": ["**/*"] },
+      { "from": "derby-bridge/classes", "to": "derby-bridge/classes", "filter": ["**/*"] }
     ],
     "mac": {
       "icon": "build/icon.png",

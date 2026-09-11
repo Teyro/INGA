@@ -11,6 +11,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const AdmZip = require('adm-zip');
 
 const MAX_BACKUPS = 10;
 const DATEI_MUSTER = /^inga_\d{8}_\d{6}_[a-z]+\.sqlite3$/;
@@ -132,10 +133,44 @@ function perpustakaanBackupHeuteVorhanden(backupDir) {
   return eigeneBackups(backupDir, PERPUSTAKAAN_DATEI_MUSTER).some((f) => f.startsWith(`perpustakaan_backup_${heute}_`));
 }
 
+// [EXPERIMENTELL, siehe perpustakaan-live.js] Sicherung der ECHTEN, LIVE
+// verwendeten Perpustakaan-Datenbank (Apache Derby – ein ganzer Ordner
+// voller Dateien, kein Einzelfile) vor jedem Start, an dem der
+// experimentelle Direktzugriff aktiv ist. Bewusst NICHT nur einmal täglich
+// wie die übrigen Backups oben: ein Schreibzugriff auf eine fremde,
+// produktiv genutzte Datenbank verdient vor JEDEM Start eine frische
+// Rückfallmöglichkeit, nicht nur eine vom Vortag.
+const PERPUSTAKAAN_ORIGINAL_MAX_BACKUPS = 10;
+const PERPUSTAKAAN_ORIGINAL_DATEI_MUSTER = /^perpustakaan_original_\d{8}_\d{6}\.zip$/;
+
+/**
+ * Packt den kompletten Datenbankordner (Apache Derby: service.properties,
+ * log/, seg0/, …) unverändert in ein Zip – wirft wie die Funktionen oben
+ * absichtlich nie, meldet einen Fehlschlag aber deutlich als `null`, DENN
+ * anders als bei den übrigen Backups darf hier ein fehlgeschlagenes Backup
+ * den nachfolgenden Live-Zugriff nicht stillschweigend zulassen (siehe
+ * Aufrufer in main.js: kein Backup → kein Schreibzugriff).
+ */
+function sichereOriginalPerpustakaanDbSync(derbyOrdner, backupDir) {
+  try {
+    fs.mkdirSync(backupDir, { recursive: true });
+    const zip = new AdmZip();
+    zip.addLocalFolder(derbyOrdner);
+    const ziel = path.join(backupDir, `perpustakaan_original_${zeitstempelFuerDateiname()}.zip`);
+    zip.writeZip(ziel);
+    rotiere(backupDir, PERPUSTAKAAN_ORIGINAL_DATEI_MUSTER, PERPUSTAKAAN_ORIGINAL_MAX_BACKUPS);
+    return ziel;
+  } catch (err) {
+    console.error('[backup] Sicherung der Original-Perpustakaan-Datenbank fehlgeschlagen:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   sichereDatenbankSync,
   backupHeuteVorhanden,
   listeBackups,
   sicherePerpustakaanZipSync,
   perpustakaanBackupHeuteVorhanden,
+  sichereOriginalPerpustakaanDbSync,
 };

@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { sichereDatenbankSync, listeBackups, backupHeuteVorhanden, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden } = require('../src/main/backup.js');
+const { sichereDatenbankSync, listeBackups, backupHeuteVorhanden, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('../src/main/backup.js');
 const { openDatabase } = require('../src/main/db.js');
 const { exportZip } = require('../src/main/csvio.js');
 const repo = require('../src/main/repo.js');
@@ -70,6 +70,39 @@ test('sicherePerpustakaanZipSync: legt eine Perpustakaan-kompatible Zip-Sicherun
   const katalog = zip.getEntry('Katalog.csv').getData().toString('utf8');
   assert.match(katalog, /Testbuch/);
   db.close();
+});
+
+/**
+ * EXPERIMENTELL (Branch feature/perpustakaan-live-db): Sicherung der echten,
+ * live verwendeten Perpustakaan-Datenbank (ein ganzer Ordner, keine
+ * Einzeldatei) vor jedem Start mit aktiviertem Direktzugriff – siehe
+ * perpustakaan-live.js/main.js. Hier nur die generische Ordner-zu-Zip-
+ * Sicherung geprüft, keine echte Derby-Datenbank nötig (das übernimmt der
+ * Java-Bridge-eigene, manuell durchgeführte Test, siehe derby-bridge/README.md).
+ */
+test('sichereOriginalPerpustakaanDbSync: sichert den kompletten Datenbankordner (mehrere Dateien/Unterordner) als ein Zip', () => {
+  const dir = tmpDir();
+  const derbyOrdner = path.join(dir, 'perpustakaan-db');
+  fs.mkdirSync(path.join(derbyOrdner, 'seg0'), { recursive: true });
+  fs.writeFileSync(path.join(derbyOrdner, 'service.properties'), 'derby.serviceProtocol=…');
+  fs.writeFileSync(path.join(derbyOrdner, 'seg0', 'c10.dat'), Buffer.from([1, 2, 3]));
+  const backupDir = path.join(dir, 'backups');
+
+  const ziel = sichereOriginalPerpustakaanDbSync(derbyOrdner, backupDir);
+  assert.ok(ziel && fs.existsSync(ziel));
+  assert.match(path.basename(ziel), /^perpustakaan_original_\d{8}_\d{6}\.zip$/);
+
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip(ziel);
+  const namen = zip.getEntries().map((e) => e.entryName);
+  assert.ok(namen.some((n) => n.endsWith('service.properties')));
+  assert.ok(namen.some((n) => n.endsWith('c10.dat')));
+});
+
+test('sichereOriginalPerpustakaanDbSync: nicht vorhandener Ordner liefert null statt zu werfen', () => {
+  const dir = tmpDir();
+  const ergebnis = sichereOriginalPerpustakaanDbSync(path.join(dir, 'gibt-es-nicht'), path.join(dir, 'backups'));
+  assert.equal(ergebnis, null);
 });
 
 test('sicherePerpustakaanZipSync: alte Sicherungen werden rotiert, sqlite3- und Perpustakaan-Sicherungen stören sich nicht gegenseitig', () => {

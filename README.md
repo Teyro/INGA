@@ -235,7 +235,7 @@ Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
 
 ### Einstellungen
 
-Ein Menüpunkt „Einstellungen“ mit genau drei Unterpunkten – links eine
+Ein Menüpunkt „Einstellungen“ mit genau vier Unterpunkten – links eine
 schmale Liste, rechts der Inhalt des gewählten Punkts, keine verstreuten
 Dialoge:
 
@@ -272,6 +272,18 @@ Dialoge:
   Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in
   den Einstellungen – Einspielen sichert vorher automatisch noch einmal
   den aktuellen Stand und startet INGA neu
+- **Experimentell ⚠️**: deutlich gekennzeichnet, standardmäßig aus.
+  Direkter Zugriff auf die echte, live verwendete Perpustakaan-Datenbank
+  (Apache Derby) statt nur auf Zip-Sicherungen – „Jetzt aus Perpustakaan
+  lesen“ und „Jetzt in Perpustakaan schreiben“, Ordnerauswahl per Dialog,
+  Statusanzeige, mehrfache Sicherheitsabfrage vor dem Schreiben. Erkennt
+  zuverlässig, ob Perpustakaan die Datenbank gerade selbst geöffnet hält,
+  und verweigert den Zugriff in dem Fall. Sichert die Original-Datenbank
+  vor jedem Programmstart mit aktiviertem Zugriff und vor jedem einzelnen
+  Schreibversuch. Gegen eine selbst gebaute Testdatenbank ausführlich
+  geprüft (siehe `derby-bridge/README.md`), aber noch nie gegen eine
+  echte Perpustakaan-Installation – vor dem ersten Einsatz mit echten
+  Daten unbedingt zuerst an einer Kopie ausprobieren, nicht am Original
 
 ### Papierkorb
 

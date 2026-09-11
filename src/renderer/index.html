@@ -468,6 +468,7 @@
             <div class="settings-nav-item active" data-einst-pane="ferien">Ferien</div>
             <div class="settings-nav-item" data-einst-pane="mahnungen">Mahnungen</div>
             <div class="settings-nav-item" data-einst-pane="allgemein">Aussehen und weitere App-Einstellungen</div>
+            <div class="settings-nav-item" data-einst-pane="experimentell">Experimentell ⚠️</div>
           </nav>
           <div class="settings-content">
 
@@ -688,6 +689,40 @@
                   <thead><tr><th>Datei</th><th>Erstellt</th><th class="num">Größe</th><th class="actions"></th></tr></thead>
                   <tbody id="backup-tbody"></tbody>
                 </table>
+              </div>
+            </section>
+
+            <!-- ····························································· Experimentell -->
+            <section class="settings-pane" id="einst-pane-experimentell" hidden>
+              <h2>Experimentell ⚠️</h2>
+              <div class="hinweis-banner">
+                <span class="icon">⚠️</span>
+                <div class="hinweis-banner-inhalt">
+                  <div class="hinweis-banner-titel">Direkter Zugriff auf die echte Perpustakaan-Datenbank</div>
+                  <div class="hinweis-banner-text">
+                    Noch nicht ausgereift und nur mit einer eigens angelegten Testdatenbank geprüft – nicht mit
+                    echten Daten. "Jetzt in Perpustakaan schreiben" überschreibt die Original-Datenbank direkt.
+                    Vor jedem Programmstart mit aktiviertem Zugriff sichert INGA die Original-Datenbank automatisch
+                    (Rückfalloption bei Problemen), das ersetzt aber keine eigene, unabhängige Sicherung. Nur
+                    aktivieren, wenn du weißt, was du tust – idealerweise erst an einer Kopie ausprobieren.
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <label class="checkbox-label"><input type="checkbox" id="set-perpustakaanLiveAktiv" /> Direkten Zugriff aktivieren</label>
+                <div class="field" style="margin-top:14px">
+                  <label>Ordner der Perpustakaan-Datenbank</label>
+                  <div class="row-inline">
+                    <input type="text" id="perpustakaan-live-pfad" readonly placeholder="Noch kein Ordner gewählt" style="flex:1" />
+                    <button class="button" id="perpustakaan-live-pfad-waehlen">Ordner wählen …</button>
+                  </div>
+                  <p class="hint">Der Ordner mit „service.properties“, „log“, „seg0“ der echten Apache-Derby-Datenbank – nicht der Perpustakaan-Programmordner selbst.</p>
+                </div>
+                <p class="hint" id="perpustakaan-live-status" style="margin-top:12px"></p>
+                <div class="row-inline" style="margin-top:14px">
+                  <button class="button" id="perpustakaan-live-lesen">Jetzt aus Perpustakaan lesen</button>
+                  <button class="button danger" id="perpustakaan-live-schreiben">Jetzt in Perpustakaan schreiben …</button>
+                </div>
               </div>
             </section>
 

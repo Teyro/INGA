@@ -6,6 +6,34 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.0.0 – 2026-09-12
+
+### Neu
+- **Direkter Zugriff auf die echte Perpustakaan-Datenbank (experimentell)**:
+  bisher nur auf einem separaten internen Branch, jetzt zusammengeführt.
+  Unter Einstellungen → „Experimentell ⚠️“ (deutlich gekennzeichnet,
+  standardmäßig AUS) lässt sich INGA direkt mit der echten, live
+  verwendeten Apache-Derby-Datenbank von Perpustakaan verbinden –
+  „Jetzt aus Perpustakaan lesen“ und „Jetzt in Perpustakaan schreiben“
+  statt nur über Zip-Sicherungen. Dafür bringt INGA eine kleine,
+  mitgelieferte Java-Brücke mit (es gibt keinen Node-Treiber für Derby);
+  die dafür nötige Java-Laufzeit wird bei jedem Build automatisch bezogen
+  (nicht Teil des Quellcodes).
+  - Erkennt zuverlässig, ob Perpustakaan die Datenbank gerade selbst
+    geöffnet hält (Derbys Embedded-Engine erlaubt ohnehin nur einer JVM
+    gleichzeitig Zugriff) und verweigert den Zugriff in dem Fall, statt
+    etwas Unmögliches zu versuchen – INGA arbeitet währenddessen mit der
+    zuletzt importierten eigenen Kopie weiter.
+  - Vor jedem Programmstart mit aktiviertem Zugriff UND unmittelbar vor
+    jedem einzelnen Schreibversuch: vollständige Sicherung der
+    Original-Datenbank, deren Erfolg auch tatsächlich geprüft wird –
+    schlägt sie fehl, wird nichts geschrieben.
+  - **Wichtig**: gegen eine selbst gebaute Testdatenbank ausführlich
+    geprüft (siehe `derby-bridge/README.md`), aber noch **nie gegen eine
+    echte Perpustakaan-Installation**. Vor dem ersten Einsatz mit echten
+    Daten unbedingt zuerst an einer **Kopie** der echten Datenbank
+    ausprobieren, nicht am Original.
+
 ## 0.8.6 – 2026-09-12
 
 ### Neu

@@ -2472,6 +2472,78 @@ function wireEinstellungen() {
   wireFerien();
   wireBackup();
   wireElement();
+  wirePerpustakaanLive();
+}
+
+/**
+ * EXPERIMENTELL (Branch feature/perpustakaan-live-db), siehe
+ * perpustakaan-live.js: Ordner wählen, Status anzeigen, Lesen/Schreiben
+ * anstoßen. Bewusst mit zwei Sicherheitsabfragen vor dem Schreiben – das
+ * überschreibt eine ECHTE, fremde Datenbank direkt.
+ */
+function wirePerpustakaanLive() {
+  document.getElementById('perpustakaan-live-pfad-waehlen').addEventListener('click', async () => {
+    const pfad = await api.perpustakaanLive.pfadWaehlen();
+    if (!pfad) return;
+    document.getElementById('perpustakaan-live-pfad').value = pfad;
+    await speichereEinstellungenSofort(); // NICHT die debounced Variante – erst wenn der Pfad wirklich gespeichert ist, darf geprüft werden
+    await erzwingeNeuePerpustakaanLivePruefung();
+  });
+  document.getElementById('set-perpustakaanLiveAktiv').addEventListener('change', async () => {
+    await speichereEinstellungenSofort();
+    await erzwingeNeuePerpustakaanLivePruefung();
+  });
+
+  document.getElementById('perpustakaan-live-lesen').addEventListener('click', async () => {
+    if (!document.getElementById('set-perpustakaanLiveAktiv').checked) { toast('Bitte zuerst den direkten Zugriff aktivieren.', 'error'); return; }
+    if (!confirm('Aktuellen INGA-Bestand mit dem Stand aus der echten Perpustakaan-Datenbank überschreiben? INGA sichert vorher automatisch den bisherigen INGA-Stand.')) return;
+    const btn = document.getElementById('perpustakaan-live-lesen');
+    btn.disabled = true;
+    try {
+      const result = await api.perpustakaanLive.jetztLesen();
+      if (result.ok) { toast('Aus Perpustakaan gelesen.'); await refreshKennzahlen(); }
+      else toast(result.gesperrt ? result.fehler : `Fehlgeschlagen: ${result.fehler || 'unbekannter Fehler'}`, 'error');
+    } finally {
+      btn.disabled = false;
+      await aktualisierePerpustakaanLiveStatus();
+    }
+  });
+
+  document.getElementById('perpustakaan-live-schreiben').addEventListener('click', async () => {
+    if (!document.getElementById('set-perpustakaanLiveAktiv').checked) { toast('Bitte zuerst den direkten Zugriff aktivieren.', 'error'); return; }
+    if (!confirm('ACHTUNG: Das überschreibt die ECHTE Perpustakaan-Datenbank mit dem aktuellen INGA-Bestand. Perpustakaan muss dafür geschlossen sein. Wirklich fortfahren?')) return;
+    if (!confirm('Wirklich sicher? Dieser Schritt lässt sich nur über die automatische Sicherung der Original-Datenbank rückgängig machen, nicht direkt in INGA.')) return;
+    const btn = document.getElementById('perpustakaan-live-schreiben');
+    btn.disabled = true;
+    try {
+      const result = await api.perpustakaanLive.jetztSchreiben();
+      if (result.ok) toast('In Perpustakaan geschrieben.');
+      else toast(result.gesperrt ? result.fehler : `Fehlgeschlagen: ${result.fehler || 'unbekannter Fehler'}`, 'error');
+    } finally {
+      btn.disabled = false;
+      await aktualisierePerpustakaanLiveStatus();
+    }
+  });
+}
+
+/** Zeigt den zuletzt in main.js ermittelten Status an – ohne neue Sicherung/Prüfung auszulösen (die läuft schon beim Programmstart bzw. nach Lesen/Schreiben). */
+async function aktualisierePerpustakaanLiveStatus() {
+  zeichnePerpustakaanLiveStatus(await api.perpustakaanLive.status());
+}
+
+/** Stößt eine FRISCHE Sicherung+Prüfung an (siehe main.js perpustakaanLiveBereitPruefen) – für den Moment, in dem gerade Pfad/Aktivierung geändert wurden und die Anzeige sonst bis zum nächsten Neustart veraltet bliebe. */
+async function erzwingeNeuePerpustakaanLivePruefung() {
+  zeichnePerpustakaanLiveStatus(await api.perpustakaanLive.jetztPruefen());
+}
+
+function zeichnePerpustakaanLiveStatus(s) {
+  const el2 = document.getElementById('perpustakaan-live-status');
+  if (!el2) return;
+  if (!s.aktiv) { el2.textContent = 'Direkter Zugriff ist deaktiviert.'; return; }
+  if (s.bereit) { el2.textContent = 'Bereit – Perpustakaan-Datenbank ist gerade frei.'; return; }
+  el2.textContent = s.gesperrt
+    ? '⚠️ Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen.'
+    : `⚠️ Nicht bereit: ${s.grund || 'unbekannter Fehler'}`;
 }
 
 /** Element (Matrix): Anmelden tauscht Benutzername/Passwort einmalig gegen ein Zugangstoken, das Passwort selbst wird nirgends gespeichert. */
@@ -2687,6 +2759,11 @@ async function loadEinstellungen() {
   renderMedArtFristen();
   loadFerien();
   loadBackups();
+
+  // EXPERIMENTELL, siehe perpustakaan-live.js
+  document.getElementById('set-perpustakaanLiveAktiv').checked = Boolean(s.perpustakaanLiveAktiv);
+  document.getElementById('perpustakaan-live-pfad').value = s.perpustakaanLiveDbPfad || '';
+  aktualisierePerpustakaanLiveStatus();
 }
 
 /**
@@ -3093,7 +3170,16 @@ function renderBackupListe(liste) {
   }
 }
 
-const speichereEinstellungenFormular = debounce(async () => {
+/**
+ * Ungedrosselter Kern des Speicherns – von der debounced
+ * speichereEinstellungenFormular() für normale Tastatureingaben genutzt,
+ * aber auch direkt aufrufbar, wenn wirklich auf den Abschluss gewartet
+ * werden muss (z. B. bevor perpustakaan-live.js mit dem frisch gewählten
+ * Pfad arbeitet – debounce() liefert keine verkettbare Promise, ein
+ * `await speichereEinstellungenFormular()` würde dort NICHT auf den
+ * tatsächlichen Speichervorgang warten).
+ */
+async function speichereEinstellungenSofort() {
   const patch = {
     uiStyle: document.getElementById('set-uiStyle').value,
     theme: document.getElementById('set-theme').value,
@@ -3126,8 +3212,13 @@ const speichereEinstellungenFormular = debounce(async () => {
     matrixDomain: document.getElementById('set-matrixDomain').value,
     matrixHomeserver: document.getElementById('set-matrixHomeserver').value,
     matrixZugangstoken: document.getElementById('set-matrixZugangstoken').value,
+    // EXPERIMENTELL, siehe perpustakaan-live.js
+    perpustakaanLiveAktiv: document.getElementById('set-perpustakaanLiveAktiv').checked,
+    perpustakaanLiveDbPfad: document.getElementById('perpustakaan-live-pfad').value,
   };
   state.settings = await api.settings.save(patch);
-}, 250);
+}
+
+const speichereEinstellungenFormular = debounce(speichereEinstellungenSofort, 250);
 
 boot();

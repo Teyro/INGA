@@ -138,6 +138,15 @@ contextBridge.exposeInMainWorld('inga', {
     einspielenDatei: () => ipcRenderer.invoke('backup:einspielen-datei'),
   },
 
+  // EXPERIMENTELL (Branch feature/perpustakaan-live-db), siehe src/main/perpustakaan-live.js
+  perpustakaanLive: {
+    status: () => ipcRenderer.invoke('perpustakaan-live:status'),
+    jetztPruefen: () => ipcRenderer.invoke('perpustakaan-live:jetzt-pruefen'),
+    pfadWaehlen: () => ipcRenderer.invoke('perpustakaan-live:pfad-waehlen'),
+    jetztLesen: () => ipcRenderer.invoke('perpustakaan-live:jetzt-lesen'),
+    jetztSchreiben: () => ipcRenderer.invoke('perpustakaan-live:jetzt-schreiben'),
+  },
+
   papierkorb: {
     leserListe: () => ipcRenderer.invoke('papierkorb:leser-liste'),
     medienListe: () => ipcRenderer.invoke('papierkorb:medien-liste'),
