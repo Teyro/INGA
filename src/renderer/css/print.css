@@ -143,6 +143,11 @@ html, body { margin: 0; height: 100%; background: var(--window); color: var(--te
 }
 .etikett .leer { border: 1px dashed #ddd; }
 
+/* Kompakte Etiketten (format.kompakt, z. B. Zweckform/Avery L4732REV) – zu klein für Titel/Autor, nur Nummer + Barcode. */
+.etikett.kompakt { align-items: center; padding: 0.6mm 0.8mm; gap: 0.3mm; }
+.etikett.kompakt .barcode-nummer { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.2px; line-height: 1; }
+.etikett.kompakt .barcode { width: 94%; height: auto; }
+
 @media print {
   .etiketten-blatt { box-shadow: none; }
   .etikett .leer { border: none; }

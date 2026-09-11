@@ -107,18 +107,21 @@ Bogenformaten – eigener Bereich in der Seitenleiste, dazu Schnellzugriff
 direkt auf der Buchdetailseite (einzelnes Exemplar oder „Alle Etiketten
 drucken“ für den ganzen Titel).
 
-- **3 Etikettenformate**: Zweckform 3475 (70 × 36 mm, 24/Bogen), Zweckform/
-  Avery L7160 (63,5 × 38,1 mm, 21/Bogen) sowie Zweckform 3651 (52,5 × 29,7
-  mm, 40/Bogen, kompakt) – Rand und Rasterabstand aus den offiziellen
-  Produktmaßen, nicht nur der reinen Etikettengröße, damit der Ausdruck auf
-  einem echten Bogen sitzt
+- **4 Etikettenformate**: Zweckform 3475 (70 × 36 mm, 24/Bogen), Zweckform/
+  Avery L7160 (63,5 × 38,1 mm, 21/Bogen), Zweckform 3651 (52,5 × 29,7 mm,
+  40/Bogen, kompakt) sowie Zweckform/Avery L4732REV (35,6 × 16,9 mm,
+  80/Bogen) – Rand und Rasterabstand aus den offiziellen Produktmaßen,
+  nicht nur der reinen Etikettengröße, damit der Ausdruck auf einem
+  echten Bogen sitzt
 - **Startposition**: für angebrochene Bögen – überspringt die angegebene
   Anzahl bereits verbrauchter Etiketten, nur auf dem ersten Bogen
 - Jedes Etikett zeigt Titel, Autor, einen Strichcode (Code 128) der
   Signatur/des Barcodes sowie eine kleine **„Antolin“-Kennzeichnung**, wenn
   für den Titel eine Antolin-Klassenstufe hinterlegt ist (ein eigenes,
   schlichtes Kennzeichen – nicht das Marken-Logo von Antolin, siehe
-  Hinweis unten)
+  Hinweis unten). Ausnahme das kleine L4732REV: zu wenig Platz für Titel/
+  Autor, zeigt nur die Etikettnummer über dem Strichcode – wie auf den
+  bereits im Einsatz befindlichen Etiketten dieses Formats
 - Auswahl mehrerer Titel gleichzeitig (Freitextsuche, „Alle Treffer
   auswählen“) – gedruckt wird je ausgewähltem Titel ein Etikett für jedes
   seiner Exemplare

@@ -6,6 +6,15 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.8.5 – 2026-09-11
+
+### Neu
+- **4. Etikettenformat: Zweckform/Avery L4732REV** (35,6 × 16,9 mm,
+  80/Bogen, Layout 5 × 16) – nachgebaut nach einem vom Nutzer
+  fotografierten Original-Bogen. Zu klein für Titel/Autor: zeigt nur die
+  Etikettnummer über dem Strichcode, wie auf den bereits im Einsatz
+  befindlichen Etiketten dieses Formats.
+
 ## 0.8.0 – 2026-09-11
 
 ### Neu

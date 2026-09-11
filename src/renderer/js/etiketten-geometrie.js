@@ -10,16 +10,22 @@
  * Maße abgeleitet aus den offiziellen Produktmaßen (Zweckform 3475: 70×36 mm/
  * 24 pro Bogen; Avery L7160, auch bei Zweckform als Universal-Etikett
  * geführt: 63,5×38,1 mm/21 pro Bogen; Zweckform 3651: 52,5×29,7 mm/40 pro
- * Bogen) und der quelloffenen glabels-Etikettendatenbank für Rand-/
- * Rasterabstand (dort in pt hinterlegt, hier nach mm umgerechnet – 1pt =
- * 25,4/72 mm). marginTop/marginLeft sind der Abstand der ERSTEN
- * Etikettenecke vom Blattrand, pitchX/pitchY der Mittenabstand
- * (Etikettengröße + Lücke) zur nächsten Spalte/Zeile.
+ * Bogen; Zweckform/Avery L4732REV: 35,6×16,9 mm/80 pro Bogen, Layout
+ * bestätigt über die quelloffene glabels-Etikettendatenbank, x0=11mm/
+ * y0=13mm/dx=38,1mm/dy=16,9mm) und – wo nicht direkt vom Hersteller
+ * übernommen – ebenjener glabels-Datenbank für Rand-/Rasterabstand (dort in
+ * pt hinterlegt, hier nach mm umgerechnet – 1pt = 25,4/72 mm). marginTop/
+ * marginLeft sind der Abstand der ERSTEN Etikettenecke vom Blattrand,
+ * pitchX/pitchY der Mittenabstand (Etikettengröße + Lücke) zur nächsten
+ * Spalte/Zeile. `kompakt: true` markiert Formate, die für Titel/Autor zu
+ * klein sind – dort zeigt das Etikett nur Etikettnummer + Barcode (siehe
+ * etiketten-print.js).
  */
 const FORMATE = {
   'zweckform-3475': { label: 'Zweckform 3475 (70 × 36 mm, 24/Bogen)', cols: 3, rows: 8, marginTop: 4.43, marginLeft: 0, pitchX: 70.02, pitchY: 36.01 },
   'zweckform-l7160': { label: 'Zweckform/Avery L7160 (63,5 × 38,1 mm, 21/Bogen)', cols: 3, rows: 7, marginTop: 15.49, marginLeft: 7.48, pitchX: 66.04, pitchY: 38.1 },
   'zweckform-3651': { label: 'Zweckform 3651 (52,5 × 29,7 mm, 40/Bogen)', cols: 4, rows: 10, marginTop: 1.0, marginLeft: 1.0, pitchX: 52.0, pitchY: 29.5 },
+  'zweckform-l4732': { label: 'Zweckform/Avery L4732REV (35,6 × 16,9 mm, 80/Bogen, nur Nummer + Barcode)', cols: 5, rows: 16, marginTop: 13.0, marginLeft: 11.0, pitchX: 38.1, pitchY: 16.9, kompakt: true },
 };
 
 /**

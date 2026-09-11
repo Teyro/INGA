@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { FORMATE, berechnePositionen } = require('../src/renderer/js/etiketten-geometrie.js');
 
-test('Etiketten-Formate: alle drei bekannten Zweckform-/Avery-Formate vorhanden mit plausibler Geometrie', () => {
+test('Etiketten-Formate: alle bekannten Zweckform-/Avery-Formate vorhanden mit plausibler Geometrie', () => {
   for (const [id, format] of Object.entries(FORMATE)) {
     assert.ok(format.cols > 0 && format.rows > 0, `${id}: cols/rows müssen positiv sein`);
     assert.ok(format.pitchX > 0 && format.pitchY > 0, `${id}: pitchX/pitchY müssen positiv sein`);
@@ -24,6 +24,12 @@ test('Etiketten-Formate: alle drei bekannten Zweckform-/Avery-Formate vorhanden 
     assert.ok(breiteGenutzt <= 210.5, `${id}: Raster ${breiteGenutzt}mm zu breit für A4`);
     assert.ok(hoeheGenutzt <= 297.5, `${id}: Raster ${hoeheGenutzt}mm zu hoch für A4`);
   }
+});
+
+test('Zweckform/Avery L4732REV: 80 Etiketten pro Bogen (5 × 16), als "kompakt" markiert (zu klein für Titel/Autor)', () => {
+  const format = FORMATE['zweckform-l4732'];
+  assert.equal(format.cols * format.rows, 80);
+  assert.equal(format.kompakt, true);
 });
 
 test('berechnePositionen: Startposition 1 füllt den ersten Bogen ohne Lücke, zeilenweise', () => {
