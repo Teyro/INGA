@@ -24,14 +24,15 @@ if (process.platform === 'linux') {
 
 const platform = require('./platform');
 const { Store, DEFAULT_SETTINGS, defaultSettingsFor, sanitizeSettings } = require('./store');
-const { openDatabase } = require('./db');
+const { openDatabase, TABLES } = require('./db');
 const repo = require('./repo');
 const ferien = require('./ferien');
 const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
-const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden } = require('./backup');
+const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('./backup');
+const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
@@ -60,9 +61,41 @@ let backupDir = null;
 let activeStyle = platform.nativeStyle();
 let coverBulkAbgebrochen = false;
 let coverBulkLaeuft = false;
+// EXPERIMENTELL (siehe perpustakaan-live.js): Zustand für die Statusanzeige
+// in den Einstellungen. `bereit` entscheidet NICHT allein über einen
+// tatsächlichen Zugriff – "Jetzt lesen"/"Jetzt schreiben" prüfen bei jedem
+// Aufruf zusätzlich frisch, ob die Datenbank in diesem Moment frei ist
+// (Perpustakaan könnte zwischenzeitlich geöffnet worden sein).
+let perpustakaanLiveStatus = { aktiv: false };
 
 function settings() {
   return store.get('settings', defaultSettingsFor(platform.nativeStyle(), platform.STYLE_ACCENTS[platform.nativeStyle()]));
+}
+
+/**
+ * EXPERIMENTELL: sichert die echte Perpustakaan-Datenbank (IMMER, nicht nur
+ * einmal täglich) und prüft danach, ob sie gerade zugreifbar ist – siehe
+ * perpustakaan-live.js für die Begründung. Aktualisiert nur den Status für
+ * die Anzeige in den Einstellungen; ob ein "Jetzt lesen"/"Jetzt schreiben"
+ * am Ende wirklich klappt, entscheidet der jeweilige IPC-Handler mit einer
+ * eigenen, frischen Prüfung.
+ */
+async function perpustakaanLiveBereitPruefen() {
+  const dbPfad = settings().perpustakaanLiveDbPfad;
+  const sicherungsPfad = sichereOriginalPerpustakaanDbSync(dbPfad, backupDir);
+  if (!sicherungsPfad) {
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: 'Sicherung der Original-Datenbank fehlgeschlagen – Zugriff aus Sicherheitsgründen gesperrt.' };
+    return perpustakaanLiveStatus;
+  }
+  const ergebnis = await perpustakaanLive.pruefeZugriff(dbPfad);
+  if (ergebnis.ok) {
+    perpustakaanLiveStatus = { aktiv: true, bereit: true, sicherungsPfad };
+  } else if (ergebnis.gesperrt) {
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, gesperrt: true, grund: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen.', sicherungsPfad };
+  } else {
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: ergebnis.fehler || 'unbekannter Fehler', sicherungsPfad };
+  }
+  return perpustakaanLiveStatus;
 }
 
 function isDark() {
@@ -860,6 +893,90 @@ function registerIpc() {
     await einspielenUndNeustarten(result.filePaths[0]);
   }));
 
+  /* ------------------------------------------- EXPERIMENTELL: Perpustakaan-Direktzugriff (siehe perpustakaan-live.js) */
+
+  ipcMain.handle('perpustakaan-live:status', () => perpustakaanLiveStatus);
+
+  /**
+   * Erneute Prüfung AUF ANFRAGE (Ordner gerade gewählt, Zugriff gerade
+   * aktiviert) – dieselbe Sicherung+Prüfung wie beim Programmstart, damit
+   * die Statusanzeige nicht bis zum nächsten Neustart veraltet bleibt.
+   */
+  ipcMain.handle('perpustakaan-live:jetzt-pruefen', sicher(async () => {
+    const s = settings();
+    if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) {
+      perpustakaanLiveStatus = { aktiv: false };
+      return perpustakaanLiveStatus;
+    }
+    return perpustakaanLiveBereitPruefen();
+  }));
+
+  ipcMain.handle('perpustakaan-live:pfad-waehlen', sicher(async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Ordner der Perpustakaan-Datenbank wählen',
+      properties: ['openDirectory'],
+      message: 'Der Ordner mit service.properties/log/seg0 der echten Apache-Derby-Datenbank (NICHT der Perpustakaan-Programmordner selbst).',
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  }));
+
+  /** Live aus Perpustakaan lesen: exakt derselbe Import-Weg wie eine hochgeladene Sicherung (csvio.importZip) – der Java-Bridge-Export liefert nur dieselbe Zip-Form. */
+  ipcMain.handle('perpustakaan-live:jetzt-lesen', sicher(async () => {
+    const s = settings();
+    if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
+    const zugriff = await perpustakaanLive.pruefeZugriff(s.perpustakaanLiveDbPfad);
+    perpustakaanLiveStatus = zugriff.ok
+      ? { aktiv: true, bereit: true }
+      : { aktiv: true, bereit: false, gesperrt: Boolean(zugriff.gesperrt), grund: zugriff.gesperrt ? 'Perpustakaan scheint gerade geöffnet zu sein.' : zugriff.fehler };
+    if (!zugriff.ok) {
+      return zugriff.gesperrt
+        ? { ok: false, gesperrt: true, fehler: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen und erneut versuchen.' }
+        : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
+    }
+    sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-perpustakaan-lesen' });
+    const zielZip = path.join(os.tmpdir(), `inga-perpustakaan-dump-${Date.now()}.zip`);
+    try {
+      const ergebnis = await perpustakaanLive.dumpNachZip(s.perpustakaanLiveDbPfad, TABLES, zielZip);
+      if (!ergebnis.ok) return ergebnis;
+      importZip(db, zielZip);
+      return { ok: true, kennzahlen: repo.kennzahlen(db) };
+    } finally {
+      fs.unlink(zielZip).catch(() => {});
+    }
+  }));
+
+  /**
+   * Schreibt INGAs aktuellen Stand in die echte Perpustakaan-Datenbank –
+   * exakt derselbe Export-Weg wie "Bestand exportieren" (csvio.exportZip),
+   * nur dass das Ergebnis-Zip statt auf die Festplatte über die Java-
+   * Bridge in die Datenbank geladen wird. Sehr bewusst KEIN eigener
+   * "Bist du sicher?"-Text hier: das gehört in die Oberfläche (mehrfache,
+   * unmissverständliche Bestätigung), dieser Handler tut, worum er
+   * gebeten wird, prüft aber die Sperre frisch und lehnt ohne aktive
+   * Einstellung grundsätzlich ab.
+   */
+  ipcMain.handle('perpustakaan-live:jetzt-schreiben', sicher(async () => {
+    const s = settings();
+    if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
+    const zugriff = await perpustakaanLive.pruefeZugriff(s.perpustakaanLiveDbPfad);
+    perpustakaanLiveStatus = zugriff.ok
+      ? { aktiv: true, bereit: true }
+      : { aktiv: true, bereit: false, gesperrt: Boolean(zugriff.gesperrt), grund: zugriff.gesperrt ? 'Perpustakaan scheint gerade geöffnet zu sein.' : zugriff.fehler };
+    if (!zugriff.ok) {
+      return zugriff.gesperrt
+        ? { ok: false, gesperrt: true, fehler: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen und erneut versuchen.' }
+        : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
+    }
+    const quellZip = path.join(os.tmpdir(), `inga-perpustakaan-schreiben-${Date.now()}.zip`);
+    try {
+      exportZip(db, quellZip);
+      return await perpustakaanLive.ladeAusZip(s.perpustakaanLiveDbPfad, quellZip);
+    } finally {
+      fs.unlink(quellZip).catch(() => {});
+    }
+  }));
+
   ipcMain.handle('papierkorb:leser-liste', () => repo.papierkorbLeserListe(db));
   ipcMain.handle('papierkorb:medien-liste', () => repo.papierkorbMedienListe(db));
   ipcMain.handle('papierkorb:leser-wiederherstellen', sicher((_e, id) => repo.leserWiederherstellen(db, id)));
@@ -945,6 +1062,14 @@ if (!gotLock) {
     // von der .sqlite3-Sicherung oben, eigene Rotation/eigener Tages-Check.
     if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
       sicherePerpustakaanZipSync(db, backupDir, exportZip);
+    }
+    // EXPERIMENTELL: bei jedem Start (nicht nur einmal täglich wie oben –
+    // siehe backup.js) die ECHTE Perpustakaan-Datenbank sichern, BEVOR
+    // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
+    // diese Sicherung fehl, bleibt der Live-Zugriff für diesen Start
+    // gesperrt (perpustakaanLiveBereitPruefen() unten).
+    if (settings().perpustakaanLiveAktiv && settings().perpustakaanLiveDbPfad) {
+      await perpustakaanLiveBereitPruefen();
     }
 
     registerIpc();

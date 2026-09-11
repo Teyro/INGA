@@ -14,3 +14,9 @@ Thumbs.db
 *.sqlite3-shm
 backups/
 config/
+
+# EXPERIMENTELL (Branch feature/perpustakaan-live-db): Java-Laufzeit +
+# Derby-Jars für den Live-Zugriff, bei jedem Build per
+# scripts/setup-derby-runtime.js neu geholt (wie Electrons eigene
+# Binärdateien) – gehört nicht ins Repository, ~150 MB je Plattform.
+derby-runtime/
