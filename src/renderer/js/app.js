@@ -158,6 +158,7 @@ function applyChrome(data) {
 function onMenuAction(action) {
   if (action === 'neuer-titel') { showView('katalog'); openKatalogSheet(null); }
   else if (action === 'neuer-leser') { showView('leser'); openLeserSheet(null); }
+  else if (action === 'verlaengern') { showView('rueckgabe'); document.getElementById('rueckgabe-verlaengern-etikett').focus(); }
   else if (action === 'import') { showView('bestand'); document.getElementById('bestand-import').click(); }
   else if (action === 'export') { showView('bestand'); document.getElementById('bestand-export').click(); }
   else if (action === 'settings') showView('einstellungen');
@@ -1534,6 +1535,32 @@ async function ausleihenAbschicken() {
 
 /* -------------------------------------------------------------- Rückgabe */
 
+/**
+ * Schnelle Verlängerung per Buchnummer (Signatur/Barcode) – für den Fall an
+ * der Theke, dass ein Kind nur verlängern statt zurückgeben will: Nummer
+ * eintippen oder scannen, Enter oder Klick auf "Verlängern", fertig. Nutzt
+ * dieselbe Zuordnung (Etikett -> Exemplar -> laufende Ausleihe) wie die
+ * schnelle Rückgabe gleich daneben, respektiert also automatisch dieselben
+ * Regeln (max. Verlängerungen, gesperrt bei Vormerkung, …) wie der normale
+ * "Verlängern"-Knopf in der Tabelle.
+ */
+async function verlaengereEinzelnPerEtikett() {
+  const feld = document.getElementById('rueckgabe-verlaengern-etikett');
+  const etikett = feld.value.trim();
+  if (!etikett) return;
+  const medium = await api.medium.findByEtikett(etikett);
+  if (!medium) { toast(`Kein Exemplar mit Nummer „${etikett}“.`, 'error'); return; }
+  const status = await api.medium.status(medium.MedienNi);
+  if (!status.verliehen) { toast('Dieses Exemplar ist nicht ausgeliehen.', 'error'); return; }
+  const result = await api.ausleihe.verlaengern(status.ausleihe.id);
+  feld.value = '';
+  feld.focus();
+  if (result.ok) toast('Verlängert.');
+  else toast(`Nicht verlängert: ${result.error}`, 'error');
+  await loadRueckgabe();
+  await refreshKennzahlen();
+}
+
 function wireRueckgabe() {
   document.getElementById('rueckgabe-etikett').addEventListener('keydown', async (e) => {
     if (e.key !== 'Enter') return;
@@ -1549,6 +1576,10 @@ function wireRueckgabe() {
     await loadRueckgabe();
     await refreshKennzahlen();
   });
+  document.getElementById('rueckgabe-verlaengern-etikett').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verlaengereEinzelnPerEtikett();
+  });
+  document.getElementById('rueckgabe-verlaengern-etikett-los').addEventListener('click', verlaengereEinzelnPerEtikett);
   document.getElementById('rueckgabe-suche').addEventListener('input', debounce(loadRueckgabe, 200));
   document.getElementById('rueckgabe-nur-ueberfaellig').addEventListener('change', loadRueckgabe);
   for (const id of ['rueckgabe-filter-klasse', 'rueckgabe-filter-verlaengert']) {
@@ -1746,6 +1777,7 @@ function wireMahnungen() {
 
   document.getElementById('mahnungen-erinnerung-erstellen').addEventListener('click', () => mahnungenVorbereiten(0));
   document.getElementById('mahnungen-mahnung-erstellen').addEventListener('click', () => mahnungenVorbereiten(1));
+  document.getElementById('mahnungen-beide-erstellen').addEventListener('click', mahnungenBeideVorbereiten);
 
   document.getElementById('mahnung-vorschau-close').addEventListener('click', schliesseMahnungVorschau);
   document.getElementById('mahnung-vorschau-abbrechen').addEventListener('click', schliesseMahnungVorschau);
@@ -1878,41 +1910,73 @@ function baueMahnBriefeVorschau(positionen, stufeIndex) {
 
 /**
  * Nimmt von den links angehakten Zeilen nur die, deren rechte "Mahnung?"-
- * Checkbox zur gewünschten Stufe passt – so kann eine gemischte Auswahl
+ * Checkbox zur jeweiligen Stufe passt – so kann eine gemischte Auswahl
  * (manche als Erinnerung, andere als Mahnung markiert) in einem Durchgang
- * per "Alle auswählen" + beide Knöpfe nacheinander abgearbeitet werden,
- * statt die Auswahl von Hand in zwei Durchgänge aufteilen zu müssen.
+ * per "Alle auswählen" + "Erinnerung + Mahnung erstellen" abgearbeitet
+ * werden, statt die Auswahl von Hand in zwei Durchgänge aufteilen zu
+ * müssen. Ergebnis: [{stufeIndex: 0, positionen: […]}, {stufeIndex: 1, positionen: […]}].
  */
-function mahnungenVorbereiten(stufeIndex) {
+function gruppiereAusgewaehlteNachStufe() {
   const checked = [...document.querySelectorAll('#mahnungen-tbody input[type="checkbox"][data-payload]:checked')];
+  return [0, 1].map((stufeIndex) => ({
+    stufeIndex,
+    positionen: checked
+      .filter((cb) => {
+        const payload = JSON.parse(cb.dataset.payload);
+        const stufeCb = document.querySelector(`#mahnungen-tbody input[type="checkbox"][data-stufe-fuer-id="${payload.id}"]`);
+        return Boolean(stufeCb?.checked) === (stufeIndex === 1);
+      })
+      .map((cb) => JSON.parse(cb.dataset.payload)),
+  }));
+}
+
+function mahnungenVorbereiten(stufeIndex) {
+  const checked = document.querySelectorAll('#mahnungen-tbody input[type="checkbox"][data-payload]:checked');
   if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
-  const passend = checked.filter((cb) => {
-    const payload = JSON.parse(cb.dataset.payload);
-    const stufeCb = document.querySelector(`#mahnungen-tbody input[type="checkbox"][data-stufe-fuer-id="${payload.id}"]`);
-    const alsMahnung = Boolean(stufeCb?.checked);
-    return alsMahnung === (stufeIndex === 1);
-  });
-  if (!passend.length) {
+  const gruppe = gruppiereAusgewaehlteNachStufe().find((g) => g.stufeIndex === stufeIndex);
+  if (!gruppe.positionen.length) {
     toast(`Von der Auswahl ist keine als „${stufeIndex === 1 ? 'Mahnung' : 'Erinnerung'}“ markiert.`, 'error');
     return;
   }
-  const positionen = passend.map((cb) => JSON.parse(cb.dataset.payload));
-  zeigeMahnungVorschau(positionen, stufeIndex);
+  zeigeMahnungVorschau([gruppe]);
 }
 
-/** Vorschau vor dem Erstellen: Anzahl der Schreiben + fertiger Text des ersten Falls – erst nach Bestätigung wird tatsächlich gedruckt/gespeichert (Abschnitt 5.2). */
-function zeigeMahnungVorschau(positionen, stufeIndex) {
-  const stufe = state.settings.mahnstufen[stufeIndex] || {};
-  const briefe = baueMahnBriefeVorschau(positionen, stufeIndex);
-  document.getElementById('mahnung-vorschau-titel').textContent = `${stufe.text || 'Schreiben'} erstellen`;
-  document.getElementById('mahnung-vorschau-anzahl').textContent = `${briefe.length} Schreiben ${briefe.length === 1 ? 'wird' : 'werden'} erstellt.`;
-  const erster = briefe[0];
+/** Beide Stufen auf einmal: erstellt/druckt in einem Rutsch sowohl die als Erinnerung als auch die als Mahnung markierten Zeilen der Auswahl (zwei getrennte Schreiben-Sätze, ein gemeinsamer Bestätigungsdialog). */
+function mahnungenBeideVorbereiten() {
+  const checked = document.querySelectorAll('#mahnungen-tbody input[type="checkbox"][data-payload]:checked');
+  if (!checked.length) { toast('Nichts ausgewählt.', 'error'); return; }
+  zeigeMahnungVorschau(gruppiereAusgewaehlteNachStufe());
+}
+
+/**
+ * Vorschau vor dem Erstellen: Anzahl der Schreiben je Stufe + fertiger Text
+ * des ersten Falls – erst nach Bestätigung wird tatsächlich gedruckt/
+ * gespeichert (Abschnitt 5.2). `gruppen` ist [{stufeIndex, positionen}, …] –
+ * normalerweise ein Eintrag (ein Stufen-Knopf), bei "Erinnerung + Mahnung
+ * erstellen" zwei, leere Gruppen werden ignoriert.
+ */
+function zeigeMahnungVorschau(gruppen) {
+  const belegt = gruppen
+    .filter((g) => g.positionen.length)
+    .map((g) => ({ ...g, stufe: state.settings.mahnstufen[g.stufeIndex] || {}, briefe: baueMahnBriefeVorschau(g.positionen, g.stufeIndex) }));
+  const gesamt = belegt.reduce((n, g) => n + g.briefe.length, 0);
+
+  document.getElementById('mahnung-vorschau-titel').textContent =
+    belegt.length > 1 ? 'Erinnerung + Mahnung erstellen' : `${belegt[0]?.stufe.text || 'Schreiben'} erstellen`;
+  document.getElementById('mahnung-vorschau-anzahl').textContent = belegt.length > 1
+    ? `${belegt.map((g) => `${g.briefe.length} ${g.briefe.length === 1 ? g.stufe.text || 'Schreiben' : `${g.stufe.text || 'Schreiben'}en`}`).join(' und ')} werden erstellt.`
+    : `${gesamt} Schreiben ${gesamt === 1 ? 'wird' : 'werden'} erstellt.`;
+  const erster = belegt[0]?.briefe[0];
   document.getElementById('mahnung-vorschau-text').textContent = erster ? `${erster.betreff}\n\n${erster.text}` : '';
   document.getElementById('mahnung-vorschau-backdrop').hidden = false;
   document.getElementById('mahnung-vorschau-weiter').onclick = async () => {
     schliesseMahnungVorschau();
-    const result = await api.mahnung.erzeugenUndDrucken(positionen, stufeIndex);
-    toast(`${result.anzahl} Schreiben erzeugt.`);
+    let erzeugt = 0;
+    for (const g of belegt) {
+      const result = await api.mahnung.erzeugenUndDrucken(g.positionen, g.stufeIndex);
+      erzeugt += result.anzahl;
+    }
+    toast(`${erzeugt} Schreiben erzeugt.`);
     await loadMahnungen();
     await refreshKennzahlen();
   };

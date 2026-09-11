@@ -92,9 +92,12 @@ html, body { margin: 0; height: 100%; background: var(--window); color: var(--te
   box-sizing: border-box;
 }
 .umlauf-kopf { margin-bottom: 14px; border-bottom: 1px solid #ccc; padding-bottom: 8px; }
+.umlauf-kopf-stand { font-size: 8pt; color: #777; margin-bottom: 6px; }
+.umlauf-kopf-zeile { display: flex; align-items: center; gap: 14px; }
+.umlauf-kopf-zeile .logo { max-height: 50px; max-width: 170px; object-fit: contain; }
 .umlauf-kopf-schule { font-size: 9pt; color: #555; }
-.umlauf-kopf h1 { font-size: 15pt; margin: 2px 0; }
-.umlauf-kopf-meta { display: flex; gap: 18px; font-size: 8.5pt; color: #666; }
+.umlauf-kopf h1 { font-size: 16pt; margin: 0 0 2px; }
+.umlauf-kopf-meta { display: flex; gap: 18px; font-size: 8.5pt; color: #666; margin-top: 8px; }
 
 .umlauf-tabelle { width: 100%; border-collapse: collapse; }
 .umlauf-tabelle th, .umlauf-tabelle td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 9pt; }

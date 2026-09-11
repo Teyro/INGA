@@ -172,16 +172,23 @@ Probedruck auf normalem Papier gegen das Licht.*
   automatisch als erfüllt; leiht jemand anderes aus, erscheint ein
   Hinweis. Einstellung „Verlängerung gesperrt, wenn Buch vorgemerkt ist“
   verhindert eine Verlängerung, solange eine andere Person wartet
+- **Schnelle Verlängerung per Buchnummer**: eigenes Eingabefeld direkt in
+  der Rückgabe-Ansicht ("Buchnummer zur schnellen Verlängerung") sowie ein
+  Schnellzugriff-Knopf auf der Startseite – Nummer eintippen oder scannen,
+  Enter oder Klick auf „Verlängern“, fertig, ohne erst die Zeile in der
+  Liste suchen zu müssen. Es gelten dieselben Regeln wie beim normalen
+  „Verlängern“-Knopf (max. Verlängerungen, ggf. gesperrt bei Vormerkung)
 
 ### Im Umlauf
 
 „Was ist gerade unterwegs?“ – alle offenen Ausleihen auf einen Blick:
-Buchtitel, Autor, Signatur/Barcode, Kind, Klasse, Ausleih-/Rückgabedatum,
-Tage überfällig und Anzahl Verlängerungen. Filterbar per Freitext,
-gruppierbar nach Klasse oder nach Kind (praktisch, um die Liste klassenweise
-auszudrucken), Export als CSV (Excel-freundlich: Semikolon, UTF-8-BOM) und
-als XLSX (Kopfzeile fett, Autofilter, passende Spaltenbreiten) sowie
-Direktdruck/PDF im Querformat mit Kopf- (Schulname, Datum, Filter) und
+Ausleihe-Nummer, Buchtitel, Autor, Signatur/Barcode, Kind, Klasse,
+Ausleih-/Rückgabedatum, Tage überfällig und Anzahl Verlängerungen.
+Filterbar per Freitext, gruppierbar nach Klasse oder nach Kind (praktisch,
+um die Liste klassenweise auszudrucken), Export als CSV (Excel-freundlich:
+Semikolon, UTF-8-BOM) und als XLSX (Kopfzeile fett, Autofilter, passende
+Spaltenbreiten) sowie Direktdruck/PDF im Querformat mit Briefkopf (Logo aus
+den Mahnungs-Einstellungen, Schulname, Datum/Uhrzeit, aktiver Filter) und
 Fußzeile (Seitenzahl). Schnellzugriff über die Startseite und die
 Mahnliste.
 
@@ -201,10 +208,13 @@ Mahnliste.
   seit mindestens X Tagen", Vorgabe 1), ein Eintrag pro überfälligem Buch,
   sortierbar nach Tagen/Name/Klasse/Einstufung. Je Fall zeigt und
   übersteuert eine Checkbox rechts, ob Erinnerung oder Mahnung erstellt
-  wird (vorbelegt nach der Schwelle, änderbar); "Erinnerung erstellen" und
-  "Mahnung erstellen" nehmen sich aus der Auswahl automatisch nur die
-  passend markierten Fälle. Vorschau vor dem Drucken, protokolliert je Fall
-  welche Stufe wann verschickt wurde
+  wird (vorbelegt nach der Schwelle, änderbar); "Nur Erinnerungen
+  erstellen"/"Nur Mahnungen erstellen" nehmen sich aus der Auswahl
+  automatisch nur die passend markierten Fälle, "Erinnerung + Mahnung
+  erstellen" erledigt eine gemischte Auswahl in einem Rutsch (ein
+  gemeinsamer Bestätigungsdialog, intern zwei getrennte Schreiben-Sätze
+  mit dem jeweils richtigen Text/Betreff). Vorschau vor dem Drucken,
+  protokolliert je Fall welche Stufe wann verschickt wurde
 - Eigener Briefkopf: Absender, E-Mail, Telefon, Betreff-Vorlage,
   Schlusstext, Logo
 - Formeller Brief per **PDF-Export**, **direktem Druckauftrag**, **per

@@ -1,7 +1,7 @@
 {
   "name": "inga",
   "productName": "INGA",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "INGA Ist Nicht Genehmigungspflichtige Anschaffung – freie Schulbibliotheksverwaltung",
   "main": "src/main/main.js",
   "//desktopName": "Electron leitet daraus unter Linux die app_id und WM_CLASS ab; muss zum Namen der .desktop-Datei passen, sonst ordnen GNOME und KDE das laufende Fenster nicht dem Starter zu.",

@@ -6,6 +6,27 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 0.8.0 – 2026-09-11
+
+### Neu
+- **„Im Umlauf“-Ausdruck überarbeitet**: zeigt jetzt zusätzlich die
+  Ausleihe-Nummer je Zeile, und im Briefkopf oben das in den
+  Mahnungs-Einstellungen hinterlegte Bibliothekslogo sowie Datum/Uhrzeit
+  im Stil der bisherigen Rückstandslisten-Ausdrucke.
+- **Mahnungen: „Erinnerung + Mahnung erstellen“**: neuer, jetzt
+  hervorgehobener Knopf, der eine gemischte Auswahl (manche Fälle als
+  Erinnerung, andere als Mahnung markiert) in einem Rutsch erledigt –
+  bisher mussten dafür nacheinander beide einzelnen Knöpfe geklickt
+  werden. Die beiden einzelnen Knöpfe „Nur Erinnerungen erstellen“/„Nur
+  Mahnungen erstellen“ bleiben für den Fall, dass gezielt nur eine Sorte
+  gedruckt werden soll – alle drei jetzt mit einheitlicher, korrigierter
+  Knopffarbe (vorher: einer der beiden grau, einer orange, ohne
+  erkennbaren Grund für den Unterschied).
+- **Schnelle Verlängerung per Buchnummer**: neues Eingabefeld in der
+  Rückgabe-Ansicht sowie ein Schnellzugriff-Knopf auf der Startseite –
+  Nummer eintippen oder scannen, Enter oder Klick auf „Verlängern“,
+  fertig, ohne die Zeile erst in der Liste suchen zu müssen.
+
 ## 0.7.0 – 2026-09-10
 
 ### Neu

@@ -65,6 +65,7 @@
           <div class="quick-actions">
             <button class="quick-btn" data-view="ausleihe"><span class="icon">➡️</span><span>Ausleihen</span></button>
             <button class="quick-btn" data-view="rueckgabe"><span class="icon">⬅️</span><span>Rückgabe</span></button>
+            <button class="quick-btn" data-action="verlaengern"><span class="icon">⏳</span><span>Verlängern</span></button>
             <button class="quick-btn" data-action="neuer-titel"><span class="icon">📖</span><span>Neuer Titel</span></button>
             <button class="quick-btn" data-view="mahnungen"><span class="icon">✉️</span><span>Mahnungen</span></button>
             <button class="quick-btn" data-view="umlauf"><span class="icon">🔁</span><span>Im Umlauf drucken</span></button>
@@ -305,6 +306,8 @@
         <div class="toolbar">
           <h1>Offene Ausleihen</h1>
           <div class="searchbar"><span class="icon">🔎</span><input type="search" id="rueckgabe-etikett" placeholder="Barcode zur schnellen Rückgabe" /></div>
+          <div class="searchbar"><span class="icon">⏳</span><input type="search" id="rueckgabe-verlaengern-etikett" placeholder="Buchnummer zur schnellen Verlängerung" /></div>
+          <button class="button" id="rueckgabe-verlaengern-etikett-los">Verlängern</button>
           <div class="searchbar"><span class="icon">🔍</span><input type="search" id="rueckgabe-suche" placeholder="Nach Name oder Titel filtern" /></div>
           <label class="checkbox-label"><input type="checkbox" id="rueckgabe-nur-ueberfaellig" /> Nur überfällige</label>
           <div class="spacer"></div>
@@ -363,8 +366,9 @@
             <tbody id="mahnungen-tbody"></tbody>
           </table>
           <div class="row-inline" style="margin-top:16px">
-            <button class="button" id="mahnungen-erinnerung-erstellen">Erinnerung erstellen</button>
-            <button class="button primary" id="mahnungen-mahnung-erstellen">Mahnung erstellen</button>
+            <button class="button" id="mahnungen-erinnerung-erstellen">Nur Erinnerungen erstellen</button>
+            <button class="button" id="mahnungen-mahnung-erstellen">Nur Mahnungen erstellen</button>
+            <button class="button primary" id="mahnungen-beide-erstellen">Erinnerung + Mahnung erstellen</button>
           </div>
         </div>
       </section>

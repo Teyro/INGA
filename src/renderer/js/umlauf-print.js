@@ -14,6 +14,7 @@ function escapeHtml(text) {
 
 function zeile(z) {
   return el('tr', {}, [
+    el('td', { class: 'num' }, [String(z.id)]),
     el('td', {}, [z.Titel || '']),
     el('td', {}, [z.Autor || '']),
     el('td', {}, [z.MedienEtik || '']),
@@ -30,13 +31,14 @@ function tabelle(gruppen) {
   const tbody = el('tbody', {}, []);
   for (const gruppe of gruppen) {
     if (gruppe.titel) {
-      tbody.appendChild(el('tr', { class: 'gruppe-kopf' }, [el('td', { colSpan: 9 }, [gruppe.titel])]));
+      tbody.appendChild(el('tr', { class: 'gruppe-kopf' }, [el('td', { colSpan: 10 }, [gruppe.titel])]));
     }
     for (const z of gruppe.zeilen) tbody.appendChild(zeile(z));
   }
   return el('table', { class: 'umlauf-tabelle' }, [
     el('thead', {}, [
       el('tr', {}, [
+        el('th', { class: 'num' }, ['Ausleihe-Nr.']),
         el('th', {}, ['Buchtitel']), el('th', {}, ['Autor']), el('th', {}, ['Signatur/Barcode']),
         el('th', {}, ['Kind']), el('th', {}, ['Klasse']), el('th', {}, ['Ausgeliehen am']),
         el('th', {}, ['Rückgabe bis']), el('th', { class: 'num' }, ['Tage überfällig']), el('th', { class: 'num' }, ['Verlängerungen']),
@@ -62,10 +64,18 @@ function render(data) {
   document.getElementById('page-style').textContent = `@page { size: A4 landscape; margin: 12mm; }`;
 
   const schulname = s.absenderName || 'Schulbibliothek';
-  const datum = new Date().toLocaleDateString('de-DE');
+  const jetzt = new Date();
+  const datum = jetzt.toLocaleDateString('de-DE');
+  const zeit = jetzt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const kopf = el('div', { class: 'umlauf-kopf' }, [
-    el('div', { class: 'umlauf-kopf-schule' }, [schulname]),
-    el('h1', {}, [data.titel || 'Im Umlauf – was ist gerade unterwegs?']),
+    el('div', { class: 'umlauf-kopf-stand' }, [`${datum}, ${zeit}`]),
+    el('div', { class: 'umlauf-kopf-zeile' }, [
+      s.mahnLogoDataUrl ? el('img', { class: 'logo', src: s.mahnLogoDataUrl, alt: '' }) : null,
+      el('div', {}, [
+        el('h1', {}, [data.titel || 'Im Umlauf – was ist gerade unterwegs?']),
+        el('div', { class: 'umlauf-kopf-schule' }, [schulname]),
+      ]),
+    ]),
     el('div', { class: 'umlauf-kopf-meta' }, [
       el('span', {}, [`Stand: ${datum}`]),
       data.filterBeschreibung ? el('span', {}, [data.filterBeschreibung]) : null,
