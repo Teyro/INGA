@@ -61,8 +61,18 @@
    tatsächlich flachen Fensterhintergrund war ein ruhender Knopf damit kaum
    vom Hintergrund zu unterscheiden (siehe Nutzerrückmeldung: "grau
    unterlegt, schlecht zu sehen, erst beim Drüberfahren färbt er sich ein").
-   var(--surface) wie auf den anderen Plattformen hebt sich klar ab. */
-:root[data-ui="win"] .button { border: 1px solid var(--line-strong); border-bottom-color: rgb(var(--shadow-rgb) / 0.1); background: var(--surface); }
+   var(--surface) wie auf den anderen Plattformen hebt sich klar ab.
+   Bewusst OHNE ":root" vor "[data-ui="win"]" (anders als die übrigen Regeln
+   hier): ":root[data-ui=...]" zählt als ZWEI Selektoren (Spezifität 0,3,0
+   für ".button" insgesamt) – höher als ".button.primary"/".button.ghost"/
+   ".button:hover" (je 0,2,0) und hat sie deshalb bisher IMMER überstimmt,
+   unabhängig von der Reihenfolge im Stylesheet. Das ließ den "Ausleihen"-
+   Knopf im Ruhezustand komplett verschwinden (deckendes var(--surface)
+   statt var(--confirm)/var(--accent)) statt nur blass zu wirken, siehe
+   Nutzerrückmeldung mit Screenshots. Ohne ":root" (0,2,0) ziehen die
+   spezifischeren Regeln unten in app.css (die als Quelle nach platform.css
+   geladen wird) bei gleicher Spezifität wieder korrekt nach. */
+[data-ui="win"] .button { border: 1px solid var(--line-strong); border-bottom-color: rgb(var(--shadow-rgb) / 0.1); background: var(--surface); }
 :root[data-ui="win"] .button.primary { border-color: transparent; }
 :root[data-ui="win"] .nav-item { border-radius: 4px; position: relative; }
 :root[data-ui="win"] .nav-item.active { background: var(--fill-hover); }

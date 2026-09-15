@@ -295,11 +295,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-line
    Deaktiviert-Optik für alle Knöpfe gleich. */
 .button:disabled:not(.primary) { opacity: 0.45; }
 /* "Bestätigen"-Knöpfe (Speichern, Ausleihen, Drucken, Erinnerung/Mahnung
-   erstellen, …): kräftiges Orange statt der (einstellbaren, teils zu
-   blassen) Akzentfarbe, damit sie an der Theke immer sofort auffindbar sind. */
-.button.primary { background: var(--confirm); border-color: transparent; color: #fff; }
-.button.primary:hover { background: color-mix(in srgb, var(--confirm) 88%, white); }
-.button.primary:active { background: color-mix(in srgb, var(--confirm) 78%, black); }
+   erstellen, …): ruhig blau (--accent, dieselbe Farbe wie Fokusringe/aktive
+   Navigation – wirkt zusammengehörig), beim Überfahren kräftiges Orange als
+   deutliches "hier geht's weiter"-Signal, damit sie an der Theke immer
+   sofort auffindbar sind. */
+.button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.button.primary:hover { background: var(--confirm); }
+.button.primary:active { background: color-mix(in srgb, var(--confirm) 80%, black); }
 .button.primary:disabled { background: var(--fill); color: var(--text-faint); border: 1px solid var(--line-strong); }
 .button.ghost { border-color: transparent; background: transparent; }
 .button.ghost:hover { background: var(--fill-hover); }

@@ -6,6 +6,26 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.1.1 – 2026-09-15
+
+### Behoben
+- **"Bestätigen"-Knöpfe (Ausleihen, Speichern, Drucken, …) unter Windows
+  komplett unsichtbar im Ruhezustand** – eigentliche Ursache war ein
+  CSS-Spezifitäts-Problem: die Windows-Regel für den normalen
+  Knopf-Hintergrund war (unbeabsichtigt) spezifischer als die Regel für
+  "Bestätigen"-Knöpfe und hat deren Farbe deshalb IMMER überschrieben,
+  unabhängig von der Reihenfolge im Stylesheet – vorher nur als blasses
+  Grau sichtbar. Der Fix aus Version 1.1.0 (deckender statt blasser
+  Hintergrund) hat das versehentlich von „blass“ zu „komplett unsichtbar“
+  verschlimmert, statt die eigentliche Ursache zu beheben. Jetzt richtig
+  korrigiert (niedrigere CSS-Spezifität der Windows-Regel); betraf
+  nebenbei auch den Hover-/Klick-Zustand normaler Knöpfe sowie
+  „ghost“-Knöpfe unter Windows, die dieselbe Ursache hatten.
+- **Farbe der "Bestätigen"-Knöpfe überarbeitet**: ruhig blau im
+  Normalzustand (dieselbe Farbe wie Fokusringe/aktive Navigation),
+  kräftiges Orange beim Überfahren mit der Maus – auf Nutzerwunsch statt
+  durchgehend Orange.
+
 ## 1.1.0 – 2026-09-15
 
 ### Neu
