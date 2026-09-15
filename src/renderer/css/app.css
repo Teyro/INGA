@@ -448,10 +448,22 @@ tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--a
   background: var(--fill); padding: 1px 5px; border-radius: 4px; margin: 0 1px;
 }
 
+/* Reiter oberhalb der Mahnstufen-Karte (Erinnerung/Mahnung) – zeigt immer
+   nur eine Stufe auf einmal statt beide untereinander, das machte die
+   Ansicht unübersichtlich, siehe Nutzerrückmeldung. */
+.mahnstufen-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.mahnstufen-tab {
+  padding: 8px 16px; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--text-soft);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.mahnstufen-tab:hover { color: var(--text); }
+.mahnstufen-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
 .mahnstufe-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  padding: 14px 16px;
   margin-bottom: 12px;
   background: var(--surface-2);
 }
@@ -465,6 +477,28 @@ tr.gruppe-kopf td { font-weight: 600; background: var(--surface-alt, rgb(var(--a
   background: var(--fill);
   font-size: 0.82rem; white-space: pre-wrap; color: var(--text-soft);
 }
+
+/* Brieftext-Editor: einfache Werkzeugleiste (fett/kursiv/unterstrichen,
+   Platzhalter einfügen) über einem contenteditable-Feld – deutlich größer
+   als das frühere 4-zeilige Textfeld, siehe Nutzerrückmeldung ("sehr
+   winzig und unübersichtlich"). */
+.brieftext-werkzeuge { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.brieftext-werkzeuge .icon-button {
+  width: 30px; height: 30px; border: 1px solid transparent;
+}
+.brieftext-werkzeuge .icon-button.aktiv { background: var(--fill-active); border-color: var(--line-strong); color: var(--text); }
+.brieftext-werkzeuge .trenner { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
+.brieftext-editor {
+  min-height: 280px; max-height: 480px; overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit; font-size: 0.92rem; line-height: 1.55;
+  white-space: pre-wrap;
+}
+.brieftext-editor:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.brieftext-editor b, .brieftext-editor strong { font-weight: 700; }
 
 .logo-preview { max-height: 44px; max-width: 160px; object-fit: contain; border-radius: 4px; background: var(--fill); padding: 4px; }
 

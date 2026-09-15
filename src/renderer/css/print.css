@@ -66,6 +66,11 @@ html, body { margin: 0; height: 100%; background: var(--window); color: var(--te
 .brief .datum { text-align: right; margin-bottom: 24px; }
 .brief h1 { font-size: 13pt; margin: 0 0 16px; }
 .brief p { margin: 0 0 10px; white-space: pre-wrap; }
+/* Brieftext aus dem WYSIWYG-Editor (app.js baueBrieftextEditor()) – HTML
+   mit <b>/<i>/<u>/<br>, "white-space: pre-wrap" zusätzlich für ältere,
+   noch nicht im Editor angefasste Brieftexte (reiner Text mit "\n"). */
+.brief-text { margin: 0 0 20px; white-space: pre-wrap; }
+.brief-text b, .brief-text strong { font-weight: 700; }
 .brief table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; }
 .brief th, .brief td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 10pt; }
 .brief td.num, .brief th.num { text-align: right; }

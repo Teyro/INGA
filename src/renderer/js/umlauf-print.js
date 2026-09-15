@@ -2,15 +2,7 @@
 
 const api = window.inga;
 let letzteDaten = null;
-
-/** Escaped Text für die Verwendung innerhalb eines HTML-Templates (Kopf-/Fußzeile beim PDF-Export). */
-function escapeHtml(text) {
-  return String(text ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// escapeHtml() kommt aus util.js (gemeinsam mit mahnung-print.js genutzt).
 
 const SPALTEN_ANZAHL = 11;
 

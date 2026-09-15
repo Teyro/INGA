@@ -60,6 +60,32 @@ function fuellePlatzhalter(vorlage, werte) {
   return String(vorlage || '').replace(/\{(\w+)\}/g, (ganzerTreffer, name) => (Object.hasOwn(werte, name) ? werte[name] : ganzerTreffer));
 }
 
+/** Escaped Text für die Verwendung innerhalb von HTML (z. B. per innerHTML eingesetzte Platzhalterwerte aus echten Daten – Titel, Namen, … – die selbst kein Markup enthalten dürfen). */
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Wandelt die (einfache) HTML-Fassung eines Brieftexts – aus dem
+ * Mahntext-Editor, nur <b>/<strong>/<i>/<em>/<u>/<br> – in reinen Text um.
+ * Für Kanäle, die kein HTML darstellen können (E-Mail-Body, Element-
+ * Nachricht, siehe mahnung-print.js): Fett/Kursiv/Unterstrichen geht dabei
+ * zwangsläufig verloren, Zeilenumbrüche bleiben erhalten. Alte, rein
+ * textbasierte Brieftexte (vor diesem Editor, nur „\n“ als Zeilenumbruch,
+ * kein HTML) kommen unverändert durch – enthalten schon reinen Text.
+ */
+function htmlZuText(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div)>/gi, '\n');
+  return (tmp.textContent || '').replace(/\n{3,}/g, '\n\n');
+}
+
 function fmtDatum(value) {
   if (!value) return '–';
   const d = String(value).slice(0, 10);

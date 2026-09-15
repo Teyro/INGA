@@ -166,9 +166,12 @@ Probedruck auf normalem Papier gegen das Licht.*
 - **Ausleihlimit**: maximale Anzahl gleichzeitig offener Ausleihen pro
   Person, einstellbar unter Einstellungen → Ausleihe (Vorgabe: 0 =
   unbegrenzt)
-- Rückgabe-Liste mit Volltextsuche, Filtern (nur überfällige,
-  Überfälligkeit ab X Tagen, verlängert ja/nein, Klasse,
-  Ausleihdatum-Zeitraum), Status-Badge pro Zeile und Export als CSV/Excel
+- Rückgabe-Liste mit **einem** Suchfeld für Name, Titel UND Buchnummer/
+  Signatur (Barcode scannen oder eintippen genügt – bei genau einem
+  Treffer gibt Enter das Buch direkt zurück, ohne extra klicken zu
+  müssen), dazu Filtern (nur überfällige, Überfälligkeit ab X Tagen,
+  verlängert ja/nein, Klasse, Ausleihdatum-Zeitraum), Status-Badge pro
+  Zeile und Export als CSV/Excel
 - **Vormerkungen**: ein Titel lässt sich auf der Buchdetailseite für eine
   Person vormerken (mehrere Personen möglich, Reihenfolge nach Anmeldung).
   Leiht die vormerkende Person den Titel selbst aus, gilt die Vormerkung
@@ -202,13 +205,18 @@ Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
 - Genau zwei Stufen: **Erinnerung** (freundlich, ans Kind gerichtet, keine
   Gebühr) und **Mahnung** (sachlich, an die Eltern gerichtet, mit Hinweis
   auf Ersatz bei Verlust) – Vorgabe: unter 7 Tagen überfällig eine
-  Erinnerung, ab 7 Tagen eine Mahnung, beide Schwellen und Brieftexte
-  änderbar (Platzhalter: `{Vorname}` `{Nachname}` `{Titel}` `{Tage}`
+  Erinnerung, ab 7 Tagen eine Mahnung, beide Schwellen änderbar. Je Stufe
+  ein eigener Reiter mit einem **WYSIWYG-Brieftext-Editor** (fett/kursiv/
+  unterstrichen über eine kleine Werkzeugleiste, ein „Word-artiges“
+  contenteditable-Feld statt eines reinen Textfelds) samt Menü zum
+  Einfügen der Platzhalter (`{Vorname}` `{Nachname}` `{Titel}` `{Tage}`
   `{Gebuehr}` `{Datum}` `{Faellig}` `{Stufe}` `{Bibliothek}`, live Vorschau
   direkt im Editor) – dazu 4 vorgefertigte **Textvorlagen** zur Auswahl
   (freundlich, bestimmt/formell, sowie zwei in **einfacher Sprache** für
   Kinder oder Nutzer:innen, denen der Standardtext schwerer verständlich
-  ist)
+  ist). Die Formatierung erscheint im Druck/PDF; in E-Mail und Element
+  (die kein Fett/Kursiv darstellen können) kommt automatisch die reine
+  Textfassung an
 - **Rückstandsliste** zum Abarbeiten: einstellbare Schwelle ("überfällig
   seit mindestens X Tagen", Vorgabe 1), ein Eintrag pro überfälligem Buch,
   sortierbar nach Tagen/Name/Klasse/Einstufung. Je Fall zeigt und

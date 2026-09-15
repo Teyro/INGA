@@ -158,7 +158,7 @@ function applyChrome(data) {
 function onMenuAction(action) {
   if (action === 'neuer-titel') { showView('katalog'); openKatalogSheet(null); }
   else if (action === 'neuer-leser') { showView('leser'); openLeserSheet(null); }
-  else if (action === 'verlaengern') { showView('rueckgabe'); document.getElementById('rueckgabe-verlaengern-etikett').focus(); }
+  else if (action === 'verlaengern') { showView('rueckgabe'); document.getElementById('rueckgabe-suche').focus(); }
   else if (action === 'import') { showView('bestand'); document.getElementById('bestand-import').click(); }
   else if (action === 'export') { showView('bestand'); document.getElementById('bestand-export').click(); }
   else if (action === 'settings') showView('einstellungen');
@@ -1535,52 +1535,41 @@ async function ausleihenAbschicken() {
 
 /* -------------------------------------------------------------- Rückgabe */
 
-/**
- * Schnelle Verlängerung per Buchnummer (Signatur/Barcode) – für den Fall an
- * der Theke, dass ein Kind nur verlängern statt zurückgeben will: Nummer
- * eintippen oder scannen, Enter oder Klick auf "Verlängern", fertig. Nutzt
- * dieselbe Zuordnung (Etikett -> Exemplar -> laufende Ausleihe) wie die
- * schnelle Rückgabe gleich daneben, respektiert also automatisch dieselben
- * Regeln (max. Verlängerungen, gesperrt bei Vormerkung, …) wie der normale
- * "Verlängern"-Knopf in der Tabelle.
- */
-async function verlaengereEinzelnPerEtikett() {
-  const feld = document.getElementById('rueckgabe-verlaengern-etikett');
-  const etikett = feld.value.trim();
-  if (!etikett) return;
-  const medium = await api.medium.findByEtikett(etikett);
-  if (!medium) { toast(`Kein Exemplar mit Nummer „${etikett}“.`, 'error'); return; }
-  const status = await api.medium.status(medium.MedienNi);
-  if (!status.verliehen) { toast('Dieses Exemplar ist nicht ausgeliehen.', 'error'); return; }
-  const result = await api.ausleihe.verlaengern(status.ausleihe.id);
-  feld.value = '';
-  feld.focus();
-  if (result.ok) toast('Verlängert.');
-  else toast(`Nicht verlängert: ${result.error}`, 'error');
-  await loadRueckgabe();
-  await refreshKennzahlen();
-}
+// Von rueckgabeGefiltert() über loadRueckgabe() aktuell gehalten – für den
+// "Enter im Suchfeld"-Kurzweg direkt unten (siehe wireRueckgabe()), ohne
+// bei jedem Tastendruck neu nachzufragen.
+let rueckgabeAktuelleTreffer = [];
 
 function wireRueckgabe() {
-  document.getElementById('rueckgabe-etikett').addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter') return;
-    const etikett = e.target.value.trim();
-    if (!etikett) return;
-    const medium = await api.medium.findByEtikett(etikett);
-    if (!medium) { toast(`Kein Exemplar mit Etikett „${etikett}“.`, 'error'); return; }
-    const status = await api.medium.status(medium.MedienNi);
-    if (!status.verliehen) { toast('Dieses Exemplar ist nicht ausgeliehen.', 'error'); return; }
-    await api.ausleihe.zurueckgeben(status.ausleihe.id);
+  const sucheFeld = document.getElementById('rueckgabe-suche');
+  sucheFeld.addEventListener('input', debounce(loadRueckgabe, 200));
+  // War früher ein eigenes, eng auf Barcodes beschränktes Feld ("Barcode zur
+  // schnellen Rückgabe") – zusammen mit einem zweiten für die Verlängerung
+  // und einem dritten fürs Filtern gab es drei kaum unterscheidbare
+  // Eingabefelder, von denen zwei auf Namenseingaben (statt Barcodes)
+  // stumm gar nicht reagierten ("die Suche funktioniert nicht"). Jetzt: EIN
+  // Suchfeld für Name/Titel/Buchnummer (siehe rueckgabeGefiltert()), Enter
+  // gibt zusätzlich sofort zurück, wenn die Suche gerade auf genau eine
+  // offene Ausleihe eingegrenzt ist – für zügiges Scannen an der Theke
+  // bleibt es dadurch weiterhin ein einziger Tastendruck pro Buch.
+  sucheFeld.addEventListener('keydown', async (e) => {
+    // Nur bei tatsächlich eingegebenem Text – sonst würde Enter in einem
+    // LEEREN Suchfeld bei zufällig nur einer einzigen offenen Ausleihe
+    // (z. B. eine kleine Bücherei) diese ungewollt sofort zurückgeben.
+    if (e.key !== 'Enter' || !sucheFeld.value.trim()) return;
+    // Ein echter Scanner schickt Enter oft schneller, als das 200ms-Debounce
+    // oben die Liste nachzieht – ohne dieses erzwungene, sofortige Neuladen
+    // stünde hier noch der Stand VOR dem gerade gescannten Buch, und die
+    // Prüfung "genau ein Treffer" würde am falschen Zeitpunkt greifen.
+    await loadRueckgabe();
+    if (rueckgabeAktuelleTreffer.length !== 1) return;
+    const row = rueckgabeAktuelleTreffer[0];
+    await api.ausleihe.zurueckgeben(row.id);
     e.target.value = '';
     toast('Zurückgegeben.');
     await loadRueckgabe();
     await refreshKennzahlen();
   });
-  document.getElementById('rueckgabe-verlaengern-etikett').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') verlaengereEinzelnPerEtikett();
-  });
-  document.getElementById('rueckgabe-verlaengern-etikett-los').addEventListener('click', verlaengereEinzelnPerEtikett);
-  document.getElementById('rueckgabe-suche').addEventListener('input', debounce(loadRueckgabe, 200));
   document.getElementById('rueckgabe-nur-ueberfaellig').addEventListener('change', loadRueckgabe);
   for (const id of ['rueckgabe-filter-klasse', 'rueckgabe-filter-verlaengert']) {
     document.getElementById(id).addEventListener('change', loadRueckgabe);
@@ -1644,7 +1633,10 @@ function rueckgabeGefiltert(rows, ueberfMap) {
   const tageAb = Number(document.getElementById('rueckgabe-filter-tage').value) || 0;
 
   let gefiltert = rows;
-  if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname}`.toLowerCase().includes(suche));
+  // Name, Titel UND Buchnummer/Signatur – ohne MedienEtik hier fand die
+  // Suche ein gescanntes/getipptes Buch überhaupt nicht ("die Suche
+  // funktioniert nicht", siehe wireRueckgabe()).
+  if (suche) gefiltert = gefiltert.filter((r) => `${r.Titel} ${r.Nachname} ${r.Vorname} ${r.MedienEtik || ''}`.toLowerCase().includes(suche));
   if (nurUeberfaellig) gefiltert = gefiltert.filter((r) => ueberfMap.has(r.id));
   if (klasse) gefiltert = gefiltert.filter((r) => (r.Jahrgang || '') === klasse);
   if (verlaengert === 'ja') gefiltert = gefiltert.filter((r) => (r.AnzVerl || 0) > 0);
@@ -1659,6 +1651,7 @@ async function loadRueckgabe() {
   const [rows, ueberfaellig] = await Promise.all([api.ausleihe.alleOffen(), api.ausleihe.ueberfaelligeAlle()]);
   const ueberfMap = new Map(ueberfaellig.map((r) => [r.id, r]));
   const gefiltert = rueckgabeGefiltert(rows, ueberfMap);
+  rueckgabeAktuelleTreffer = gefiltert;
   renderFilterChips('rueckgabe-filter-chips', RUECKGABE_FILTER_FELDER);
 
   const tbody = document.getElementById('rueckgabe-tbody');
@@ -1903,7 +1896,11 @@ function baueMahnBriefeVorschau(positionen, stufeIndex) {
     return {
       ...brief,
       betreff: fuellePlatzhalter(state.settings.mahnBetreffVorlage || '', werte) || stufe.text || '',
-      text: fuellePlatzhalter(stufe.briefText || '', werte),
+      // Erst briefText (HTML aus dem WYSIWYG-Editor) in reinen Text wandeln,
+      // DANN die Platzhalter füllen – dieser Vorschautext landet unten in
+      // zeigeMahnungVorschau() per textContent, rohe <b>-Tags würden dort
+      // sonst wörtlich auftauchen statt als Formatierung zu wirken.
+      text: fuellePlatzhalter(htmlZuText(stufe.briefText || ''), werte),
     };
   });
 }
@@ -2602,6 +2599,7 @@ function beispielGebuehr(tageUeberfaellig) {
 }
 
 /** Setzt {Platzhalter} für die Live-Vorschau einer Mahnstufe mit Beispieldaten – dieselbe Ersetzung wie im tatsächlichen Druck (siehe util.js/fuellePlatzhalter). */
+/** Live-Vorschau (Einstellungen) – Rückgabe ist HTML, landet per innerHTML in previewBox (siehe renderMahnstufen()), deshalb hier escapte Werte einsetzen. */
 function fuelleVorschauVorlage(vorlage, stufe) {
   const werte = {
     Vorname: 'Anna', Nachname: 'Muster', Titel: 'Beispielbuch',
@@ -2609,7 +2607,8 @@ function fuelleVorschauVorlage(vorlage, stufe) {
     Datum: fmtDatum(heutigesDatumISO()), Faellig: fmtDatum(heutigesDatumISO()), Stufe: stufe.text,
     Bibliothek: state.settings.bibliotheksName || 'die Bücherei',
   };
-  return fuellePlatzhalter(vorlage, werte);
+  const werteHtml = Object.fromEntries(Object.entries(werte).map(([schluessel, wert]) => [schluessel, escapeHtml(wert)]));
+  return fuellePlatzhalter(vorlage, werteHtml);
 }
 
 /**
@@ -2662,13 +2661,109 @@ const MAHN_VORLAGEN = [
   },
 ];
 
+const BRIEFTEXT_PLATZHALTER = ['Vorname', 'Nachname', 'Titel', 'Tage', 'Gebuehr', 'Datum', 'Faellig', 'Stufe', 'Bibliothek'];
+
+/**
+ * Einfacher WYSIWYG-Editor für einen Brieftext: fett/kursiv/unterstrichen
+ * über ein contenteditable-Feld statt eines reinen Textfelds, dazu ein
+ * Platzhalter-Menü. Bewusst nur diese drei Formate (execCommand, in
+ * Electrons fest eingebautem Chromium zuverlässig verfügbar) statt einer
+ * vollen Textverarbeitung – das ginge für Mahnbriefe weit über das
+ * Nötige hinaus. `inhalt` ist HTML (neuere, per Editor bearbeitete
+ * Brieftexte) ODER reiner Text mit "\n" (ältere, noch nicht angefasste
+ * Brieftexte) – beides zeigt dank `white-space: pre-wrap` auf
+ * `.brieftext-editor` gleich richtig an. Einfügungen aus der
+ * Zwischenablage kommen immer als reiner Text an (kein fremdes Layout/
+ * fremde Schriftart aus eingefügtem Text), Enter erzeugt einen einfachen
+ * Zeilenumbruch (`<br>`), keine verschachtelten Absätze.
+ */
+function baueBrieftextEditor({ inhalt, onAendern }) {
+  const feld = el('div', { class: 'brieftext-editor', contentEditable: 'true' }, []);
+  // Nicht über el()s generische Prop-Zuweisung: "spellcheck" ist als IDL-
+  // Boolean deklariert, el('...', {spellcheck: 'false'}) würde den String
+  // "false" per ToBoolean() in true umwandeln (jeder nicht-leere String ist
+  // wahr) – also genau das Gegenteil von dem, was hier gewollt ist.
+  feld.setAttribute('spellcheck', 'false');
+  feld.innerHTML = inhalt || '';
+
+  const aktualisiereKnopfStatus = () => {
+    fettBtn.classList.toggle('aktiv', document.queryCommandState('bold'));
+    kursivBtn.classList.toggle('aktiv', document.queryCommandState('italic'));
+    unterstrBtn.classList.toggle('aktiv', document.queryCommandState('underline'));
+  };
+  const meldeAenderung = () => onAendern(feld.innerHTML);
+
+  const formatKnopf = (label, titel, command, stil) => {
+    const btn = el('button', {
+      type: 'button',
+      class: 'icon-button',
+      title: titel,
+      style: stil,
+      // onmousedown statt onclick + preventDefault: sonst verliert das
+      // contenteditable-Feld beim Klick die Textauswahl, bevor execCommand
+      // sie noch anwenden könnte.
+      onmousedown: (e) => { e.preventDefault(); document.execCommand(command); feld.focus(); aktualisiereKnopfStatus(); meldeAenderung(); },
+    }, [label]);
+    return btn;
+  };
+  const fettBtn = formatKnopf('B', 'Fett (Strg+B)', 'bold', { fontWeight: '700' });
+  const kursivBtn = formatKnopf('I', 'Kursiv (Strg+I)', 'italic', { fontStyle: 'italic' });
+  const unterstrBtn = formatKnopf('U', 'Unterstrichen (Strg+U)', 'underline', { textDecoration: 'underline' });
+
+  const platzhalterAuswahl = el('select', { class: 'button small', title: 'Platzhalter einfügen', style: { maxWidth: '180px' } }, [
+    el('option', { value: '' }, ['Platzhalter einfügen …']),
+    ...BRIEFTEXT_PLATZHALTER.map((p) => el('option', { value: p }, [`{${p}}`])),
+  ]);
+  platzhalterAuswahl.addEventListener('change', () => {
+    if (!platzhalterAuswahl.value) return;
+    feld.focus();
+    document.execCommand('insertText', false, `{${platzhalterAuswahl.value}}`);
+    platzhalterAuswahl.value = '';
+    meldeAenderung();
+  });
+
+  feld.addEventListener('focus', () => document.execCommand('defaultParagraphSeparator', false, 'br'));
+  feld.addEventListener('input', () => { meldeAenderung(); aktualisiereKnopfStatus(); });
+  feld.addEventListener('keyup', aktualisiereKnopfStatus);
+  feld.addEventListener('mouseup', aktualisiereKnopfStatus);
+  feld.addEventListener('blur', () => speichereEinstellungenFormular());
+  feld.addEventListener('paste', (e) => {
+    e.preventDefault();
+    document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain'));
+  });
+
+  const werkzeuge = el('div', { class: 'brieftext-werkzeuge' }, [fettBtn, kursivBtn, unterstrBtn, el('span', { class: 'trenner' }, []), platzhalterAuswahl]);
+  return el('div', {}, [werkzeuge, feld]);
+}
+
+let mahnstufenAktiverTab = 0;
+
 function renderMahnstufen() {
   const box = document.getElementById('mahnstufen-liste');
   box.replaceChildren();
   const arr = state.settings.mahnstufen;
+  if (mahnstufenAktiverTab >= arr.length) mahnstufenAktiverTab = 0;
+
+  const tabKnoepfe = [];
+  const tabs = el(
+    'div',
+    { class: 'mahnstufen-tabs' },
+    arr.map((stufe, i) => {
+      const btn = el('button', {
+        type: 'button',
+        class: `mahnstufen-tab${i === mahnstufenAktiverTab ? ' active' : ''}`,
+        onclick: () => { mahnstufenAktiverTab = i; renderMahnstufen(); },
+      }, [stufe.text || (i === 0 ? 'Stufe 1' : 'Stufe 2')]);
+      tabKnoepfe.push(btn);
+      return btn;
+    })
+  );
+  box.appendChild(tabs);
 
   arr.forEach((stufe, i) => {
-    const previewBox = el('div', { class: 'mahnstufe-preview', hidden: true }, [fuelleVorschauVorlage(stufe.briefText, stufe)]);
+    if (i !== mahnstufenAktiverTab) return; // nur die aktive Stufe zeigen – beide untereinander war unübersichtlich
+
+    const previewBox = el('div', { class: 'mahnstufe-preview', hidden: true, innerHTML: fuelleVorschauVorlage(stufe.briefText, stufe) });
     const previewToggle = el('button', {
       class: 'button small ghost',
       onclick: () => {
@@ -2676,9 +2771,12 @@ function renderMahnstufen() {
         previewToggle.textContent = previewBox.hidden ? 'Vorschau' : 'Vorschau ausblenden';
       },
     }, ['Vorschau']);
-    const aktualisierePreview = () => { previewBox.textContent = fuelleVorschauVorlage(stufe.briefText, stufe); };
+    const aktualisierePreview = () => { previewBox.innerHTML = fuelleVorschauVorlage(stufe.briefText, stufe); };
 
-    const textarea = el('textarea', { rows: 4, value: stufe.briefText || '', oninput: (e) => { stufe.briefText = e.target.value; aktualisierePreview(); }, onchange: () => speichereEinstellungenFormular() });
+    const editor = baueBrieftextEditor({
+      inhalt: stufe.briefText || '',
+      onAendern: (html) => { stufe.briefText = html; aktualisierePreview(); },
+    });
     const vorlagenAuswahl = el('select', {}, MAHN_VORLAGEN.map((v) => el('option', { value: v.id }, [v.label])));
     const vorlageUebernehmen = el('button', {
       class: 'button small ghost',
@@ -2689,17 +2787,26 @@ function renderMahnstufen() {
         if (!vorlage) return;
         if (stufe.briefText?.trim() && !confirm('Aktuellen Brieftext durch die Vorlage ersetzen?')) return;
         stufe.briefText = vorlage.text;
-        textarea.value = vorlage.text;
-        aktualisierePreview();
+        renderMahnstufen();
         speichereEinstellungenFormular();
       },
     }, ['Vorlage übernehmen']);
+
+    const bezeichnungFeld = el('input', {
+      type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text',
+      onchange: (e) => {
+        stufe.text = e.target.value;
+        tabKnoepfe[i].textContent = stufe.text || (i === 0 ? 'Stufe 1' : 'Stufe 2');
+        aktualisierePreview();
+        speichereEinstellungenFormular();
+      },
+    });
 
     box.appendChild(
       el('div', { class: 'mahnstufe-card' }, [
         el('div', { class: 'mahnstufe-head' }, [
           el('span', { class: `badge ${badgeKlasseFuerStufenIndex(i, arr.length)}` }, [i === 0 ? 'Stufe 1' : 'Stufe 2']),
-          el('input', { type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text', onchange: (e) => { stufe.text = e.target.value; aktualisierePreview(); speichereEinstellungenFormular(); } }),
+          bezeichnungFeld,
         ]),
         el('div', { class: 'field-row' }, [
           el('div', { class: 'field' }, [
@@ -2712,7 +2819,7 @@ function renderMahnstufen() {
             el('label', {}, ['Brieftext']),
             el('div', { class: 'row-inline' }, [vorlagenAuswahl, vorlageUebernehmen]),
           ]),
-          textarea,
+          editor,
         ]),
         previewToggle,
         previewBox,

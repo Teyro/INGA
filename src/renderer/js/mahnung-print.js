@@ -24,6 +24,13 @@ function renderBrief(brief) {
     Stufe: stufe.text || 'Mahnung',
     Bibliothek: brief.bibliotheksName || 'die Bücherei',
   };
+  // Eigene, HTML-escapte Fassung NUR für die Ersetzung im Brieftext (der
+  // wird unten per innerHTML eingesetzt, siehe baueBrieftextEditor() in
+  // app.js): ein Buchtitel mit "&"/"<" darin (z. B. "Findet Nemo & Dorie")
+  // müsste sonst als HTML statt als Text erscheinen. Betreff/Anschrift
+  // werden weiter unten als reiner Text eingesetzt (per Textknoten, siehe
+  // el()) und bleiben deshalb mit den unescapten Werten unverändert sicher.
+  const werteHtml = Object.fromEntries(Object.entries(werte).map(([schluessel, wert]) => [schluessel, escapeHtml(wert)]));
 
   return el('article', { class: 'brief' }, [
     el('div', { class: 'briefkopf' }, [
@@ -43,9 +50,12 @@ function renderBrief(brief) {
     ]),
     el('div', { class: 'datum' }, [brief.datum]),
     el('h1', {}, [fuellePlatzhalter(brief.mahnBetreffVorlage, werte) || stufe.text || 'Mahnung']),
-    ...fuellePlatzhalter(stufe.briefText, werte)
-      .split('\n')
-      .map((zeile) => (zeile.trim() ? el('p', {}, [zeile]) : null)),
+    // briefText ist HTML aus dem WYSIWYG-Editor (fett/kursiv/unterstrichen,
+    // siehe app.js baueBrieftextEditor()) ODER – bei noch nicht angefassten
+    // älteren Mahnstufen – reiner Text mit "\n": beides zeigt dank
+    // "white-space: pre-wrap" auf .brief-text gleich richtig an, ein reines
+    // innerHTML statt der früheren zeilenweisen <p>-Aufteilung reicht.
+    el('div', { class: 'brief-text', innerHTML: fuellePlatzhalter(stufe.briefText, werteHtml) }),
     el('table', {}, [
       el('thead', {}, [
         el('tr', {}, [
@@ -109,7 +119,11 @@ function brieftextAlsEmail(brief) {
     Bibliothek: brief.bibliotheksName || 'die Bücherei',
   };
   const zeilen = [
-    fuellePlatzhalter(stufe.briefText, werte),
+    // Erst briefText (HTML aus dem WYSIWYG-Editor, siehe app.js) in reinen
+    // Text wandeln, DANN die Platzhalter mit den rohen (nicht HTML-
+    // escapten) Werten füllen – nie umgekehrt, sonst könnte ein "&"/"<" in
+    // einem echten Buchtitel bei der HTML-Auswertung Probleme machen.
+    fuellePlatzhalter(htmlZuText(stufe.briefText), werte),
     '',
     ...posten.map((p) => `- ${p.Titel} (ausgeliehen am ${fmtDatum(p.AuslDatum)}, ${p.tageUeberfaellig || 0} Tage überfällig${mahngebuehrenAktiv ? `, ${fmtGeld(p.gebuehr)}` : ''})`),
     mahngebuehrenAktiv ? `\nGesamt: ${fmtGeld(summe)}` : '',
@@ -144,7 +158,7 @@ function brieftextAlsElement(brief) {
   const zeilen = [
     betreff,
     '',
-    fuellePlatzhalter(stufe.briefText, werte),
+    fuellePlatzhalter(htmlZuText(stufe.briefText), werte),
     '',
     ...posten.map((p) => `- ${p.Titel} (ausgeliehen am ${fmtDatum(p.AuslDatum)}, ${p.tageUeberfaellig || 0} Tage überfällig${mahngebuehrenAktiv ? `, ${fmtGeld(p.gebuehr)}` : ''})`),
     mahngebuehrenAktiv ? `\nGesamt: ${fmtGeld(summe)}` : '',

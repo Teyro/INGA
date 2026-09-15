@@ -6,6 +6,36 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.1.0 – 2026-09-15
+
+### Neu
+- **Mahnungen: WYSIWYG-Brieftext-Editor mit Reitern**. Statt eines
+  kleinen, vierzeiligen Textfelds jetzt ein deutlich größeres
+  contenteditable-Feld mit eigener Werkzeugleiste (fett/kursiv/
+  unterstrichen sowie ein Menü zum Einfügen der `{Platzhalter}`) – die
+  Formatierung erscheint tatsächlich im gedruckten/als PDF exportierten
+  Brief. Erinnerung und Mahnung stehen jetzt als zwei Reiter übereinander
+  statt beide gleichzeitig untereinander (war „sehr winzig und
+  unübersichtlich“). E-Mail- und Element-Versand (können kein Fett/
+  Kursiv darstellen) bekommen automatisch die reine Textfassung.
+
+### Behoben
+- **Rückgabe-Suche funktionierte für Buchnummern gar nicht**: das Suchfeld
+  durchsuchte nur Titel und Namen, eine Buchnummer/Signatur fand es
+  überhaupt nicht – wirkte, als würde die Suche gar nicht reagieren.
+  Zusätzlich gab es dort bisher drei kaum unterscheidbare Eingabefelder
+  (Suche, Barcode-Rückgabe, Barcode-Verlängerung); jetzt EIN Suchfeld für
+  Name, Titel und Buchnummer zusammen. Ein gescannter Barcode gibt bei
+  genau einem Treffer weiterhin per Enter sofort zurück (auch bei sehr
+  schnell scannenden Barcode-Scannern zuverlässig, vorher ein
+  Zeitfenster-Fehler möglich).
+- **Knöpfe unter Windows kaum sichtbar** („grau unterlegt, erst beim
+  Drüberfahren färbt er sich ein“): der ruhende Zustand nutzte eine sehr
+  blasse 4-6-%-Abtönung, die für eine echte Mica-Textur gedacht war, auf
+  dem hier tatsächlich flachen Fensterhintergrund aber kaum zu erkennen
+  war. Jetzt derselbe deutlich sichtbare Knopfhintergrund wie auf
+  macOS/Linux.
+
 ## 1.0.0 – 2026-09-12
 
 ### Neu
