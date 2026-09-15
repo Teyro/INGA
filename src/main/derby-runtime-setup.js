@@ -44,14 +44,14 @@ function aktuellePlattform() {
   return 'linux';
 }
 
-function herunterladen(url, zielDatei) {
+function einmalHerunterladen(url, zielDatei) {
   return new Promise((resolve, reject) => {
     const anfrage = https.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        herunterladen(res.headers.location, zielDatei).then(resolve, reject);
+        einmalHerunterladen(res.headers.location, zielDatei).then(resolve, reject);
         return;
       }
-      if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode} bei ${url}`)); return; }
+      if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode} bei ${url}`)); return; }
       const datei = fs.createWriteStream(zielDatei);
       res.pipe(datei);
       datei.on('finish', () => datei.close(resolve));
@@ -59,6 +59,28 @@ function herunterladen(url, zielDatei) {
     });
     anfrage.on('error', reject);
   });
+}
+
+const WARTE_MS = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Bis zu 3 Versuche mit kurzer Pause dazwischen – Maven Central/Adoptium
+ * liefern gelegentlich einen vorübergehenden Fehler (CDN-Aussetzer, HTTP
+ * 404/502/503), der beim nächsten Versuch schon wieder verschwunden ist.
+ * Ein einzelner Fehlschlag soll nicht gleich den ganzen Build (bzw. beim
+ * Assistenten: den ganzen Reparaturversuch) abbrechen. Nach dem letzten
+ * Versuch wird der Fehler unverändert weitergereicht.
+ */
+async function herunterladen(url, zielDatei, versuche = 3) {
+  for (let versuch = 1; versuch <= versuche; versuch += 1) {
+    try {
+      return await einmalHerunterladen(url, zielDatei);
+    } catch (err) {
+      if (versuch === versuche) throw err;
+      console.error(`[derby-runtime] Download fehlgeschlagen (Versuch ${versuch}/${versuche}: ${err.message}), versuche erneut …`);
+      await WARTE_MS(versuch * 2000);
+    }
+  }
 }
 
 async function adoptiumDownloadUrl(plattform) {
