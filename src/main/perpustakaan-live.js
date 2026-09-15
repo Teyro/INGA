@@ -33,6 +33,16 @@ const { spawn } = require('node:child_process');
 
 const BRIDGE_TIMEOUT_MS = 30000;
 
+// Gemeinsamer Text für main.js (schneller Vorab-Check über
+// laufzeitVorhanden(), siehe perpustakaanLiveBereitPruefen()) UND den
+// ENOENT-Zweig unten – eine Quelle der Wahrheit statt zweier Kopien, die
+// bei einer künftigen Textänderung leicht auseinanderlaufen könnten.
+const LAUFZEIT_FEHLT_HINWEIS =
+  'Die mit INGA ausgelieferte Java-Laufzeit fehlt oder wurde von einem ' +
+  'Virenschutz-/Firewall-Programm entfernt. Klicken Sie unten auf „Java-' +
+  'Laufzeit reparieren“, um sie automatisch neu herunterzuladen – dafür ' +
+  'wird kurz eine Internetverbindung gebraucht.';
+
 /**
  * Wo die Java-Laufzeit + Derby-Jars liegen können, in Prüfreihenfolge:
  *  1. mitgeliefert – gepackt unter extraResources (siehe package.json
@@ -140,7 +150,7 @@ function rufeBridgeAuf(args) {
       beendet = true;
       clearTimeout(timer);
       const hinweis = err.code === 'ENOENT'
-        ? 'Die mit INGA ausgelieferte Java-Laufzeit fehlt oder wurde von einem Virenschutz-/Firewall-Programm entfernt. Klicken Sie unten auf „Java-Laufzeit reparieren“, um sie automatisch neu herunterzuladen – dafür wird kurz eine Internetverbindung gebraucht.'
+        ? LAUFZEIT_FEHLT_HINWEIS
         : `Java-Laufzeit lässt sich nicht starten (${err.code || err.message}).`;
       resolve({ ok: false, fehler: hinweis, laufzeitFehlt: err.code === 'ENOENT' });
     });
@@ -188,4 +198,4 @@ async function ladeAusZip(dbPfad, quellZip) {
   return rufeBridgeAuf(['load', dbPfad, quellZip]);
 }
 
-module.exports = { pruefeZugriff, dumpNachZip, ladeAusZip, javaPfad, klassenpfad, setzeZusaetzlicheLaufzeitBasis, laufzeitVorhanden };
+module.exports = { pruefeZugriff, dumpNachZip, ladeAusZip, javaPfad, klassenpfad, setzeZusaetzlicheLaufzeitBasis, laufzeitVorhanden, LAUFZEIT_FEHLT_HINWEIS };

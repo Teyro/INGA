@@ -96,6 +96,14 @@ async function perpustakaanLiveBereitPruefen() {
     perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: 'Sicherung der Original-Datenbank fehlgeschlagen – Zugriff aus Sicherheitsgründen gesperrt.' };
     return perpustakaanLiveStatus;
   }
+  // Schneller, unmittelbarer Vorab-Check statt jedes Mal erst die Bridge
+  // zu starten und auf deren ENOENT zu warten – liefert dieselbe Auskunft
+  // (siehe perpustakaan-live.js javaPfad()), nur ohne den unnötigen
+  // Prozessstart-Versuch.
+  if (!perpustakaanLive.laufzeitVorhanden()) {
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, laufzeitFehlt: true, sicherungsPfad, grund: perpustakaanLive.LAUFZEIT_FEHLT_HINWEIS };
+    return perpustakaanLiveStatus;
+  }
   const ergebnis = await perpustakaanLive.pruefeZugriff(dbPfad);
   if (ergebnis.ok) {
     perpustakaanLiveStatus = { aktiv: true, bereit: true, sicherungsPfad };
@@ -551,8 +559,16 @@ function wireAutoUpdater() {
   });
 }
 
-/** Manuelle ODER stille automatische Prüfung – wirft nie, nur Statusänderung über updateStatus. */
-async function autoUpdatePruefen() {
+/**
+ * Manuelle ODER stille automatische Prüfung – wirft nie, nur
+ * Statusänderung über updateStatus. `manuell` (Knopf "Jetzt nach Updates
+ * suchen" in den Einstellungen) setzt angeboteneVersion zurück: sonst
+ * bliebe ein einmal mit "Später" weggeklickter automatischer Vorschlag
+ * für den Rest der Sitzung stumm – auch wenn die Kollegin es sich anders
+ * überlegt und GENAU DESHALB aktiv noch einmal nachfragt.
+ */
+async function autoUpdatePruefen(manuell = false) {
+  if (manuell) angeboteneVersion = null;
   // In der Entwicklung (npm start/dev, ungepackt) gibt es keine latest.yml
   // und keinen sinnvollen Vergleichswert – electron-updater bricht das sonst
   // nur mit einer für Entwickler verwirrenden Fehlermeldung ab.
@@ -1299,7 +1315,7 @@ function registerIpc() {
 
   /* ------------------------------------------------------------- Auto-Update */
   ipcMain.handle('update:status', () => updateStatus);
-  ipcMain.handle('update:jetzt-pruefen', sicher(() => autoUpdatePruefen()));
+  ipcMain.handle('update:jetzt-pruefen', sicher(() => autoUpdatePruefen(true)));
 
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

@@ -2377,6 +2377,13 @@ async function starteCoverBulkDownload(nurFehlende) {
   const result = await api.cover.fetchAll({ nurFehlende });
   startBtn.disabled = false;
   cancelBtn.hidden = true;
+  if (result.bereitsAktiv) {
+    // Kollidiert mit einem parallel laufenden Durchlauf – entweder ein
+    // Doppelklick auf diesen Knopf, oder das wöchentliche automatische
+    // Nachladen im Hintergrund (siehe main.js coverAutoNachladenFallsFaellig).
+    statusEl.textContent = 'Es läuft bereits ein Cover-Abgleich (evtl. automatisch im Hintergrund) – bitte kurz warten und erneut versuchen.';
+    return result;
+  }
   statusEl.textContent = `Fertig: ${result.gefunden} Cover geladen, ${result.fehler} ohne Treffer, von ${result.total} geprüften Titeln${result.abgebrochen ? ' (abgebrochen)' : ''}.`;
   toast(`${result.gefunden} Cover heruntergeladen.`);
   return result;
