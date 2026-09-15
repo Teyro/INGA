@@ -33,12 +33,14 @@ const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('./backup');
 const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
+const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher } = require('./fehler');
 const { holeBuchdaten } = require('./isbn');
 const { coverFuerIsbnLaden } = require('./cover-quellen');
 const matrix = require('./matrix');
+const { autoUpdater } = require('electron-updater');
 
 /** Dateiname aus Nutzereingabe/Titel absichern – ohne Zeichen, die unter Windows/macOS/Linux in Dateinamen verboten oder problematisch sind. */
 function sichererDateiname(name) {
@@ -61,12 +63,19 @@ let backupDir = null;
 let activeStyle = platform.nativeStyle();
 let coverBulkAbgebrochen = false;
 let coverBulkLaeuft = false;
+// Auto-Update-Status für die Anzeige in den Einstellungen, siehe
+// wireAutoUpdater()/autoUpdatePruefen() unten. `angeboteneVersion` verhindert,
+// dass dieselbe Version innerhalb einer laufenden Sitzung nach einem "Später"
+// bei jeder erneuten (z. B. periodischen) Prüfung erneut als Dialog aufpoppt.
+let updateStatus = { status: 'unbekannt' };
+let angeboteneVersion = null;
 // EXPERIMENTELL (siehe perpustakaan-live.js): Zustand für die Statusanzeige
 // in den Einstellungen. `bereit` entscheidet NICHT allein über einen
 // tatsächlichen Zugriff – "Jetzt lesen"/"Jetzt schreiben" prüfen bei jedem
 // Aufruf zusätzlich frisch, ob die Datenbank in diesem Moment frei ist
 // (Perpustakaan könnte zwischenzeitlich geöffnet worden sein).
 let perpustakaanLiveStatus = { aktiv: false };
+let laufzeitReparaturLaeuft = false; // EXPERIMENTELL: verhindert doppelten Download bei Doppelklick auf "Java-Laufzeit reparieren"
 
 function settings() {
   return store.get('settings', defaultSettingsFor(platform.nativeStyle(), platform.STYLE_ACCENTS[platform.nativeStyle()]));
@@ -93,7 +102,11 @@ async function perpustakaanLiveBereitPruefen() {
   } else if (ergebnis.gesperrt) {
     perpustakaanLiveStatus = { aktiv: true, bereit: false, gesperrt: true, grund: 'Perpustakaan scheint gerade geöffnet zu sein – bitte dort schließen.', sicherungsPfad };
   } else {
-    perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: ergebnis.fehler || 'unbekannter Fehler', sicherungsPfad };
+    // laufzeitFehlt: siehe perpustakaan-live.js rufeBridgeAuf() – steuert,
+    // ob die Einstellungen den "Java-Laufzeit reparieren"-Assistenten
+    // anbieten, statt nur die (für Bibliothekspersonal wenig hilfreiche)
+    // Fehlermeldung anzuzeigen.
+    perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: ergebnis.fehler || 'unbekannter Fehler', laufzeitFehlt: Boolean(ergebnis.laufzeitFehlt), sicherungsPfad };
   }
   return perpustakaanLiveStatus;
 }
@@ -396,6 +409,166 @@ async function downloadCoverForKatalog(katalogNiRoh) {
   }
 }
 
+/**
+ * Automatisches Nachladen fehlender Cover, einmal pro Woche – dieselbe Logik
+ * wie der manuelle "Cover für alle fehlenden Titel laden"-Knopf
+ * (ipcMain 'cover:fetch-all'), nur unbeaufsichtigt im Hintergrund und mit
+ * einer kleinen Pause zwischen den Anfragen (rücksichtsvoller gegenüber den
+ * freien Bild-APIs als ein manueller, ungeduldiger Lauf). Teilt sich bewusst
+ * denselben coverBulkLaeuft-Schalter mit dem manuellen Knopf, damit sich
+ * beide nicht in die Quere kommen; ein bereits laufender manueller Abgleich
+ * hat Vorrang, der automatische Lauf verschiebt sich dann einfach auf den
+ * nächsten Programmstart.
+ */
+const COVER_AUTO_ABSTAND_MS = 7 * 24 * 60 * 60 * 1000;
+async function coverAutoNachladenFallsFaellig() {
+  if (!settings().autoCoverNachladenAktiv || coverBulkLaeuft) return;
+  const wartung = store.get('wartung', {});
+  const letzter = wartung.letzterAutoCoverLauf ? Date.parse(wartung.letzterAutoCoverLauf) : 0;
+  if (letzter && Date.now() - letzter < COVER_AUTO_ABSTAND_MS) return;
+
+  coverBulkLaeuft = true;
+  try {
+    const alle = db.prepare(`SELECT "KatalogNi" FROM "Katalog"`).all();
+    for (const { KatalogNi } of alle) {
+      if (repo.coverInfo(db, KatalogNi)) continue; // nur fehlende, wie beim manuellen Knopf mit "nurFehlende"
+      await downloadCoverForKatalog(KatalogNi);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  } catch (err) {
+    console.error('[wartung] automatisches Cover-Nachladen fehlgeschlagen:', err.message);
+  } finally {
+    coverBulkLaeuft = false;
+    store.set('wartung', { ...store.get('wartung', {}), letzterAutoCoverLauf: new Date().toISOString() });
+  }
+}
+
+/**
+ * Zusätzliche tägliche Sicherung im Benutzer-Dokumente-Ordner
+ * ("Dokumente/INGA Backups"), NEBEN der gewohnten Sicherung im
+ * INGA-eigenen userData-Ordner (siehe app.whenReady oben) – der ist auf
+ * vielen Schulrechnern nicht ohne Weiteres einsehbar/mitnehmbar, das
+ * Dokumente-Verzeichnis schon. Nutzt exakt dieselben, bereits an anderer
+ * Stelle geprüften backup.js-Funktionen wie die userData-Sicherung, nur mit
+ * einem zweiten Zielordner und eigenem "Grund"-Suffix im Dateinamen (leichter
+ * unterscheidbar, falls beide Sicherungsordner einmal nebeneinander
+ * betrachtet werden).
+ */
+function dokumenteBackupFallsFaelligSync() {
+  if (!settings().dokumenteBackupAktiv) return;
+  try {
+    const dokumenteBackupDir = path.join(app.getPath('documents'), 'INGA Backups');
+    if (!backupHeuteVorhanden(dokumenteBackupDir, 'dokumente')) {
+      sichereDatenbankSync(db, dbFile, dokumenteBackupDir, { grund: 'dokumente' });
+    }
+    if (!perpustakaanBackupHeuteVorhanden(dokumenteBackupDir)) {
+      sicherePerpustakaanZipSync(db, dokumenteBackupDir, exportZip);
+    }
+  } catch (err) {
+    // Wirft absichtlich nie weiter – ein fehlendes/nicht schreibbares
+    // Dokumente-Verzeichnis (z. B. auf einem Server-Profil) darf den
+    // Programmstart nicht verhindern, die userData-Sicherung oben lief zu
+    // diesem Zeitpunkt bereits.
+    console.error('[wartung] Dokumente-Backup fehlgeschlagen:', err.message);
+  }
+}
+
+/**
+ * Auto-Update über GitHub Releases (siehe package.json "build.publish" +
+ * die vom Build erzeugten latest*.yml-Dateien im Release). Fragt IMMER erst
+ * nach, bevor irgendetwas heruntergeladen wird (autoDownload = false) – wie
+ * ausdrücklich gewünscht: "soll ich jetzt updaten?".
+ *
+ * Vollautomatisches Herunterladen + Installieren nur unter Windows: INGA
+ * ist nicht code-signiert (siehe package.json "win.signExecutable": false /
+ * "mac.identity": null – bewusste Entscheidung, ein Zertifikat kostet Geld
+ * und ist für ein kostenloses Schulprojekt kaum zu rechtfertigen). Ohne
+ * Signatur prüft Squirrel.Mac auf macOS die heruntergeladene App NICHT
+ * erfolgreich und würde mit einer kryptischen Fehlermeldung abbrechen -
+ * dort (und unter Linux, wo INGA als AppImage/deb/rpm auf sehr
+ * unterschiedliche Arten installiert sein kann) öffnet INGA stattdessen die
+ * Release-Seite im Browser, die Aktualisierung bleibt dort ein bewusster,
+ * manueller Schritt.
+ */
+function setzeUpdateStatus(next) {
+  updateStatus = next;
+  mainWindow?.webContents.send('update:status', updateStatus);
+}
+
+function wireAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('error', (err) => {
+    setzeUpdateStatus({ status: 'fehler', fehler: err.message });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    setzeUpdateStatus({ status: 'aktuell' });
+  });
+
+  autoUpdater.on('update-available', async (info) => {
+    setzeUpdateStatus({ status: 'verfuegbar', version: info.version });
+    if (angeboteneVersion === info.version) return; // in dieser Sitzung schon einmal "Später" gewählt
+    angeboteneVersion = info.version;
+    if (!mainWindow) return;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: process.platform === 'win32' ? ['Jetzt herunterladen', 'Später'] : ['Release-Seite öffnen', 'Später'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'INGA-Update verfügbar',
+      message: `INGA ${info.version} ist verfügbar (installiert: ${app.getVersion()}).`,
+      detail: process.platform === 'win32'
+        ? 'INGA lädt das Update im Hintergrund herunter und meldet sich, sobald ein Neustart zum Installieren ansteht.'
+        : 'Für dieses Betriebssystem installiert INGA Updates nicht automatisch – die Downloadseite öffnet sich im Browser, die Installation bleibt wie gewohnt ein manueller Schritt.',
+    });
+    if (response !== 0) return;
+    if (process.platform === 'win32') {
+      autoUpdater.downloadUpdate();
+    } else {
+      shell.openExternal(`https://github.com/Teyro/INGA/releases/tag/v${info.version}`);
+    }
+  });
+
+  autoUpdater.on('download-progress', (p) => {
+    setzeUpdateStatus({ status: 'laedt', prozent: Math.round(p.percent) });
+  });
+
+  autoUpdater.on('update-downloaded', async () => {
+    setzeUpdateStatus({ status: 'bereit' });
+    if (!mainWindow) return;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Jetzt neu starten und installieren', 'Später'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update heruntergeladen',
+      message: 'Das Update ist bereit. INGA jetzt neu starten, um es zu installieren?',
+      detail: 'Bitte vorher laufende Vorgänge (Ausleihe, Rückgabe, offene Bearbeitung) abschließen.',
+    });
+    if (response === 0) autoUpdater.quitAndInstall();
+  });
+}
+
+/** Manuelle ODER stille automatische Prüfung – wirft nie, nur Statusänderung über updateStatus. */
+async function autoUpdatePruefen() {
+  // In der Entwicklung (npm start/dev, ungepackt) gibt es keine latest.yml
+  // und keinen sinnvollen Vergleichswert – electron-updater bricht das sonst
+  // nur mit einer für Entwickler verwirrenden Fehlermeldung ab.
+  if (!app.isPackaged) {
+    setzeUpdateStatus({ status: 'entwicklung' });
+    return updateStatus;
+  }
+  try {
+    setzeUpdateStatus({ status: 'prueft' });
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    setzeUpdateStatus({ status: 'fehler', fehler: err.message });
+  }
+  return updateStatus;
+}
+
 /* ------------------------------------------------------ Mahnungen drucken */
 
 async function openMahnungPrintWindow(briefe) {
@@ -692,6 +865,50 @@ function registerIpc() {
     await openMahnungPrintWindow(briefe);
     return { anzahl: briefe.length };
   });
+
+  /**
+   * "Probe-Mahnung drucken" im Mahnstufen-Editor (Einstellungen): exakt
+   * derselbe Druck-Weg wie oben (mahnung:erzeugen-und-drucken), aber mit
+   * frei erfundenen Beispieldaten statt echter Ausleihen – schreibt
+   * bewusst NICHTS in die Datenbank (kein repo.mahnungEintragen), damit
+   * ein Probedruck niemals echte Mahnhistorie oder Karteneinträge anlegt.
+   * Nutzt die echten Absender-/Logo-/Schluss-Einstellungen, damit das
+   * Ergebnis wirklich zeigt, was gedruckt würde.
+   */
+  ipcMain.handle('mahnung:probe-drucken', sicher(async (_e, stufeIndex) => {
+    const s = settings();
+    const stufe = s.mahnstufen[stufeIndex] || s.mahnstufen[0] || { text: 'Mahnung', briefText: '' };
+    const heute = new Date();
+    const faelligkeit = new Date(heute.getTime() - (stufe.tageUeberfaellig || 7) * 86400000);
+    const gebuehr = repo.berechneMahngebuehr(stufe.tageUeberfaellig || 7, s);
+    const posten = [{
+      Titel: 'Beispielbuch – Die Reise zum Mond',
+      AuslDatum: new Date(faelligkeit.getTime() - (s.leihfristTage || 7) * 86400000).toISOString().slice(0, 10),
+      faelligAm: faelligkeit.toISOString().slice(0, 10),
+      tageUeberfaellig: stufe.tageUeberfaellig || 7,
+      gebuehr,
+      stufe,
+      stufeIndex,
+    }];
+    const brief = {
+      leser: { Vorname: 'Anna', Nachname: 'Musterkind', Strasse: 'Musterstraße 1', PLZ: '12345', Ort: 'Musterstadt' },
+      posten,
+      summe: gebuehr,
+      mahngebuehrenAktiv: s.mahngebuehrenAktiv,
+      absenderName: s.absenderName,
+      absenderAdresse: s.absenderAdresse,
+      absenderEmail: s.absenderEmail,
+      absenderTelefon: s.absenderTelefon,
+      mahnBetreffVorlage: s.mahnBetreffVorlage,
+      mahnSchluss: s.mahnSchluss,
+      mahnLogoDataUrl: s.mahnLogoDataUrl,
+      bibliotheksName: s.bibliotheksName,
+      datum: heute.toLocaleDateString('de-DE'),
+      probe: true,
+    };
+    await openMahnungPrintWindow([brief]);
+    return { ok: true };
+  }));
 
   // Keine eigene SMTP-Anbindung (kein Konto/Passwort, das INGA verwalten
   // müsste) – öffnet stattdessen das auf dem Rechner eingerichtete
@@ -1013,6 +1230,30 @@ function registerIpc() {
     }
   }));
 
+  /**
+   * Assistent "Java-Laufzeit reparieren": lädt die fehlende Java-Laufzeit +
+   * Derby-Jars in den userData-Ordner nach (siehe
+   * perpustakaan-live.js "zusätzliche Laufzeit-Basis" +
+   * derby-runtime-setup.js) – für den Fall, dass die mit dem Programm
+   * ausgelieferte Laufzeit auf einer echten Installation fehlt oder nicht
+   * startbar ist (z. B. von einem Virenschutzprogramm entfernt). Braucht
+   * eine Internetverbindung; meldet einen verständlichen Fehler, wenn keine
+   * besteht, statt nur eine kryptische Netzwerk-Exception durchzureichen.
+   */
+  ipcMain.handle('perpustakaan-live:laufzeit-herunterladen', sicher(async () => {
+    if (laufzeitReparaturLaeuft) return { ok: false, fehler: 'Die Reparatur läuft bereits – bitte kurz warten.' };
+    laufzeitReparaturLaeuft = true;
+    try {
+      const ziel = path.join(app.getPath('userData'), 'derby-runtime');
+      await derbyRuntimeSetup.richteVollstaendigEin(ziel);
+      return await perpustakaanLiveStatusAktualisieren();
+    } catch (err) {
+      return { ok: false, fehler: `Herunterladen fehlgeschlagen (${err.message}) – bitte Internetverbindung prüfen und erneut versuchen.` };
+    } finally {
+      laufzeitReparaturLaeuft = false;
+    }
+  }));
+
   ipcMain.handle('papierkorb:leser-liste', () => repo.papierkorbLeserListe(db));
   ipcMain.handle('papierkorb:medien-liste', () => repo.papierkorbMedienListe(db));
   ipcMain.handle('papierkorb:leser-wiederherstellen', sicher((_e, id) => repo.leserWiederherstellen(db, id)));
@@ -1056,6 +1297,10 @@ function registerIpc() {
     return result.filePath;
   }));
 
+  /* ------------------------------------------------------------- Auto-Update */
+  ipcMain.handle('update:status', () => updateStatus);
+  ipcMain.handle('update:jetzt-pruefen', sicher(() => autoUpdatePruefen()));
+
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:maximize', (event) => {
@@ -1081,6 +1326,11 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     const userDataDir = app.getPath('userData');
+    // EXPERIMENTELL: zweiter Suchort für die Java-Laufzeit, falls die mit
+    // dem Programm ausgelieferte auf einer echten Installation fehlt/nicht
+    // startbar ist (siehe perpustakaan-live.js). Muss VOR
+    // perpustakaanLiveStatusAktualisieren() gesetzt sein.
+    perpustakaanLive.setzeZusaetzlicheLaufzeitBasis(userDataDir);
     store = new Store(path.join(userDataDir, 'config'));
     db = openDatabase(userDataDir);
     coversDir = path.join(userDataDir, 'covers');
@@ -1099,6 +1349,10 @@ if (!gotLock) {
     if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
       sicherePerpustakaanZipSync(db, backupDir, exportZip);
     }
+    // Zusätzliche, unabhängige tägliche Sicherung im Dokumente-Ordner –
+    // siehe dokumenteBackupFallsFaelligSync() oben, abschaltbar über
+    // Einstellungen "dokumenteBackupAktiv".
+    dokumenteBackupFallsFaelligSync();
     // EXPERIMENTELL: bei jedem Start (nicht nur einmal täglich wie oben –
     // siehe backup.js) die ECHTE Perpustakaan-Datenbank sichern, BEVOR
     // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
@@ -1107,6 +1361,7 @@ if (!gotLock) {
     await perpustakaanLiveStatusAktualisieren();
 
     registerIpc();
+    wireAutoUpdater();
     buildMenu();
     createSplashWindow();
     createMainWindow();
@@ -1114,6 +1369,20 @@ if (!gotLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
     });
+
+    // Hintergrundaufgaben NACH dem Start, mit etwas Abstand, damit sie das
+    // Öffnen des Hauptfensters nicht verzögern: eine stille Update-Prüfung
+    // (kein Dialog, wenn ohnehin schon aktuell) und – falls seit über einer
+    // Woche nicht mehr gelaufen – das automatische Cover-Nachladen.
+    setTimeout(() => {
+      if (settings().autoUpdateAktiv) autoUpdatePruefen();
+      coverAutoNachladenFallsFaellig().catch((err) => console.error('[wartung] Cover-Nachladen fehlgeschlagen:', err.message));
+    }, 5000);
+    // Erneute stille Prüfung alle 6 Stunden – für Sitzungen, die tagelang
+    // durchlaufen, nicht nur bei jedem Neustart.
+    setInterval(() => {
+      if (settings().autoUpdateAktiv) autoUpdatePruefen();
+    }, 6 * 60 * 60 * 1000);
   });
 
   app.on('window-all-closed', () => {

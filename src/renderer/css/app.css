@@ -191,6 +191,20 @@ button { cursor: pointer; }
 .dash-panel-head { display: flex; align-items: baseline; gap: 8px; }
 .dash-panel-head .section-title { flex: 1; margin: 0 0 8px; }
 
+/* Kleine, unaufdringliche Statuszeile ganz unten: Version + letzte
+   Sicherung + Update-Hinweis, siehe app.js renderDashFooter(). Bewusst
+   nicht als eigene .card – das würde neben den Kacheln darüber zu viel
+   Gewicht bekommen für reine Randinformation. */
+.dash-footer {
+  display: flex; flex-wrap: wrap; gap: 4px 18px;
+  margin-top: 18px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-faint); font-size: 0.8rem;
+}
+.dash-footer a, .dash-footer button.link {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline;
+}
+
 .list-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 6px;

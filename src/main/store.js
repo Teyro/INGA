@@ -208,6 +208,15 @@ const DEFAULT_SETTINGS = {
   printPaper: 'A4',
   lastExportReveal: false,
 
+  // Wartung: siehe main.js dokumenteBackupFallsFaelligSync()/
+  // coverAutoNachladenFallsFaellig()/autoUpdatePruefen(). Alle drei
+  // standardmäßig an – wer nicht möchte, schaltet gezielt ab (z. B. bei
+  // knappem Speicherplatz, einem synchronisierten Dokumente-Ordner oder
+  // fehlendem Internetzugang in der Bücherei).
+  dokumenteBackupAktiv: true,
+  autoCoverNachladenAktiv: true,
+  autoUpdateAktiv: true,
+
   // EXPERIMENTELL (Branch feature/perpustakaan-live-db, Version 0.9): siehe
   // src/main/perpustakaan-live.js. Standardmäßig aus – wer nicht gezielt in
   // den Einstellungen unter "Experimentell" zustimmt, bekommt INGAs

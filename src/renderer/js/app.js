@@ -45,6 +45,7 @@ async function boot() {
   const data = await api.bootstrap();
   applyChrome(data);
   state.settings = data.settings;
+  state.appVersion = data.version;
   state.stammdaten = await api.stammdaten.get();
 
   document.getElementById('win-close').addEventListener('click', () => api.window.close());
@@ -72,6 +73,7 @@ async function boot() {
   wireEtiketten();
   wireEinstellungen();
   wireSheet();
+  wireUpdate();
 
   api.on('menu:action', onMenuAction);
   api.on('settings:updated', (s) => {
@@ -80,6 +82,7 @@ async function boot() {
     if (state.view === 'mahnungen') renderMahnungenAktuell();
   });
   api.on('cover:progress', aktualisiereCoverFortschritt);
+  api.on('update:status', zeichneUpdateStatus);
 
   showView('dashboard');
 }
@@ -210,6 +213,18 @@ async function loadDashboard() {
   renderVergesseneRueckgaben(ueberfaellig);
   renderTopAusgeliehen(top10);
   await renderAbschlussHinweis();
+  await renderDashFooter();
+}
+
+/** Kleine Statuszeile am Fuß des Dashboards: Version, letzte Sicherung, Update-Hinweis – siehe .dash-footer in app.css. */
+async function renderDashFooter() {
+  const box = document.getElementById('dash-footer');
+  if (!box) return;
+  const [backups, updateStatusVal] = await Promise.all([api.backup.liste(), api.update.status()]);
+  const teile = [`INGA ${state.appVersion || '?'}`];
+  teile.push(backups[0] ? `Letzte Sicherung: ${new Date(backups[0].erstellt).toLocaleString('de-DE')}` : 'Noch keine Sicherung vorhanden');
+  if (updateStatusVal?.status === 'verfuegbar') teile.push(`🆕 Version ${updateStatusVal.version} verfügbar – siehe Einstellungen`);
+  box.replaceChildren(...teile.map((t) => el('span', {}, [t])));
 }
 
 /**
@@ -2435,7 +2450,7 @@ function wireEinstellungen() {
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv', 'set-uhrAnzeigen']) {
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv', 'set-uhrAnzeigen', 'set-dokumenteBackupAktiv', 'set-autoCoverNachladenAktiv', 'set-autoUpdateAktiv']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
@@ -2491,6 +2506,22 @@ function wirePerpustakaanLive() {
     await erzwingeNeuePerpustakaanLivePruefung();
   });
 
+  document.getElementById('perpustakaan-live-reparieren').addEventListener('click', async () => {
+    const btn = document.getElementById('perpustakaan-live-reparieren');
+    const textVorher = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Lädt herunter …';
+    try {
+      const result = await api.perpustakaanLive.laufzeitHerunterladen();
+      zeichnePerpustakaanLiveStatus(result);
+      if (result.bereit) toast('Java-Laufzeit erfolgreich eingerichtet.');
+      else if (result.fehler) toast(result.fehler, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textVorher;
+    }
+  });
+
   document.getElementById('perpustakaan-live-lesen').addEventListener('click', async () => {
     if (!document.getElementById('set-perpustakaanLiveAktiv').checked) { toast('Bitte zuerst den direkten Zugriff aktivieren.', 'error'); return; }
     if (!confirm('Aktuellen INGA-Bestand mit dem Stand aus der echten Perpustakaan-Datenbank überschreiben? INGA sichert vorher automatisch den bisherigen INGA-Stand.')) return;
@@ -2523,6 +2554,44 @@ function wirePerpustakaanLive() {
   });
 }
 
+/**
+ * Auto-Update (siehe main.js wireAutoUpdater()): der "Jetzt nach Updates
+ * suchen"-Knopf löst denselben Ablauf aus wie die stille Prüfung beim
+ * Programmstart – findet main.js eine neuere Version, erscheint dort der
+ * Rückfrage-Dialog von selbst, hier wird nur der Statustext mitgeführt.
+ */
+function wireUpdate() {
+  const versionEl = document.getElementById('update-version');
+  if (versionEl) versionEl.textContent = `INGA Version ${state.appVersion || '?'}`;
+
+  document.getElementById('update-jetzt-pruefen').addEventListener('click', async () => {
+    const btn = document.getElementById('update-jetzt-pruefen');
+    btn.disabled = true;
+    try {
+      zeichneUpdateStatus(await api.update.jetztPruefen());
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  api.update.status().then(zeichneUpdateStatus);
+}
+
+function zeichneUpdateStatus(s) {
+  const el2 = document.getElementById('update-status');
+  if (!el2 || !s) return;
+  const texte = {
+    unbekannt: '',
+    entwicklung: 'Update-Prüfung nur in der fertig gepackten App verfügbar.',
+    prueft: 'Suche nach Updates …',
+    aktuell: '✓ INGA ist aktuell.',
+    verfuegbar: `🆕 Version ${s.version} verfügbar.`,
+    laedt: `⬇️ Lädt herunter … ${s.prozent ?? 0}%`,
+    bereit: '✓ Update heruntergeladen – bereit zum Neustart.',
+    fehler: `⚠️ Update-Prüfung fehlgeschlagen: ${s.fehler || 'unbekannter Fehler'}`,
+  };
+  el2.textContent = texte[s.status] ?? '';
+}
+
 /** Zeigt den zuletzt in main.js ermittelten Status an – ohne neue Sicherung/Prüfung auszulösen (die läuft schon beim Programmstart bzw. nach Lesen/Schreiben). */
 async function aktualisierePerpustakaanLiveStatus() {
   zeichnePerpustakaanLiveStatus(await api.perpustakaanLive.status());
@@ -2535,7 +2604,9 @@ async function erzwingeNeuePerpustakaanLivePruefung() {
 
 function zeichnePerpustakaanLiveStatus(s) {
   const el2 = document.getElementById('perpustakaan-live-status');
+  const reparierenZeile = document.getElementById('perpustakaan-live-reparieren-zeile');
   if (!el2) return;
+  if (reparierenZeile) reparierenZeile.hidden = !s.laufzeitFehlt;
   if (!s.aktiv) { el2.textContent = 'Direkter Zugriff ist deaktiviert.'; return; }
   if (s.bereit) { el2.textContent = 'Bereit – Perpustakaan-Datenbank ist gerade frei.'; return; }
   el2.textContent = s.gesperrt
@@ -2771,6 +2842,24 @@ function renderMahnstufen() {
         previewToggle.textContent = previewBox.hidden ? 'Vorschau' : 'Vorschau ausblenden';
       },
     }, ['Vorschau']);
+    const probeDruckenBtn = el('button', {
+      class: 'button small',
+      type: 'button',
+      title: 'Öffnet diese Stufe im echten Druckfenster – mit erfundenen Beispieldaten, es wird nichts gespeichert oder verschickt.',
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          // Ungespeicherte Änderungen (gerade erst getippter Text, Tage-Wert
+          // …) müssen erst wirklich angekommen sein – main.js liest die
+          // Stufe für den Probedruck frisch aus den gespeicherten
+          // Einstellungen, nicht aus diesem Formular.
+          await speichereEinstellungenSofort();
+          await api.mahnung.probeDrucken(i);
+        } finally {
+          e.target.disabled = false;
+        }
+      },
+    }, ['🖨️ Probe-Mahnung drucken']);
     const aktualisierePreview = () => { previewBox.innerHTML = fuelleVorschauVorlage(stufe.briefText, stufe); };
 
     const editor = baueBrieftextEditor({
@@ -2821,7 +2910,7 @@ function renderMahnstufen() {
           ]),
           editor,
         ]),
-        previewToggle,
+        el('div', { class: 'row-inline' }, [previewToggle, probeDruckenBtn]),
         previewBox,
       ])
     );
@@ -2835,6 +2924,9 @@ async function loadEinstellungen() {
   document.getElementById('set-fontScale').value = s.fontScale || 100;
   document.getElementById('set-bibliotheksName').value = s.bibliotheksName || '';
   document.getElementById('set-uhrAnzeigen').checked = s.uhrAnzeigen !== false;
+  document.getElementById('set-dokumenteBackupAktiv').checked = s.dokumenteBackupAktiv !== false;
+  document.getElementById('set-autoCoverNachladenAktiv').checked = s.autoCoverNachladenAktiv !== false;
+  document.getElementById('set-autoUpdateAktiv').checked = s.autoUpdateAktiv !== false;
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
@@ -3293,6 +3385,9 @@ async function speichereEinstellungenSofort() {
     fontScale: Number(document.getElementById('set-fontScale').value) || 100,
     bibliotheksName: document.getElementById('set-bibliotheksName').value,
     uhrAnzeigen: document.getElementById('set-uhrAnzeigen').checked,
+    dokumenteBackupAktiv: document.getElementById('set-dokumenteBackupAktiv').checked,
+    autoCoverNachladenAktiv: document.getElementById('set-autoCoverNachladenAktiv').checked,
+    autoUpdateAktiv: document.getElementById('set-autoUpdateAktiv').checked,
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,

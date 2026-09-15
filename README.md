@@ -57,6 +57,8 @@ Ferienschließzeit.
   ein Klick öffnet direkt die Nutzerakte
 - **Meistausgeliehene Bücher** – Top 10 über den gesamten Ausleihverlauf,
   mit Cover-Vorschau
+- Statuszeile am unteren Rand: Programmversion, Zeitpunkt der letzten
+  Sicherung, Hinweis bei verfügbarem Update
 
 ### Katalog & Buchdetail (NELE)
 
@@ -240,6 +242,9 @@ Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
   dabei ausgestellte Zugangstoken wird gespeichert, nie das Passwort) oder
   direkt per Zugangstoken für ein Bot-Konto – siehe Einstellungen →
   Mahnungen
+- **Probe-Mahnung drucken**: öffnet die gerade bearbeitete Stufe mit
+  erfundenen Beispieldaten im echten Druckfenster, zum Prüfen von Layout/
+  Brieftext ohne echten Fall – speichert oder verschickt nichts
 
 ### Einstellungen
 
@@ -273,13 +278,20 @@ Dialoge:
   Tage-Offset, der sofort auf jede berechnete Fälligkeit wirkt – z. B.
   `+14` während einer kurzfristigen, noch nicht als Ferieneintrag
   erfassten Schließzeit), **einmalige Verschiebung** des Ausleihdatums
-  aller offenen Ausleihen um X Tage, sowie die **Datensicherung**:
+  aller offenen Ausleihen um X Tage, die **Datensicherung**:
   automatisches Backup einmal
   täglich beim Programmstart und vor jeder Migration (Rotation: die
   letzten 10 bleiben erhalten, zusätzlich eine Perpustakaan-kompatible
   Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in
   den Einstellungen – Einspielen sichert vorher automatisch noch einmal
-  den aktuellen Stand und startet INGA neu
+  den aktuellen Stand und startet INGA neu. Wahlweise (Vorgabe: an)
+  zusätzlich dieselbe tägliche Sicherung noch einmal nach
+  `Dokumente/INGA Backups` – leichter zu finden/mitzunehmen als der
+  interne Programmdaten-Ordner. Dazu unter **Wartung**: wöchentliches
+  automatisches Nachladen fehlender Cover im Hintergrund sowie
+  automatische Updates (prüft beim Start und danach alle paar Stunden
+  beim GitHub-Repository nach, fragt vor jedem Download nach – siehe
+  „Automatische Updates“ unten). Alle drei einzeln abschaltbar.
 - **Experimentell ⚠️**: deutlich gekennzeichnet, standardmäßig aus.
   Direkter Zugriff auf die echte, live verwendete Perpustakaan-Datenbank
   (Apache Derby) statt nur auf Zip-Sicherungen – „Jetzt aus Perpustakaan
@@ -288,7 +300,10 @@ Dialoge:
   zuverlässig, ob Perpustakaan die Datenbank gerade selbst geöffnet hält,
   und verweigert den Zugriff in dem Fall. Sichert die Original-Datenbank
   vor jedem Programmstart mit aktiviertem Zugriff und vor jedem einzelnen
-  Schreibversuch. Gegen eine selbst gebaute Testdatenbank ausführlich
+  Schreibversuch. Fehlt die mitgelieferte Java-Laufzeit auf einer echten
+  Installation (z. B. weil ein Virenschutzprogramm sie entfernt hat), lädt
+  ein Knopf „Java-Laufzeit reparieren“ sie ohne Neuinstallation nach.
+  Gegen eine selbst gebaute Testdatenbank ausführlich
   geprüft (siehe `derby-bridge/README.md`), aber noch nie gegen eine
   echte Perpustakaan-Installation – vor dem ersten Einsatz mit echten
   Daten unbedingt zuerst an einer Kopie ausprobieren, nicht am Original
@@ -456,7 +471,27 @@ Actions bei jedem Push nach `main` und bei jedem Release-Tag (`v*`) – siehe
 [`.github/workflows/build.yml`](.github/workflows/build.yml). Bei einem
 Tag-Push wird zusätzlich automatisch ein GitHub Release mit allen
 Build-Artefakten (AppImage, .deb, .rpm, Windows-Installer + portable .exe,
-.dmg) angelegt.
+.dmg) angelegt, zusammen mit den `latest*.yml`-Metadatendateien, die
+automatische Updates (siehe unten) brauchen.
+
+### Automatische Updates
+
+INGA prüft zur Laufzeit selbst beim GitHub-Repository nach, ob eine
+neuere Version veröffentlicht wurde (`electron-updater`, `package.json`
+„build.publish“) – der Build lädt dabei NICHTS automatisch hoch
+(`--publish never` in den `dist:*`-Skripten), das GitHub-Release entsteht
+weiterhin ausschließlich über den bestehenden `release`-Job in
+`build.yml`. Unter Windows lädt ein bestätigtes Update automatisch
+herunter und bietet danach einen Neustart an; unter macOS/Linux öffnet
+sich stattdessen die Release-Seite im Browser (INGA ist nicht
+code-signiert – ohne Signatur kann macOS ein heruntergeladenes Update
+nicht zuverlässig verifizieren, und unter Linux ist INGA auf zu
+unterschiedliche Arten installierbar, um das automatisch abzudecken).
+
+Eine Versionsnummer mit Vorabkennzeichnung (z. B. `1.2.0-beta.1`) läuft
+automatisch über einen eigenen Beta-Update-Kanal – Installationen dieser
+Version werden nur über weitere `…-beta.x`-Releases aktualisiert, nicht
+automatisch über die spätere reguläre `1.2.0`.
 
 ## Lizenz
 

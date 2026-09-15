@@ -34,16 +34,37 @@ const { spawn } = require('node:child_process');
 const BRIDGE_TIMEOUT_MS = 30000;
 
 /**
- * Wo die Java-Laufzeit + Derby-Jars liegen: gepackt unter extraResources
- * (siehe package.json "build.extraResources" und
- * scripts/setup-derby-runtime.js), in der Entwicklung direkt im
- * Projektordner (`npm run setup:derby-runtime` lädt sie dorthin). Ohne
- * heruntergeladene Laufzeit fällt java() auf ein System-Java zurück –
- * praktisch für die Entwicklung, wenn ohnehin ein JDK installiert ist.
+ * Wo die Java-Laufzeit + Derby-Jars liegen können, in Prüfreihenfolge:
+ *  1. mitgeliefert – gepackt unter extraResources (siehe package.json
+ *     "build.extraResources" und scripts/setup-derby-runtime.js), in der
+ *     Entwicklung direkt im Projektordner (`npm run setup:derby-runtime`
+ *     lädt sie dorthin).
+ *  2. zusätzliche Laufzeit-Basis – NUR zur Laufzeit von main.js gesetzt
+ *     (mit app.getPath('userData')): falls die mitgelieferte Laufzeit auf
+ *     einer echten Installation aus irgendeinem Grund fehlt/nicht startbar
+ *     ist (Antivirus/Firewall haben java.exe entfernt, unvollständige
+ *     Installation, …), lädt der "Java-Laufzeit reparieren"-Assistent
+ *     (main.js, IPC "perpustakaan-live:laufzeit-herunterladen") sie
+ *     hierhin nach.
+ * Findet sich in KEINER der beiden Basen eine startbare JRE, fällt
+ * javaPfad() zuletzt auf ein bloßes "java" (Systempfad) zurück – praktisch
+ * für die Entwicklung, wenn ohnehin ein JDK installiert ist.
+ *
+ * setzeZusaetzlicheLaufzeitBasis() ist bewusst ein Setter statt eines
+ * direkten require('electron') hier in dieser Datei – test/perpustakaan-
+ * live.test.mjs lädt sie mit reinem `node --test` ohne Electron-Laufzeit.
  */
-function ressourcenBasis() {
+let zusaetzlicheLaufzeitBasis = null;
+function setzeZusaetzlicheLaufzeitBasis(pfad) {
+  zusaetzlicheLaufzeitBasis = pfad;
+}
+
+/** Alle Orte, an denen eine funktionsfähige Laufzeit stehen könnte, in obiger Prüfreihenfolge. */
+function laufzeitBasisKandidaten() {
   const gepackt = process.resourcesPath && fs.existsSync(path.join(process.resourcesPath, 'derby-runtime'));
-  return gepackt ? process.resourcesPath : path.join(__dirname, '..', '..');
+  const kandidaten = [gepackt ? process.resourcesPath : path.join(__dirname, '..', '..')];
+  if (zusaetzlicheLaufzeitBasis) kandidaten.push(zusaetzlicheLaufzeitBasis);
+  return kandidaten;
 }
 
 // Test-Umgehung für javaPfad()/klassenpfad(): node:test kann kein Java
@@ -56,15 +77,31 @@ function ressourcenBasis() {
 function javaPfad() {
   if (process.env.INGA_TEST_JAVA_PFAD) return process.env.INGA_TEST_JAVA_PFAD;
   const exe = process.platform === 'win32' ? 'java.exe' : 'java';
-  const kandidat = path.join(ressourcenBasis(), 'derby-runtime', 'jre', 'bin', exe);
-  return fs.existsSync(kandidat) ? kandidat : 'java';
+  for (const basis of laufzeitBasisKandidaten()) {
+    const kandidat = path.join(basis, 'derby-runtime', 'jre', 'bin', exe);
+    if (fs.existsSync(kandidat)) return kandidat;
+  }
+  return 'java';
+}
+
+/** true, sobald IRGENDEINE der Kandidaten-Basen eine startbare JRE hat – für die Statusanzeige/den Assistenten, ohne extra einen Bridge-Aufruf zu riskieren. */
+function laufzeitVorhanden() {
+  return javaPfad() !== 'java';
 }
 
 function klassenpfad() {
-  const basis = ressourcenBasis();
-  const jarOrdner = path.join(basis, 'derby-runtime', 'derby-jars');
-  const eigeneJars = fs.existsSync(jarOrdner) ? fs.readdirSync(jarOrdner).filter((f) => f.endsWith('.jar')).map((f) => path.join(jarOrdner, f)) : [];
-  return [...eigeneJars, path.join(basis, 'derby-bridge', 'classes')].join(path.delimiter);
+  // Die Bridge-Klassen selbst liegen NUR im (gepackten oder Entwicklungs-)
+  // Programmordner, nie im userData-Nachlade-Ordner – der Assistent lädt
+  // ausschließlich die Java-Laufzeit + Derby-Jars nach, niemals INGA-
+  // eigenen Code.
+  const programmBasis = laufzeitBasisKandidaten()[0];
+  const jars = [];
+  for (const basis of laufzeitBasisKandidaten()) {
+    const jarOrdner = path.join(basis, 'derby-runtime', 'derby-jars');
+    if (!fs.existsSync(jarOrdner)) continue;
+    for (const datei of fs.readdirSync(jarOrdner).filter((f) => f.endsWith('.jar'))) jars.push(path.join(jarOrdner, datei));
+  }
+  return [...jars, path.join(programmBasis, 'derby-bridge', 'classes')].join(path.delimiter);
 }
 
 /** Schema-Datei für "dump" (siehe Bridge.java: `Tabellenname\tSpalte1,Spalte2,…` je Zeile) – EINE Quelle der Wahrheit mit csvio.js, dieselbe schema/perpustakaan-tables.json. */
@@ -102,7 +139,10 @@ function rufeBridgeAuf(args) {
       if (beendet) return;
       beendet = true;
       clearTimeout(timer);
-      resolve({ ok: false, fehler: `Java-Laufzeit nicht gefunden/startbar (${err.message}).` });
+      const hinweis = err.code === 'ENOENT'
+        ? 'Die mit INGA ausgelieferte Java-Laufzeit fehlt oder wurde von einem Virenschutz-/Firewall-Programm entfernt. Klicken Sie unten auf „Java-Laufzeit reparieren“, um sie automatisch neu herunterzuladen – dafür wird kurz eine Internetverbindung gebraucht.'
+        : `Java-Laufzeit lässt sich nicht starten (${err.code || err.message}).`;
+      resolve({ ok: false, fehler: hinweis, laufzeitFehlt: err.code === 'ENOENT' });
     });
     kind.on('close', () => {
       if (beendet) return;
@@ -148,4 +188,4 @@ async function ladeAusZip(dbPfad, quellZip) {
   return rufeBridgeAuf(['load', dbPfad, quellZip]);
 }
 
-module.exports = { pruefeZugriff, dumpNachZip, ladeAusZip, javaPfad, klassenpfad };
+module.exports = { pruefeZugriff, dumpNachZip, ladeAusZip, javaPfad, klassenpfad, setzeZusaetzlicheLaufzeitBasis, laufzeitVorhanden };

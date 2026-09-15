@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress', 'window:state']);
+const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress', 'window:state', 'update:status']);
 
 contextBridge.exposeInMainWorld('inga', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('inga', {
     ueberfaellige: () => ipcRenderer.invoke('mahnung:ueberfaellige'),
     rueckstandsliste: (schwelleTage) => ipcRenderer.invoke('mahnung:rueckstandsliste', schwelleTage),
     erzeugenUndDrucken: (positionen, stufeIndex) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', { positionen, stufeIndex }),
+    probeDrucken: (stufeIndex) => ipcRenderer.invoke('mahnung:probe-drucken', stufeIndex),
     logoAuswaehlen: () => ipcRenderer.invoke('mahnung:logo-auswaehlen'),
   },
 
@@ -145,6 +146,12 @@ contextBridge.exposeInMainWorld('inga', {
     pfadWaehlen: () => ipcRenderer.invoke('perpustakaan-live:pfad-waehlen'),
     jetztLesen: () => ipcRenderer.invoke('perpustakaan-live:jetzt-lesen'),
     jetztSchreiben: () => ipcRenderer.invoke('perpustakaan-live:jetzt-schreiben'),
+    laufzeitHerunterladen: () => ipcRenderer.invoke('perpustakaan-live:laufzeit-herunterladen'),
+  },
+
+  update: {
+    status: () => ipcRenderer.invoke('update:status'),
+    jetztPruefen: () => ipcRenderer.invoke('update:jetzt-pruefen'),
   },
 
   papierkorb: {

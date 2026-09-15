@@ -6,6 +6,59 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.2.0-beta.1 – 2026-09-15
+
+Erste Beta dieser Reihe – neue Funktionen laufen zunächst über den
+Beta-Update-Kanal (siehe "Automatische Updates" unten), bevor sie als
+reguläre 1.2.0 erscheinen.
+
+### Neu
+- **Automatische Updates**: INGA prüft beim Start und danach alle paar
+  Stunden im Hintergrund beim GitHub-Repository nach einer neueren
+  Version, fragt aber IMMER erst nach, bevor irgendetwas heruntergeladen
+  wird. Unter Windows lädt INGA ein bestätigtes Update selbst herunter und
+  bietet danach einen Neustart zum Installieren an; unter macOS/Linux (wo
+  INGA nicht signiert ist bzw. auf sehr unterschiedliche Arten installiert
+  sein kann) öffnet sich stattdessen die Download-Seite im Browser.
+  Ein-/ausschaltbar sowie manuell anstoßbar in den Einstellungen unter
+  „Aussehen und weitere App-Einstellungen“ → „Wartung“.
+- **Experimentell (Perpustakaan-Direktzugriff): Assistent bei fehlender
+  Java-Laufzeit.** Die Fehlermeldung „Java-Laufzeit nicht gefunden/
+  startbar“ ist jetzt konkret und nennt eine wahrscheinliche Ursache
+  (Virenschutz/Firewall hat die mitgelieferte Laufzeit entfernt). Ein
+  neuer Knopf „Java-Laufzeit reparieren“ lädt die fehlende Laufzeit direkt
+  in den INGA-eigenen Programmdaten-Ordner nach, ohne Neuinstallation.
+- **Zusätzliche tägliche Sicherung im Dokumente-Ordner** (`Dokumente/INGA
+  Backups`, neben der gewohnten Sicherung im INGA-eigenen
+  Programmdaten-Ordner) – leichter zu finden/mitzunehmen. Ein-/
+  ausschaltbar in den Einstellungen (Datensicherung).
+- **Wöchentliches automatisches Nachladen fehlender Cover** im
+  Hintergrund, dieselben freien Bildquellen wie beim manuellen Knopf im
+  Katalog. Ein-/ausschaltbar in den Einstellungen (Wartung).
+- **Mahnungen: „Probe-Mahnung drucken“**. Öffnet die aktuell bearbeitete
+  Mahnstufe mit erfundenen Beispieldaten im echten Druckfenster – zum
+  Prüfen von Layout/Brieftext, ohne dass etwas gespeichert oder verschickt
+  wird.
+- **Dashboard aufgeräumt**: Kennzahlen und Schnellzugriff haben jetzt
+  eigene Überschriften, dazu eine kleine Statuszeile am unteren Rand mit
+  Programmversion, Zeitpunkt der letzten Sicherung und einem Hinweis, wenn
+  ein Update verfügbar ist.
+
+### Behoben
+- `adm-zip` (zum Lesen/Schreiben von Zip-Dateien beim Import/Export und
+  bei Sicherungen) auf 0.6.1 aktualisiert – behebt zwei öffentlich
+  gemeldete Sicherheitslücken (Speicherausschöpfung durch präparierte
+  Zip-Dateien, Umgehen des Zielordners über Symlink-Einträge beim
+  Entpacken).
+
+### Bekannt
+- Die vom Nutzer gemeldete `spawn java ENOENT`-Meldung deutet auf eine
+  echte Installation hin, bei der die mitgelieferte Java-Laufzeit trotz
+  erfolgreicher CI-Builds nicht am erwarteten Ort ankommt – die genaue
+  Ursache (Packaging, Virenschutz, Pfadlänge, …) ist weiterhin nicht
+  abschließend geklärt. Der neue Reparatur-Assistent umgeht das Problem
+  zuverlässig, statt die Ursache weiter zu vermuten.
+
 ## 1.1.1 – 2026-09-15
 
 ### Behoben

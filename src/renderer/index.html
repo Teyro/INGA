@@ -54,6 +54,8 @@
         <div class="toolbar"><h1>Übersicht</h1></div>
         <div class="view">
           <div id="abschluss-hinweis" hidden></div>
+
+          <div class="section-title">Auf einen Blick</div>
           <div class="stat-row">
             <div class="card stat-card"><div class="n" id="stat-titel">–</div><div class="label">Titel im Katalog</div></div>
             <div class="card stat-card"><div class="n" id="stat-exemplare">–</div><div class="label">Exemplare</div></div>
@@ -62,6 +64,7 @@
             <div class="card stat-card stat-danger"><div class="n" id="stat-ueberfaellig">–</div><div class="label">Überfällig</div></div>
           </div>
 
+          <div class="section-title">Schnellzugriff</div>
           <div class="quick-actions">
             <button class="quick-btn" data-view="ausleihe"><span class="icon">➡️</span><span>Ausleihen</span></button>
             <button class="quick-btn" data-view="rueckgabe"><span class="icon">⬅️</span><span>Rückgabe</span></button>
@@ -87,6 +90,8 @@
               <div id="dash-top10"></div>
             </div>
           </div>
+
+          <div class="dash-footer" id="dash-footer"></div>
         </div>
       </section>
 
@@ -676,8 +681,10 @@
               </div>
 
               <div class="section-title">Datensicherung</div>
-              <div class="card" style="padding:18px">
+              <div class="card" style="padding:18px; margin-bottom:16px">
                 <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“. Zusätzlich legt INGA einmal täglich beim Start auch eine Perpustakaan-kompatible Zip-Sicherung an (<code>perpustakaan_backup_…zip</code> im selben Sicherungsordner) – falls die Daten einmal in einer echten Perpustakaan-Installation gebraucht werden.</p>
+                <label class="checkbox-label"><input type="checkbox" id="set-dokumenteBackupAktiv" /> Zusätzlich täglich nach „Dokumente/INGA Backups“ sichern</label>
+                <p class="hint">Praktisch, falls der interne Programmordner mal nicht griffbereit ist (Umzug auf einen neuen Rechner, Mitnehmen per USB-Stick) – derselbe Inhalt wie oben, nur an einem leichter zu findenden Ort.</p>
                 <div class="row-inline" style="margin:10px 0">
                   <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
                   <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>
@@ -686,6 +693,19 @@
                   <thead><tr><th>Datei</th><th>Erstellt</th><th class="num">Größe</th><th class="actions"></th></tr></thead>
                   <tbody id="backup-tbody"></tbody>
                 </table>
+              </div>
+
+              <div class="section-title">Wartung</div>
+              <div class="card" style="padding:18px">
+                <label class="checkbox-label"><input type="checkbox" id="set-autoCoverNachladenAktiv" /> Fehlende Cover einmal wöchentlich automatisch nachladen</label>
+                <p class="hint">Sucht im Hintergrund bei Titeln ohne Cover erneut in den freien Bildquellen (Open Library, Google Books, …) – manuell jederzeit auch sofort über den Katalog möglich.</p>
+                <label class="checkbox-label" style="margin-top:10px"><input type="checkbox" id="set-autoUpdateAktiv" /> Automatisch nach neuen INGA-Versionen suchen</label>
+                <p class="hint">Fragt beim Start und danach alle paar Stunden im Hintergrund beim GitHub-Repository nach – INGA installiert nie ohne Rückfrage, siehe unten.</p>
+                <div class="row-inline" style="margin-top:12px">
+                  <button class="button" id="update-jetzt-pruefen">Jetzt nach Updates suchen</button>
+                  <span class="hint" id="update-status"></span>
+                </div>
+                <p class="hint" id="update-version" style="margin-top:10px"></p>
               </div>
             </section>
 
@@ -716,6 +736,10 @@
                   <p class="hint">Der Ordner mit „service.properties“, „log“, „seg0“ der echten Apache-Derby-Datenbank – nicht der Perpustakaan-Programmordner selbst.</p>
                 </div>
                 <p class="hint" id="perpustakaan-live-status" style="margin-top:12px"></p>
+                <div class="row-inline" style="margin-top:10px" id="perpustakaan-live-reparieren-zeile" hidden>
+                  <button class="button primary" id="perpustakaan-live-reparieren">🛠️ Java-Laufzeit reparieren</button>
+                  <span class="hint">Lädt die fehlende Laufzeit einmalig neu herunter (braucht kurz eine Internetverbindung).</span>
+                </div>
                 <div class="row-inline" style="margin-top:14px">
                   <button class="button" id="perpustakaan-live-lesen">Jetzt aus Perpustakaan lesen</button>
                   <button class="button danger" id="perpustakaan-live-schreiben">Jetzt in Perpustakaan schreiben …</button>

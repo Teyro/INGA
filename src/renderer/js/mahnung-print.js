@@ -89,7 +89,9 @@ let aktuelleBriefe = [];
 
 api.on('print:data', (data) => {
   aktuelleBriefe = data.briefe;
-  document.getElementById('anzahl').textContent = `${data.briefe.length} Brief${data.briefe.length === 1 ? '' : 'e'}`;
+  document.getElementById('anzahl').textContent = data.briefe.length === 1 && data.briefe[0].probe
+    ? 'Probe-Mahnung – mit Beispieldaten, nicht gespeichert'
+    : `${data.briefe.length} Brief${data.briefe.length === 1 ? '' : 'e'}`;
 
   const root = document.documentElement;
   const s = data.settings || {};

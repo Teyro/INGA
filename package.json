@@ -1,7 +1,7 @@
 {
   "name": "inga",
   "productName": "INGA",
-  "version": "1.1.1",
+  "version": "1.2.0-beta.1",
   "description": "INGA Ist Nicht Genehmigungspflichtige Anschaffung – freie Schulbibliotheksverwaltung",
   "main": "src/main/main.js",
   "//desktopName": "Electron leitet daraus unter Linux die app_id und WM_CLASS ab; muss zum Namen der .desktop-Datei passen, sonst ordnen GNOME und KDE das laufende Fenster nicht dem Starter zu.",
@@ -23,14 +23,15 @@
     "test": "node --test test/*.test.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac --win --linux",
-    "dist:mac": "node scripts/setup-derby-runtime.js && electron-builder --mac",
-    "dist:win": "node scripts/setup-derby-runtime.js && electron-builder --win nsis:x64 nsis:arm64 portable:x64",
-    "dist:linux": "node scripts/setup-derby-runtime.js && electron-builder --linux AppImage:x64 deb:x64 rpm:x64",
+    "dist:mac": "node scripts/setup-derby-runtime.js && electron-builder --mac --publish never",
+    "dist:win": "node scripts/setup-derby-runtime.js && electron-builder --win nsis:x64 nsis:arm64 portable:x64 --publish never",
+    "dist:linux": "node scripts/setup-derby-runtime.js && electron-builder --linux AppImage:x64 deb:x64 rpm:x64 --publish never",
     "setup:derby-runtime": "node scripts/setup-derby-runtime.js"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
-    "better-sqlite3": "^13.0.3"
+    "adm-zip": "^0.6.1",
+    "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "electron": "^34.0.0",
@@ -42,7 +43,7 @@
     "electron-winstaller": true
   },
   "build": {
-    "publish": null,
+    "publish": { "provider": "github", "owner": "Teyro", "repo": "INGA" },
     "appId": "app.inga.bibliothek",
     "productName": "INGA",
     "directories": {
