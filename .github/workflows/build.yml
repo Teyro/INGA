@@ -65,3 +65,9 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+          # Ein Tag mit Vorabkennzeichnung (z. B. v1.2.0-beta.1) markiert
+          # das GitHub-Release selbst als Vorabversion – rein kosmetisch
+          # für Menschen auf der Releases-Seite, electron-updater
+          # entscheidet unabhängig davon anhand der latest*.yml-Kanäle
+          # (siehe README "Automatische Updates").
+          prerelease: ${{ contains(github.ref_name, '-') }}
