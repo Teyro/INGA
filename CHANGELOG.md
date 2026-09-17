@@ -6,6 +6,30 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.2.0-beta.2 – 2026-09-17
+
+### Behoben
+- **Programmstart konnte minutenlang ohne sichtbares Fenster hängen.**
+  Der Splashscreen entstand erst, NACHDEM sämtliche Sicherungs- und
+  Perpustakaan-Prüfarbeit beim Start bereits durchgelaufen war – wer in
+  dieser Zeit gar kein Fenster sah, empfand das als abgestürzte App.
+  Betroffen vor allem mit aktiviertem experimentellem
+  Perpustakaan-Direktzugriff: die Original-Datenbank wird dabei bei jedem
+  Start komplett gezippt, das kann bei einer großen echten Datenbank
+  spürbar dauern. Splashscreen erscheint jetzt SOFORT beim Start, noch
+  vor jeglicher Datenbank-/Sicherungsarbeit, und zeigt eine Statuszeile
+  ("Öffne Datenbank …", "Sichere Perpustakaan-Datenbank …", "Prüfe
+  Perpustakaan-Zugriff …", …), damit erkennbar bleibt, wo es klemmt,
+  statt nur eine unbewegte Ladeanimation zu zeigen.
+- Die neue tägliche Dokumente-Ordner-Sicherung (seit 1.2.0-beta.1)
+  verdoppelte praktisch die beiden bestehenden Start-Sicherungen und
+  damit die Wartezeit vor dem ersten sichtbaren Fenster – läuft jetzt wie
+  das automatische Cover-Nachladen erst im Hintergrund nach dem Start.
+- **Splashscreen: längere Lade-Sprüche wurden am unteren Rand
+  abgeschnitten** ("da kann man den Teil nicht lesen") – das Fenster war
+  dafür schlicht zu klein. Etwas größer, Schriftgröße/Zeilenabstand des
+  Spruchs angepasst.
+
 ## 1.2.0-beta.1 – 2026-09-15
 
 Erste Beta dieser Reihe – neue Funktionen laufen zunächst über den

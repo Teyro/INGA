@@ -91,6 +91,11 @@ function settings() {
  */
 async function perpustakaanLiveBereitPruefen() {
   const dbPfad = settings().perpustakaanLiveDbPfad;
+  // Kann bei einer großen, echten Datenbank spürbar dauern (der komplette
+  // Ordner wird synchron gezippt) – siehe splashStatus(): harmlos, wenn
+  // gerade kein Splashscreen (mehr) existiert, z. B. bei "Jetzt prüfen" in
+  // den Einstellungen nach dem Start.
+  splashStatus('Sichere Perpustakaan-Datenbank …');
   const sicherungsPfad = sichereOriginalPerpustakaanDbSync(dbPfad, backupDir);
   if (!sicherungsPfad) {
     perpustakaanLiveStatus = { aktiv: true, bereit: false, grund: 'Sicherung der Original-Datenbank fehlgeschlagen – Zugriff aus Sicherheitsgründen gesperrt.' };
@@ -104,6 +109,7 @@ async function perpustakaanLiveBereitPruefen() {
     perpustakaanLiveStatus = { aktiv: true, bereit: false, laufzeitFehlt: true, sicherungsPfad, grund: perpustakaanLive.LAUFZEIT_FEHLT_HINWEIS };
     return perpustakaanLiveStatus;
   }
+  splashStatus('Prüfe Perpustakaan-Zugriff …');
   const ergebnis = await perpustakaanLive.pruefeZugriff(dbPfad);
   if (ergebnis.ok) {
     perpustakaanLiveStatus = { aktiv: true, bereit: true, sicherungsPfad };
@@ -223,17 +229,33 @@ async function bootstrapPayload() {
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 420,
-    height: 340,
+    // War 340px – bei einem der längeren Sprüche in sprueche.js (mehrere
+    // ganze Sätze) reichte das nicht: der Text wurde vom festen
+    // Fenster/"overflow: hidden" im unteren Bereich abgeschnitten statt zu
+    // umbrechen ("da kann man den Teil nicht lesen").
+    height: 400,
     frame: false,
     resizable: false,
     movable: true,
     show: false,
     backgroundColor: '#3d6fe0',
     ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
-    webPreferences: { sandbox: true },
+    webPreferences: { sandbox: true, preload: path.join(__dirname, '..', 'preload', 'splash-preload.js') },
   });
   splashWindow.loadFile(path.join(RENDERER, 'splash.html'));
   splashWindow.once('ready-to-show', () => splashWindow.show());
+}
+
+/**
+ * Meldet den aktuellen Startschritt an die Splash (siehe splash.js/
+ * splash-preload.js) – rein informativ für den Fall, dass der Start
+ * einmal länger dauert oder hängen bleibt: bisher zeigte die Splash nur
+ * eine unbewegte Ladeanimation, ohne erkennen zu lassen, WO es klemmt.
+ * Harmlos außerhalb des Starts (Splash existiert dann nicht mehr) oder
+ * ganz ohne Splash (z. B. in Tests) – einfach ein No-Op.
+ */
+function splashStatus(text) {
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.webContents.send('splash:status', text);
 }
 
 function closeSplashWindow() {
@@ -1341,12 +1363,23 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    // Splash ZUERST, vor jeglicher Datenbank-/Sicherungsarbeit unten –
+    // die kann (siehe splashStatus-Aufrufe) spürbar dauern, vor allem die
+    // Perpustakaan-Original-Sicherung bei einer großen echten Datenbank.
+    // Bis 1.2.0-beta.1 entstand die Splash erst NACH all dieser Arbeit:
+    // wer in dieser Zeit gar kein Fenster sah, empfand das leicht als
+    // "App hängt beim Start" – jetzt zeigt sich sofort etwas, und zwar
+    // mit einer Statuszeile, die verrät, WO es gerade klemmt.
+    createSplashWindow();
+    buildMenu();
+
     const userDataDir = app.getPath('userData');
     // EXPERIMENTELL: zweiter Suchort für die Java-Laufzeit, falls die mit
     // dem Programm ausgelieferte auf einer echten Installation fehlt/nicht
     // startbar ist (siehe perpustakaan-live.js). Muss VOR
     // perpustakaanLiveStatusAktualisieren() gesetzt sein.
     perpustakaanLive.setzeZusaetzlicheLaufzeitBasis(userDataDir);
+    splashStatus('Öffne Datenbank …');
     store = new Store(path.join(userDataDir, 'config'));
     db = openDatabase(userDataDir);
     coversDir = path.join(userDataDir, 'covers');
@@ -1356,6 +1389,7 @@ if (!gotLock) {
     // automatischen Backup vor einer fälligen Migration (siehe db.js).
     dbFile = path.join(userDataDir, 'inga.sqlite3');
     backupDir = path.join(userDataDir, 'backups');
+    splashStatus('Sichere Datenbank …');
     if (!backupHeuteVorhanden(backupDir, 'start')) {
       sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
     }
@@ -1365,10 +1399,12 @@ if (!gotLock) {
     if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
       sicherePerpustakaanZipSync(db, backupDir, exportZip);
     }
-    // Zusätzliche, unabhängige tägliche Sicherung im Dokumente-Ordner –
-    // siehe dokumenteBackupFallsFaelligSync() oben, abschaltbar über
-    // Einstellungen "dokumenteBackupAktiv".
-    dokumenteBackupFallsFaelligSync();
+    // Die zusätzliche Dokumente-Ordner-Sicherung (dokumenteBackupFallsFaelligSync)
+    // ist NICHT mehr hier – die verdoppelte praktisch die obigen zwei
+    // Sicherungen und damit die Wartezeit VOR dem ersten sichtbaren
+    // Fenster. Läuft jetzt wie das Cover-Nachladen erst im Hintergrund
+    // NACH dem Start (siehe unten), das Ergebnis ändert sich dadurch
+    // nicht – nur WANN es passiert.
     // EXPERIMENTELL: bei jedem Start (nicht nur einmal täglich wie oben –
     // siehe backup.js) die ECHTE Perpustakaan-Datenbank sichern, BEVOR
     // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
@@ -1378,8 +1414,7 @@ if (!gotLock) {
 
     registerIpc();
     wireAutoUpdater();
-    buildMenu();
-    createSplashWindow();
+    splashStatus('Starte Oberfläche …');
     createMainWindow();
 
     app.on('activate', () => {
@@ -1387,10 +1422,12 @@ if (!gotLock) {
     });
 
     // Hintergrundaufgaben NACH dem Start, mit etwas Abstand, damit sie das
-    // Öffnen des Hauptfensters nicht verzögern: eine stille Update-Prüfung
-    // (kein Dialog, wenn ohnehin schon aktuell) und – falls seit über einer
-    // Woche nicht mehr gelaufen – das automatische Cover-Nachladen.
+    // Öffnen des Hauptfensters nicht verzögern: die zusätzliche
+    // Dokumente-Ordner-Sicherung, eine stille Update-Prüfung (kein Dialog,
+    // wenn ohnehin schon aktuell) und – falls seit über einer Woche nicht
+    // mehr gelaufen – das automatische Cover-Nachladen.
     setTimeout(() => {
+      dokumenteBackupFallsFaelligSync();
       if (settings().autoUpdateAktiv) autoUpdatePruefen();
       coverAutoNachladenFallsFaellig().catch((err) => console.error('[wartung] Cover-Nachladen fehlgeschlagen:', err.message));
     }, 5000);
