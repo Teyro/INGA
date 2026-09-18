@@ -58,13 +58,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # Der Release-Text kommt aus CHANGELOG.md statt aus generate_release_notes
+      # (das wäre nur eine automatische Commit-Liste) – electron-updater
+      # übernimmt genau diesen Text 1:1 als releaseNotes im Update-Dialog
+      # (siehe main.js wireAutoUpdater(), README "Automatische Updates").
+      - run: node scripts/changelog-extract.js "${GITHUB_REF_NAME#v}" > RELEASE_NOTES.md
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           # Ein Tag mit Vorabkennzeichnung (z. B. v1.2.0-beta.1) markiert
           # das GitHub-Release selbst als Vorabversion – rein kosmetisch
           # für Menschen auf der Releases-Seite, electron-updater

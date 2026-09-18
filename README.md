@@ -400,6 +400,28 @@ Betriebssystem aus [Releases](https://github.com/Teyro/INGA/releases)
 herunterladen (Windows-Installer/portable .exe, macOS .dmg, Linux
 AppImage/.deb/.rpm) und starten – keine weitere Installation nötig.
 
+### Warnung beim ersten Start ("beschädigt"/unbekannter Herausgeber)
+
+INGA ist **nicht code-signiert** – ein Zertifikat dafür kostet Geld
+(Apple: 99 $/Jahr, Windows: meist noch mehr) und ist für ein kostenloses
+Schulprojekt kaum zu rechtfertigen. Das bedeutet: beim allerersten Start
+einer heruntergeladenen Datei warnt das Betriebssystem, je nach Plattform
+unterschiedlich:
+
+- **macOS**: „‚INGA' ist beschädigt und kann nicht geöffnet werden. Sie
+  sollten es in den Papierkorb legen." – klingt nach einem kaputten
+  Download, ist aber Gatekeepers reguläre Reaktion auf eine nicht
+  notariell beglaubigte App. Rechtsklick (bzw. bei gedrückter ctrl-Taste)
+  auf INGA.app → **Öffnen** → im Dialog noch einmal **Öffnen** bestätigen
+  – danach merkt sich macOS die Freigabe dauerhaft. Hilft das nicht,
+  einmalig im Terminal `xattr -cr /Applications/INGA.app` ausführen.
+- **Windows**: SmartScreen zeigt „Der Computer wurde durch Windows
+  geschützt". Auf **Weitere Informationen** klicken, dann **Trotzdem
+  ausführen**. Ein Virenschutzprogramm kann eine unsignierte .exe zudem
+  fälschlich als Bedrohung melden (falsch positiv) – in dem Fall die
+  Ausnahmeliste des Virenschutzes nutzen oder die portable .exe statt des
+  Installers versuchen.
+
 ## Aus dem Quellcode starten (für Entwicklung oder wenn kein fertiges Release passt)
 
 Voraussetzung: [Node.js](https://nodejs.org/) Version 22 oder neuer, auf
@@ -506,6 +528,16 @@ Eine Versionsnummer mit Vorabkennzeichnung (z. B. `1.2.0-beta.1`) läuft
 automatisch über einen eigenen Beta-Update-Kanal – Installationen dieser
 Version werden nur über weitere `…-beta.x`-Releases aktualisiert, nicht
 automatisch über die spätere reguläre `1.2.0`.
+
+Der Update-Dialog zeigt außerdem **„Was ist neu"** – denselben Text wie
+der zugehörige Abschnitt in [`CHANGELOG.md`](CHANGELOG.md): der
+`release`-Job in `build.yml` extrahiert ihn passend zur Versionsnummer
+des Tags (`scripts/changelog-extract.js`) und setzt ihn als Beschreibung
+des GitHub-Release, electron-updater übernimmt genau diesen Text als
+`releaseNotes`. Heißt in der Praxis: **vor jedem Tag-Push muss
+`CHANGELOG.md` bereits einen `## <Version>`-Abschnitt für genau diese
+Version enthalten** – sonst bricht der `release`-Job bewusst ab, statt
+eine Release-Beschreibung ohne Inhalt zu veröffentlichen.
 
 ## Lizenz
 

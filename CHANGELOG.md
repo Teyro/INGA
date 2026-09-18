@@ -6,6 +6,49 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.4.0 – 2026-09-19
+
+Bündelt die drei Beta-Versionen 1.2.0-beta.1 bis .3 (siehe deren eigene
+Abschnitte unten) als erste reguläre Version dieser Reihe, dazu:
+
+### Behoben
+- **„‚INGA' ist beschädigt und kann nicht geöffnet werden" unter
+  macOS.** War kein beschädigter Download, sondern ein echter Fehler in
+  der Build-Konfiguration: `mac.identity: null` ließ electron-builder die
+  Signierung komplett auslassen, wodurch die von Electron selbst
+  mitgebrachte (Ad-hoc-)Signatur über die von electron-builder danach
+  noch veränderten Ressourcen ungültig wurde – genau das meldet
+  Gatekeeper als „beschädigt", ohne die sonst übliche Möglichkeit, per
+  Rechtsklick trotzdem zu öffnen. Behoben durch echtes Ad-hoc-Signieren
+  (`mac.identity: "-"`, dazu `mac.hardenedRuntime: false`, wie von
+  electron-builder für genau diese Kombination empfohlen) – jetzt die
+  gewohnte, harmlosere „unbekannter Herausgeber"-Meldung mit
+  Rechtsklick-Öffnen-Option. Ersetzt keine echte Code-Signatur/
+  Notarisierung (weiterhin kein Zertifikat), siehe README „Warnung beim
+  ersten Start" für die verbleibenden, plattformüblichen Klick-Schritte
+  (macOS und Windows SmartScreen).
+
+### Geändert
+- **Electron 34 → 44** (aktuellste Version) – behebt nebenbei sämtliche
+  von `npm audit` gemeldeten Sicherheitslücken in Electron und dessen
+  `extract-zip`-Abhängigkeit (vorher: 2 hoch eingestufte, jetzt: keine).
+  Betroffene APIs durchgesehen (Dialoge, Fenster-/Titelleisten-Optionen,
+  Zwischenablage, Benachrichtigungen, native Zusatzmodule) – INGA nutzt
+  keine davon auf eine Art, die von den bekannten Breaking Changes
+  zwischen diesen Versionen betroffen wäre, bis auf eine kleine,
+  harmlose Nebenwirkung: Dateiauswahldialoge ohne eigens gesetzten
+  Startordner (z. B. „Sicherung einspielen") öffnen jetzt im
+  Downloads-Ordner statt im zuletzt verwendeten Ordner (Electron-Vorgabe
+  seit Version 43).
+
+### Neu
+- **„Was ist neu" im Update-Dialog**: zeigt jetzt denselben Text wie der
+  zugehörige Abschnitt in diesem Änderungsprotokoll – der `release`-Job
+  extrahiert ihn passend zur Versionsnummer (`scripts/changelog-extract.js`)
+  und setzt ihn als GitHub-Release-Beschreibung, electron-updater
+  übernimmt ihn unverändert. Bleibt zusätzlich in den Einstellungen
+  sichtbar, auch nachdem der Dialog mit „Später" weggeklickt wurde.
+
 ## 1.2.0-beta.3 – 2026-09-18
 
 ### Neu

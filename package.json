@@ -1,7 +1,7 @@
 {
   "name": "inga",
   "productName": "INGA",
-  "version": "1.2.0-beta.3",
+  "version": "1.4.0",
   "description": "INGA Ist Nicht Genehmigungspflichtige Anschaffung – freie Schulbibliotheksverwaltung",
   "main": "src/main/main.js",
   "//desktopName": "Electron leitet daraus unter Linux die app_id und WM_CLASS ab; muss zum Namen der .desktop-Datei passen, sonst ordnen GNOME und KDE das laufende Fenster nicht dem Starter zu.",
@@ -34,7 +34,7 @@
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
-    "electron": "^34.0.0",
+    "electron": "^44.4.3",
     "electron-builder": "^26.15.3"
   },
   "allowScripts": {
@@ -43,7 +43,11 @@
     "electron-winstaller": true
   },
   "build": {
-    "publish": { "provider": "github", "owner": "Teyro", "repo": "INGA" },
+    "publish": {
+      "provider": "github",
+      "owner": "Teyro",
+      "repo": "INGA"
+    },
     "appId": "app.inga.bibliothek",
     "productName": "INGA",
     "directories": {
@@ -55,19 +59,44 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "derby-runtime", "to": "derby-runtime", "filter": ["**/*"] },
-      { "from": "derby-bridge/classes", "to": "derby-bridge/classes", "filter": ["**/*"] }
+      {
+        "from": "derby-runtime",
+        "to": "derby-runtime",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "derby-bridge/classes",
+        "to": "derby-bridge/classes",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "icon": "build/icon.png",
       "category": "public.app-category.education",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "darkModeSupport": true,
       "minimumSystemVersion": "13.0",
-      "identity": null,
+      "identity": "-",
+      "hardenedRuntime": false,
       "extendInfo": {
         "NSHumanReadableCopyright": "",
         "LSApplicationCategoryType": "public.app-category.education"
@@ -76,16 +105,35 @@
     "dmg": {
       "title": "INGA ${version}",
       "contents": [
-        { "x": 140, "y": 200 },
-        { "x": 400, "y": 200, "type": "link", "path": "/Applications" }
+        {
+          "x": 140,
+          "y": 200
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
       "icon": "build/icon.ico",
       "signExecutable": false,
       "target": [
-        { "target": "nsis", "arch": ["x64", "arm64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -107,9 +155,24 @@
         }
       },
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] },
-        { "target": "rpm", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "rpm": {

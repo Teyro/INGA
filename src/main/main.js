@@ -33,6 +33,7 @@ const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('./backup');
 const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
+const { formatiereReleaseNotes } = require('./release-notes');
 const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
@@ -542,10 +543,14 @@ function wireAutoUpdater() {
   });
 
   autoUpdater.on('update-available', async (info) => {
-    setzeUpdateStatus({ status: 'verfuegbar', version: info.version });
+    const releaseNotes = formatiereReleaseNotes(info.releaseNotes);
+    setzeUpdateStatus({ status: 'verfuegbar', version: info.version, releaseNotes });
     if (angeboteneVersion === info.version) return; // in dieser Sitzung schon einmal "Später" gewählt
     angeboteneVersion = info.version;
     if (!mainWindow) return;
+    const hinweis = process.platform === 'win32'
+      ? 'INGA lädt das Update im Hintergrund herunter und meldet sich, sobald ein Neustart zum Installieren ansteht.'
+      : 'Für dieses Betriebssystem installiert INGA Updates nicht automatisch – die Downloadseite öffnet sich im Browser, die Installation bleibt wie gewohnt ein manueller Schritt.';
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       buttons: process.platform === 'win32' ? ['Jetzt herunterladen', 'Später'] : ['Release-Seite öffnen', 'Später'],
@@ -553,9 +558,7 @@ function wireAutoUpdater() {
       cancelId: 1,
       title: 'INGA-Update verfügbar',
       message: `INGA ${info.version} ist verfügbar (installiert: ${app.getVersion()}).`,
-      detail: process.platform === 'win32'
-        ? 'INGA lädt das Update im Hintergrund herunter und meldet sich, sobald ein Neustart zum Installieren ansteht.'
-        : 'Für dieses Betriebssystem installiert INGA Updates nicht automatisch – die Downloadseite öffnet sich im Browser, die Installation bleibt wie gewohnt ein manueller Schritt.',
+      detail: releaseNotes ? `${hinweis}\n\nWas ist neu:\n${releaseNotes}` : hinweis,
     });
     if (response !== 0) return;
     if (process.platform === 'win32') {

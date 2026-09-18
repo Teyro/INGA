@@ -436,6 +436,16 @@ td .klassen-chip:last-child { margin-right: 0; }
 /* --------------------------------------------------------------- Divers */
 
 .hint { color: var(--text-faint); font-size: 0.82rem; }
+
+/* "Was ist neu" im Update-Bereich der Einstellungen, siehe app.js zeichneUpdateStatus(). */
+.update-releasenotes {
+  margin-top: 12px; padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  font-size: 0.82rem; color: var(--text-soft);
+  white-space: pre-wrap;
+  max-height: 220px; overflow-y: auto;
+}
 .section-title { font-size: 0.86rem; font-weight: 700; color: var(--text-soft); margin: 20px 0 8px; text-transform: uppercase; letter-spacing: 0.03em; }
 .section-title:first-child { margin-top: 0; }
 .row-inline { display: flex; align-items: center; gap: 8px; }

@@ -2626,6 +2626,7 @@ function wireUpdate() {
 
 function zeichneUpdateStatus(s) {
   const el2 = document.getElementById('update-status');
+  const notesEl = document.getElementById('update-releasenotes');
   if (!el2 || !s) return;
   const texte = {
     unbekannt: '',
@@ -2638,6 +2639,19 @@ function zeichneUpdateStatus(s) {
     fehler: `⚠️ Update-Prüfung fehlgeschlagen: ${s.fehler || 'unbekannter Fehler'}`,
   };
   el2.textContent = texte[s.status] ?? '';
+  // "Was ist neu": derselbe Text aus dem Update-Dialog (CHANGELOG.md über
+  // den GitHub-Release, siehe main.js formatiereReleaseNotes()) – auch
+  // hier sichtbar, falls der Dialog schon einmal mit "Später" weggeklickt
+  // wurde und man später nachschauen möchte, worum es eigentlich ging.
+  if (notesEl) {
+    if (s.status === 'verfuegbar' && s.releaseNotes) {
+      notesEl.replaceChildren(el('div', { class: 'hint', style: { fontWeight: '700', marginBottom: '4px' } }, ['Was ist neu:']), el('div', {}, [s.releaseNotes]));
+      notesEl.hidden = false;
+    } else {
+      notesEl.hidden = true;
+      notesEl.replaceChildren();
+    }
+  }
 }
 
 /** Zeigt den zuletzt in main.js ermittelten Status an – ohne neue Sicherung/Prüfung auszulösen (die läuft schon beim Programmstart bzw. nach Lesen/Schreiben). */
