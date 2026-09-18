@@ -154,6 +154,11 @@ Probedruck auf normalem Papier gegen das Licht.*
   Sommerferien erscheint auf der Übersicht ein Hinweis für die
   Abschlussklasse (Einstellung "Abschlussklasse", Vorgabe "4") mit Knöpfen
   zum Sperren bzw. – nach Sicherheitsabfrage – Verschieben in den Papierkorb
+- **Automatische Klassenerkennung** (Einstellungen → Verschiedenes,
+  Vorgabe: an): mehrere kommagetrennt ins Klasse/Jahrgang-Feld eingetragene
+  Klassen (z. B. "4a,4b,4c") erscheinen in Nutzerliste, Rückstandsliste,
+  Im-Umlauf und Papierkorb als getrennte Kürzel-Chips statt eines
+  Komma-Klumpens – rein optisch, der gespeicherte Text bleibt unverändert
 
 ### Ausleihe & Rückgabe
 
@@ -248,7 +253,7 @@ Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
 
 ### Einstellungen
 
-Ein Menüpunkt „Einstellungen“ mit genau vier Unterpunkten – links eine
+Ein Menüpunkt „Einstellungen“ mit fünf Unterpunkten – links eine
 schmale Liste, rechts der Inhalt des gewählten Punkts, keine verstreuten
 Dialoge:
 
@@ -280,11 +285,13 @@ Dialoge:
   erfassten Schließzeit), **einmalige Verschiebung** des Ausleihdatums
   aller offenen Ausleihen um X Tage, die **Datensicherung**:
   automatisches Backup einmal
-  täglich beim Programmstart und vor jeder Migration (Rotation: die
+  täglich beim Programmstart (abschaltbar – "Backup jetzt" bleibt immer
+  verfügbar) und vor jeder Migration (Rotation: die
   letzten 10 bleiben erhalten, zusätzlich eine Perpustakaan-kompatible
   Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in
   den Einstellungen – Einspielen sichert vorher automatisch noch einmal
-  den aktuellen Stand und startet INGA neu. Wahlweise (Vorgabe: an)
+  den aktuellen Stand und startet INGA neu. Wahlweise (Vorgabe: an, wirkt
+  nur solange die automatische Sicherung insgesamt aktiv ist)
   zusätzlich dieselbe tägliche Sicherung noch einmal nach
   `Dokumente/INGA Backups` – leichter zu finden/mitzunehmen als der
   interne Programmdaten-Ordner. Dazu unter **Wartung**: wöchentliches
@@ -307,6 +314,13 @@ Dialoge:
   geprüft (siehe `derby-bridge/README.md`), aber noch nie gegen eine
   echte Perpustakaan-Installation – vor dem ersten Einsatz mit echten
   Daten unbedingt zuerst an einer Kopie ausprobieren, nicht am Original
+- **Verschiedenes**: **Titelleiste einfärben** – Standard (unverändert),
+  automatisch nach Wochentag (Montag gelb, Dienstag grün, Mittwoch blau,
+  Donnerstag rot, Freitag orange, Wochenende dezentes Grau/Rosé –
+  angelehnt an das METACOM-Farbschema für Wochentage) oder eine frei
+  gewählte eigene Farbe; unter Windows passen sich dabei auch die
+  Fensterknöpfe farblich an. Dazu **Automatische Klassenerkennung**
+  (siehe Nutzerverwaltung)
 
 ### Papierkorb
 

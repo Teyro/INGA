@@ -193,7 +193,7 @@ function speichereSettingsPatch(patch) {
   store.set('settings', next);
   activeStyle = platform.resolveStyle(next.uiStyle);
   const background = isDark() ? '#12151c' : '#e8ecf3';
-  if (mainWindow) platform.applyWindowMaterial(mainWindow, { settings: next, style: activeStyle, background, kind: 'main' });
+  if (mainWindow) platform.applyWindowMaterial(mainWindow, { settings: next, style: activeStyle, background, dark: isDark(), kind: 'main' });
   mainWindow?.webContents.send('settings:updated', next);
   return next;
 }
@@ -485,7 +485,11 @@ async function coverAutoNachladenFallsFaellig() {
  * betrachtet werden).
  */
 function dokumenteBackupFallsFaelligSync() {
-  if (!settings().dokumenteBackupAktiv) return;
+  const s = settings();
+  // "Zusätzlich" zur automatischen Sicherung oben – ist die insgesamt
+  // abgeschaltet (autoBackupAktiv), ergibt eine weiterlaufende
+  // Dokumente-Kopie keinen Sinn (siehe Einstellungen-Hinweistext).
+  if (s.autoBackupAktiv === false || !s.dokumenteBackupAktiv) return;
   try {
     const dokumenteBackupDir = path.join(app.getPath('documents'), 'INGA Backups');
     if (!backupHeuteVorhanden(dokumenteBackupDir, 'dokumente')) {
@@ -1386,18 +1390,22 @@ if (!gotLock) {
     await fs.mkdir(coversDir, { recursive: true }).catch(() => {});
 
     // Einmal täglich beim ersten Start ein Backup – zusätzlich zum
-    // automatischen Backup vor einer fälligen Migration (siehe db.js).
+    // automatischen Backup vor einer fälligen Migration (siehe db.js), die
+    // UNABHÄNGIG von "autoBackupAktiv" immer läuft (kein optionales Extra,
+    // sondern Voraussetzung für eine gefahrlose Aktualisierung).
     dbFile = path.join(userDataDir, 'inga.sqlite3');
     backupDir = path.join(userDataDir, 'backups');
-    splashStatus('Sichere Datenbank …');
-    if (!backupHeuteVorhanden(backupDir, 'start')) {
-      sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
-    }
-    // Zusätzlich einmal täglich eine Perpustakaan-kompatible Zip-Sicherung
-    // (dieselbe wie "Als Zip exportieren …" in Import/Export) – unabhängig
-    // von der .sqlite3-Sicherung oben, eigene Rotation/eigener Tages-Check.
-    if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
-      sicherePerpustakaanZipSync(db, backupDir, exportZip);
+    if (settings().autoBackupAktiv !== false) {
+      splashStatus('Sichere Datenbank …');
+      if (!backupHeuteVorhanden(backupDir, 'start')) {
+        sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
+      }
+      // Zusätzlich einmal täglich eine Perpustakaan-kompatible Zip-Sicherung
+      // (dieselbe wie "Als Zip exportieren …" in Import/Export) – unabhängig
+      // von der .sqlite3-Sicherung oben, eigene Rotation/eigener Tages-Check.
+      if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
+        sicherePerpustakaanZipSync(db, backupDir, exportZip);
+      }
     }
     // Die zusätzliche Dokumente-Ordner-Sicherung (dokumenteBackupFallsFaelligSync)
     // ist NICHT mehr hier – die verdoppelte praktisch die obigen zwei

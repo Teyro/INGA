@@ -16,6 +16,7 @@
  */
 
 const { readDesktopTheme } = require('./desktop');
+const { effektiveFarbe, kontrastfarbe } = require('./titelleiste-farbe');
 
 const IS_MAC = process.platform === 'darwin';
 const IS_WIN = process.platform === 'win32';
@@ -105,6 +106,25 @@ function chromeFor(style, settings = {}) {
   return 'native';
 }
 
+/**
+ * Symbolfarbe für Windows' NATIV gezeichnete Fensterknöpfe (Minimieren/
+ * Maximieren/Schließen, titleBarOverlay) – die liegen (transparenter
+ * Overlay-Hintergrund, siehe unten) über der App-eigenen, per CSS
+ * gezeichneten Titelleiste. Ist dort eine eigene Wochentags-/eigene Farbe
+ * aktiv (siehe titelleiste-farbe.js), muss die Symbolfarbe zu DIESER
+ * Farbe passen, nicht nur zum Hell/Dunkel-Thema – sonst z. B. weiße
+ * Fensterknöpfe auf hellem Gelb, kaum lesbar. Nur für das Hauptfenster
+ * relevant (kind === 'main'); die Druckfenster haben eine eigene, von
+ * dieser Funktion unberührte Kopfleiste.
+ */
+function titelleistenSymbolfarbe({ settings, dark, kind }) {
+  if (kind === 'main') {
+    const eigene = effektiveFarbe(settings);
+    if (eigene) return kontrastfarbe(eigene);
+  }
+  return dark ? '#ffffff' : '#1a1a1a';
+}
+
 function windowOptions({ settings, style, dark, background, kind = 'main' }) {
   const solid = settings.reduceTransparency === true;
 
@@ -126,7 +146,7 @@ function windowOptions({ settings, style, dark, background, kind = 'main' }) {
       titleBarStyle: 'hidden',
       titleBarOverlay: {
         color: '#00000000',
-        symbolColor: dark ? '#ffffff' : '#1a1a1a',
+        symbolColor: titelleistenSymbolfarbe({ settings, dark, kind }),
         height: kind === 'print' ? 44 : 48,
       },
       backgroundMaterial: material,
@@ -141,7 +161,7 @@ function windowOptions({ settings, style, dark, background, kind = 'main' }) {
   return { frame: true, backgroundColor: background };
 }
 
-function applyWindowMaterial(win, { settings, style, background, kind = 'main' }) {
+function applyWindowMaterial(win, { settings, style, background, dark, kind = 'main' }) {
   if (!win || win.isDestroyed()) return;
   const solid = settings.reduceTransparency === true;
 
@@ -161,6 +181,17 @@ function applyWindowMaterial(win, { settings, style, background, kind = 'main' }
       /* ältere Windows-Versionen kennen Mica nicht */
     }
     win.setBackgroundColor(material === 'none' ? background : '#00000000');
+    // Titelleisten-Symbolfarbe live nachziehen, falls sich "Titelleiste
+    // einfärben" (Einstellungen "Verschiedenes") gerade geändert hat –
+    // setTitleBarOverlay() gibt es erst mit "titleBarStyle: hidden", das
+    // Druckfenster hat das nicht und bräuchte es hier auch nicht.
+    if (kind === 'main') {
+      try {
+        win.setTitleBarOverlay({ color: '#00000000', symbolColor: titelleistenSymbolfarbe({ settings, dark, kind }) });
+      } catch {
+        /* setTitleBarOverlay setzt eine mit titleBarStyle:"hidden" erzeugte Titelleiste voraus */
+      }
+    }
     return;
   }
 

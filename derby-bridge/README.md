@@ -78,9 +78,35 @@ nicht nur überlegt (JDK 21 + Derby 10.17.1.0 lokal, siehe Kommentare oben):
   TIMESTAMP- und DECIMAL-Spalten geprüft, inklusive des echten
   Perpustakaan-Zeitformats mit drei Nachkommastellen bei den
   Millisekunden (`"2026-06-18 00:00:00.000"`, siehe csvio.js) – Derbys
-  JDBC-Treiber wandelt das beim Einfügen korrekt um, ein anschließender
-  `dump` liefert exakt denselben Wert zurück. NULL über eine leere CSV-
-  Zelle funktioniert ebenso unabhängig vom Spaltentyp.
+  JDBC-Treiber wandelt das beim Einfügen korrekt um. NULL über eine leere
+  CSV-Zelle funktioniert ebenso unabhängig vom Spaltentyp.
+- **TIMESTAMP-Format bei `dump` (gefundener Bug, behoben)**: `dump` las
+  ursprünglich JEDE Spalte generisch per `rs.getString()` – für TIMESTAMP-
+  Spalten ruft das intern `java.sql.Timestamp#toString()` auf, das die
+  Nachkommastellen nur mit MINDESTENS einer Ziffer ausgibt, nicht auf drei
+  Stellen aufgefüllt: ein Wert exakt zur vollen Sekunde (der praktische
+  Normalfall bei Ausleih-/Fälligkeitsdatum) kam als `"…00:00:00.0"`
+  zurück statt `"…00:00:00.000"` wie in echten Perpustakaan-CSV-Exporten
+  und wie INGA selbst neue Datensätze schreibt (`date-utils.js
+  heuteStamp()`). Gegen eine synthetische Testdatenbank mit mehreren
+  Nachkommastellen-Fällen (glatte Sekunde, 120 ms, 5 ms) reproduziert und
+  verifiziert. Für die reine Kalenderrechnung in INGA folgenlos
+  (`date-utils.js parseKalenderdatum()` liest ohnehin nur die ersten 10
+  Zeichen), ABER `repo.js letzteMahnungFuer()` vergleicht `AuslDatum` per
+  EXAKTER Zeichenkettengleichheit, um eine bereits verschickte Mahnung/
+  Erinnerung zu einer Ausleihe wiederzufinden – bei unterschiedlicher
+  Nachkommastellenzahl für denselben Zeitpunkt wäre dieser Abgleich nach
+  einem "Jetzt aus Perpustakaan lesen" stillschweigend fehlgeschlagen
+  (die "Erinnerung am …"-Anzeige in der Rückstandsliste hätte eine
+  bereits verschickte Mahnung nicht mehr gefunden). Nie gegen eine echte
+  Installation aufgefallen, weil ein regulärer, von Perpustakaan selbst
+  erzeugter CSV-Export diesen JDBC-`toString()`-Weg gar nicht durchläuft
+  – nur der Live-Lesezugriff. Behoben durch eine eigene `csvWert()`, die
+  TIMESTAMP-Spalten (per `ResultSetMetaData`) erkennt und die
+  Nachkommastellen explizit auf drei Ziffern normiert (auffüllen oder
+  abschneiden), alle anderen Spaltentypen bleiben unverändert bei
+  `getString()`. Erneut gegen dieselbe Testdatenbank geprüft: liefert
+  jetzt für alle drei Fälle exakt das erwartete Format.
 - **Fremdschlüssel-Reihenfolge bei `load` (gefundener Bug, behoben)**:
   ursprünglich verarbeitete `load` DELETE+INSERT tabellenweise in
   Zip-Reihenfolge – gegen eine synthetische Fremdschlüssel-Testdatenbank

@@ -86,6 +86,24 @@ function htmlZuText(html) {
   return (tmp.textContent || '').replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * Zerlegt ein Klasse/Jahrgang-Freitextfeld ("4a,4b,4c" oder "4a, 4b, 4c")
+ * in einzelne Kürzel – für "Automatische Klassenerkennung" (Einstellungen
+ * "Verschiedenes"): manche Kolleginnen tragen mehrere Klassen kommagetrennt
+ * in ein einzelnes Feld ein, statt eines einzelnen Kürzels. Rein für die
+ * ANZEIGE (siehe app.js klasseZelle()) – der gespeicherte Text selbst wird
+ * dadurch nie verändert. Liefert `null`, wenn nichts zu trennen ist (leer,
+ * oder nur ein einzelnes Kürzel) – dann zeigt der Aufrufer den Text
+ * unverändert, exakt wie ohne diese Funktion.
+ */
+function klassenZerlegen(text) {
+  const teile = String(text || '')
+    .split(/[,;]\s*/)
+    .map((teil) => teil.trim())
+    .filter(Boolean);
+  return teile.length > 1 ? teile : null;
+}
+
 function fmtDatum(value) {
   if (!value) return '–';
   const d = String(value).slice(0, 10);
@@ -97,3 +115,8 @@ function fmtGeld(value) {
   const n = Number(value) || 0;
   return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }
+
+// Reines <script> im Browser (kein Modul, klassenZerlegen landet automatisch
+// als globale Funktion) – siehe test/klassen-zerlegen.test.mjs für node:test,
+// dieselbe UMD-artige Weiche wie in etiketten-geometrie.js.
+if (typeof module !== 'undefined' && module.exports) module.exports = { klassenZerlegen };

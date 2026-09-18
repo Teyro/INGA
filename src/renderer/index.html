@@ -471,6 +471,7 @@
             <div class="settings-nav-item" data-einst-pane="mahnungen">Mahnungen</div>
             <div class="settings-nav-item" data-einst-pane="allgemein">Aussehen und weitere App-Einstellungen</div>
             <div class="settings-nav-item" data-einst-pane="experimentell">Experimentell ⚠️</div>
+            <div class="settings-nav-item" data-einst-pane="verschiedenes">Verschiedenes</div>
           </nav>
           <div class="settings-content">
 
@@ -682,9 +683,11 @@
 
               <div class="section-title">Datensicherung</div>
               <div class="card" style="padding:18px; margin-bottom:16px">
-                <p class="hint">INGA sichert die Datenbank automatisch einmal täglich beim Programmstart und vor jeder Aktualisierung, die eine Datenänderung braucht – hier die letzten Sicherungen sowie „Backup jetzt“ und „Backup einspielen“. Zusätzlich legt INGA einmal täglich beim Start auch eine Perpustakaan-kompatible Zip-Sicherung an (<code>perpustakaan_backup_…zip</code> im selben Sicherungsordner) – falls die Daten einmal in einer echten Perpustakaan-Installation gebraucht werden.</p>
-                <label class="checkbox-label"><input type="checkbox" id="set-dokumenteBackupAktiv" /> Zusätzlich täglich nach „Dokumente/INGA Backups“ sichern</label>
-                <p class="hint">Praktisch, falls der interne Programmordner mal nicht griffbereit ist (Umzug auf einen neuen Rechner, Mitnehmen per USB-Stick) – derselbe Inhalt wie oben, nur an einem leichter zu findenden Ort.</p>
+                <label class="checkbox-label"><input type="checkbox" id="set-autoBackupAktiv" /> Automatische Sicherung beim Programmstart</label>
+                <p class="hint">INGA sichert die Datenbank standardmäßig automatisch einmal täglich beim Programmstart (zusätzlich zur Sicherung vor jeder Aktualisierung, die eine Datenänderung braucht – die läuft unabhängig davon immer). Ausgeschaltet bleibt nur noch „Backup jetzt“ unten als Rückfalloption – ausschalten also nur, wenn eine andere Sicherung bereits zuverlässig läuft.</p>
+                <label class="checkbox-label" style="margin-top:10px"><input type="checkbox" id="set-dokumenteBackupAktiv" /> Zusätzlich täglich nach „Dokumente/INGA Backups“ sichern</label>
+                <p class="hint">Praktisch, falls der interne Programmordner mal nicht griffbereit ist (Umzug auf einen neuen Rechner, Mitnehmen per USB-Stick) – derselbe Inhalt wie oben, nur an einem leichter zu findenden Ort. Wirkt nur, solange die automatische Sicherung oben eingeschaltet ist.</p>
+                <p class="hint">Zusätzlich legt INGA einmal täglich beim Start auch eine Perpustakaan-kompatible Zip-Sicherung an (<code>perpustakaan_backup_…zip</code> im selben Sicherungsordner) – falls die Daten einmal in einer echten Perpustakaan-Installation gebraucht werden.</p>
                 <div class="row-inline" style="margin:10px 0">
                   <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
                   <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>
@@ -747,6 +750,34 @@
               </div>
             </section>
 
+            <!-- ····································································· Verschiedenes -->
+            <section class="settings-pane" id="einst-pane-verschiedenes" hidden>
+              <h2>Verschiedenes</h2>
+
+              <div class="section-title" style="margin-top:0">Titelleiste einfärben</div>
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <div class="field">
+                  <label>Farbe der Titelleiste</label>
+                  <select id="set-titelleisteModus">
+                    <option value="standard">Standard (unverändert)</option>
+                    <option value="wochentag">Nach Wochentag (METACOM-Farbschema)</option>
+                    <option value="eigene">Eigene Farbe</option>
+                  </select>
+                  <p class="hint">„Nach Wochentag“ färbt die Titelleiste jeden Tag neu ein – Montag gelb, Dienstag grün, Mittwoch blau, Donnerstag rot, Freitag orange, am Wochenende dezentes Grau/Rosé. Angelehnt an das in Förder-/Grundschulen verbreitete METACOM-Farbschema für Wochentage.</p>
+                </div>
+                <div class="field" id="titelleiste-eigene-farbe-feld" hidden>
+                  <label>Eigene Farbe</label>
+                  <input type="color" id="set-titelleisteEigeneFarbe" style="width:64px; height:32px; padding:2px" />
+                </div>
+              </div>
+
+              <div class="section-title">Nutzerliste</div>
+              <div class="card" style="padding:18px">
+                <label class="checkbox-label"><input type="checkbox" id="set-klassenErkennungAktiv" /> Automatische Klassenerkennung</label>
+                <p class="hint">Wird im Klasse-Feld mehr als eine Klasse eingetragen (z.&nbsp;B. „4a,4b,4c“), zeigt die Nutzerliste diese nur optisch als saubere, einzeln abgesetzte Kürzel statt eines Kommaklumpens – der gespeicherte Text selbst bleibt dabei unverändert. Ausgeschaltet erscheint das Feld unverändert genau so, wie es eingetragen wurde.</p>
+              </div>
+            </section>
+
           </div>
         </div>
       </section>
@@ -801,6 +832,7 @@
 
 <script src="js/util.js"></script>
 <script src="js/sprueche.js"></script>
+<script src="js/titelleiste-farbe.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

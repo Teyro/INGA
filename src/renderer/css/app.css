@@ -28,9 +28,15 @@ button { cursor: pointer; }
   align-items: center;
   gap: 10px;
   -webkit-app-region: drag;
-  background: var(--surface);
+  /* Vorgabe: var(--surface), wie immer. "Titelleiste einfärben"
+     (Einstellungen "Verschiedenes", siehe app.js applyChrome() +
+     titelleiste-farbe.js) setzt --titlebar-bg/-fg nur, wenn aktiv –
+     ohne das ändert sich hier optisch nichts. */
+  background: var(--titlebar-bg, var(--surface));
+  color: var(--titlebar-fg, inherit);
   border-bottom: 1px solid var(--line);
   padding-right: 12px;
+  transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
 }
 
 .titlebar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; -webkit-app-region: no-drag; min-width: 0; }
@@ -39,7 +45,7 @@ button { cursor: pointer; }
 .brand .spruch {
   font-weight: 400;
   font-size: 0.78rem;
-  color: var(--text-soft);
+  color: var(--titlebar-fg-soft, var(--text-soft));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -47,7 +53,7 @@ button { cursor: pointer; }
   cursor: pointer;
   user-select: none;
 }
-.brand .spruch:hover { color: var(--text); }
+.brand .spruch:hover { color: var(--titlebar-fg, var(--text)); }
 .brand .spruch:active { transform: translateY(1px); }
 .titlebar .spacer { flex: 1; }
 .caption-space { -webkit-app-region: no-drag; }
@@ -80,7 +86,7 @@ button { cursor: pointer; }
   width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 0; background: transparent; border-radius: var(--radius-sm);
-  color: var(--text-soft);
+  color: var(--titlebar-fg-soft, var(--text-soft));
 }
 
 /* -------------------------------------------------------------- Struktur */
@@ -358,6 +364,12 @@ tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.danger { background: var(--danger-soft); color: var(--danger); }
+
+/* Automatische Klassenerkennung (Einstellungen "Verschiedenes"): mehrere
+   kommagetrennt eingetragene Klassen ("4a,4b,4c") als eigene Chips statt
+   eines Komma-Klumpens, siehe app.js klasseZelle()/util.js klassenZerlegen(). */
+td .klassen-chip { margin-right: 4px; font-size: 0.72rem; padding: 1px 7px; }
+td .klassen-chip:last-child { margin-right: 0; }
 
 .empty {
   padding: 60px 20px; text-align: center; color: var(--text-faint);

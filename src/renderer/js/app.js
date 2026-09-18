@@ -156,6 +156,24 @@ function applyChrome(data) {
   }
   if (data.settings.reduceTransparency) root.dataset.transparency = 'reduced';
   document.getElementById('uhr').hidden = data.settings.uhrAnzeigen === false;
+
+  // Titelleiste einfärben (Einstellungen "Verschiedenes"), siehe
+  // titelleiste-farbe.js – .titlebar in app.css fällt ohne diese
+  // Variablen auf ihre gewohnte Farbe (var(--surface)) zurück.
+  const titelleisteFarbe = titelleisteEffektiveFarbe(data.settings);
+  if (titelleisteFarbe) {
+    const fg = titelleisteKontrastfarbe(titelleisteFarbe);
+    root.style.setProperty('--titlebar-bg', titelleisteFarbe);
+    root.style.setProperty('--titlebar-fg', fg);
+    // Für Nebentext (Spruch, Uhr) – dieselbe Kontrastfarbe, nur gedämpft,
+    // statt dem sonst genutzten --text-soft-Grauton (der wäre auf einer
+    // eingefärbten Titelleiste nicht zuverlässig lesbar).
+    root.style.setProperty('--titlebar-fg-soft', fg === '#ffffff' ? 'rgb(255 255 255 / 0.75)' : 'rgb(0 0 0 / 0.6)');
+  } else {
+    root.style.removeProperty('--titlebar-bg');
+    root.style.removeProperty('--titlebar-fg');
+    root.style.removeProperty('--titlebar-fg-soft');
+  }
 }
 
 function onMenuAction(action) {
@@ -1227,6 +1245,24 @@ function leserAktuellerFilter(ueberfaelligSet) {
   return filter;
 }
 
+/**
+ * Zelleninhalt für die Klasse/Jahrgang-Spalte (Nutzerliste, Rückstands-
+ * liste, Im-Umlauf, Papierkorb): bei "Automatische Klassenerkennung"
+ * (Einstellungen "Verschiedenes", Vorgabe an) werden mehrere kommagetrennt
+ * eingetragene Klassen ("4a,4b,4c") als saubere, einzeln abgesetzte
+ * Kürzel-Chips angezeigt statt als ein Komma-Klumpen – siehe util.js
+ * klassenZerlegen(). Ändert NIE den gespeicherten Feldwert selbst, nur
+ * diese eine Darstellung; ausgeschaltet oder ohne mehrere Klassen bleibt
+ * das Feld exakt wie eingetragen (reiner Text wie bisher).
+ */
+function klasseZelle(jahrgang) {
+  const text = jahrgang || '';
+  if (state.settings?.klassenErkennungAktiv === false) return [text];
+  const teile = klassenZerlegen(text);
+  if (!teile) return [text];
+  return teile.map((teil) => el('span', { class: 'badge klassen-chip' }, [teil]));
+}
+
 async function loadLeser() {
   // Für die rote Markierung überfälliger Nutzer wird die Liste ohnehin
   // gebraucht, unabhängig vom aktuellen Statusfilter.
@@ -1254,7 +1290,7 @@ async function loadLeser() {
       el('tr', { class: ueberfaelligSet.has(row.LeserNi) ? 'row-overdue' : '', onclick: () => openLeserSheet(row) }, [
         el('td', {}, [`${row.Nachname || ''}, ${row.Vorname || ''}`]),
         el('td', {}, [row.Kuerzel || '']),
-        el('td', {}, [row.Jahrgang || '']),
+        el('td', {}, klasseZelle(row.Jahrgang)),
         el('td', {}, [row.emailPriv || '']),
         el('td', { class: 'num' }, [String(row.offeneAusleihen || 0)]),
       ])
@@ -1861,7 +1897,7 @@ function renderMahnungenAktuell() {
       el('tr', {}, [
         el('td', {}, [el('input', { type: 'checkbox', 'data-payload': JSON.stringify(row) })]),
         el('td', {}, [`${row.Vorname} ${row.Nachname}`]),
-        el('td', {}, [row.Jahrgang || '']),
+        el('td', {}, klasseZelle(row.Jahrgang)),
         el('td', {}, [row.Titel]),
         el('td', { class: 'num' }, [String(row.tageUeberfaellig)]),
         el('td', { class: 'hint' }, [zuletzt]),
@@ -2100,7 +2136,7 @@ function renderUmlaufAktuell() {
           el('td', {}, [z.Autor || '']),
           el('td', {}, [z.MedienEtik || '']),
           el('td', {}, [`${z.Nachname || ''}, ${z.Vorname || ''}`]),
-          el('td', {}, [z.Jahrgang || '']),
+          el('td', {}, klasseZelle(z.Jahrgang)),
           el('td', {}, [fmtDatum(z.AuslDatum)]),
           el('td', { title: z.fristHinweise?.length ? z.fristHinweise.join(', ') : undefined }, [fmtDatum(z.faelligAm)]),
           el('td', { class: 'num' }, [z.tageUeberfaellig > 0 ? String(z.tageUeberfaellig) : '']),
@@ -2283,7 +2319,7 @@ async function loadPapierkorb() {
     leserTbody.appendChild(
       el('tr', {}, [
         el('td', {}, [`${r.Nachname}, ${r.Vorname}`]),
-        el('td', {}, [r.Jahrgang || '']),
+        el('td', {}, klasseZelle(r.Jahrgang)),
         el('td', {}, [fmtDatum(r.LoeschDat)]),
         el('td', {}, [r.LoeschAnw || '']),
         el('td', {}, [
@@ -2457,13 +2493,18 @@ function wireEinstellungen() {
   ]) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
-  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv', 'set-uhrAnzeigen', 'set-dokumenteBackupAktiv', 'set-autoCoverNachladenAktiv', 'set-autoUpdateAktiv']) {
+  for (const id of ['set-verlaengerungGesperrtBeiVormerkung', 'set-ueberfaelligTageOhneFerien', 'set-matrixAktiv', 'set-uhrAnzeigen', 'set-autoBackupAktiv', 'set-dokumenteBackupAktiv', 'set-autoCoverNachladenAktiv', 'set-autoUpdateAktiv', 'set-klassenErkennungAktiv']) {
     document.getElementById(id).addEventListener('change', speichereEinstellungenFormular);
   }
   document.getElementById('set-mahngebuehrenAktiv').addEventListener('change', (e) => {
     document.getElementById('mahngebuehr-felder').hidden = !e.target.checked;
     speichereEinstellungenFormular();
   });
+  document.getElementById('set-titelleisteModus').addEventListener('change', (e) => {
+    document.getElementById('titelleiste-eigene-farbe-feld').hidden = e.target.value !== 'eigene';
+    speichereEinstellungenFormular();
+  });
+  document.getElementById('set-titelleisteEigeneFarbe').addEventListener('change', speichereEinstellungenFormular);
 
   document.getElementById('fristverschiebung-anwenden').addEventListener('click', async () => {
     const tage = Number(document.getElementById('fristverschiebung-tage').value) || 0;
@@ -2931,9 +2972,14 @@ async function loadEinstellungen() {
   document.getElementById('set-fontScale').value = s.fontScale || 100;
   document.getElementById('set-bibliotheksName').value = s.bibliotheksName || '';
   document.getElementById('set-uhrAnzeigen').checked = s.uhrAnzeigen !== false;
+  document.getElementById('set-autoBackupAktiv').checked = s.autoBackupAktiv !== false;
   document.getElementById('set-dokumenteBackupAktiv').checked = s.dokumenteBackupAktiv !== false;
   document.getElementById('set-autoCoverNachladenAktiv').checked = s.autoCoverNachladenAktiv !== false;
   document.getElementById('set-autoUpdateAktiv').checked = s.autoUpdateAktiv !== false;
+  document.getElementById('set-titelleisteModus').value = s.titelleisteModus || 'standard';
+  document.getElementById('set-titelleisteEigeneFarbe').value = s.titelleisteEigeneFarbe || '#4f8ef7';
+  document.getElementById('titelleiste-eigene-farbe-feld').hidden = s.titelleisteModus !== 'eigene';
+  document.getElementById('set-klassenErkennungAktiv').checked = s.klassenErkennungAktiv !== false;
   document.getElementById('set-leihfristTage').value = s.leihfristTage;
   document.getElementById('set-maxVerlaengerung').value = s.maxVerlaengerung;
   document.getElementById('set-verlaengerungDauerTage').value = s.verlaengerungDauerTage;
@@ -3392,9 +3438,13 @@ async function speichereEinstellungenSofort() {
     fontScale: Number(document.getElementById('set-fontScale').value) || 100,
     bibliotheksName: document.getElementById('set-bibliotheksName').value,
     uhrAnzeigen: document.getElementById('set-uhrAnzeigen').checked,
+    autoBackupAktiv: document.getElementById('set-autoBackupAktiv').checked,
     dokumenteBackupAktiv: document.getElementById('set-dokumenteBackupAktiv').checked,
     autoCoverNachladenAktiv: document.getElementById('set-autoCoverNachladenAktiv').checked,
     autoUpdateAktiv: document.getElementById('set-autoUpdateAktiv').checked,
+    titelleisteModus: document.getElementById('set-titelleisteModus').value,
+    titelleisteEigeneFarbe: document.getElementById('set-titelleisteEigeneFarbe').value,
+    klassenErkennungAktiv: document.getElementById('set-klassenErkennungAktiv').checked,
     leihfristTage: Number(document.getElementById('set-leihfristTage').value) || 7,
     maxVerlaengerung: Number(document.getElementById('set-maxVerlaengerung').value) || 0,
     verlaengerungDauerTage: Number(document.getElementById('set-verlaengerungDauerTage').value) || 7,

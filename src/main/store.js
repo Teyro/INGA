@@ -216,6 +216,25 @@ const DEFAULT_SETTINGS = {
   dokumenteBackupAktiv: true,
   autoCoverNachladenAktiv: true,
   autoUpdateAktiv: true,
+  // Automatische Sicherung beim Programmstart (die beiden "Start"/täglich-
+  // einmal-Sicherungen im userData-Ordner, siehe main.js) – standardmäßig
+  // an. Wer sie abschaltet, ist nur noch auf "Backup jetzt" (manuell) und
+  // die weiterhin unabhängig laufende Vor-Migrations-Sicherung (db.js)
+  // angewiesen. Betrifft NICHT die experimentelle Perpustakaan-Original-
+  // Sicherung (sichereOriginalPerpustakaanDbSync) – die ist Voraussetzung
+  // für den Live-Zugriff selbst, kein optionales Extra.
+  autoBackupAktiv: true,
+
+  // Titelleiste einfärben (Einstellungen "Verschiedenes"), siehe
+  // titelleiste-farbe.js. 'standard' = unverändert (Vorgabe).
+  titelleisteModus: 'standard', // standard | wochentag | eigene
+  titelleisteEigeneFarbe: '#4f8ef7',
+
+  // Komma-/Zeilenumbruch-getrennte Klassenkürzel im Jahrgang-Freitextfeld
+  // ("4a,4b,4c") optisch als getrennte Chips statt als einen Klumpen
+  // anzeigen – ändert NIE den gespeicherten Text selbst, nur die Anzeige.
+  // Standardmäßig an.
+  klassenErkennungAktiv: true,
 
   // EXPERIMENTELL (Branch feature/perpustakaan-live-db, Version 0.9): siehe
   // src/main/perpustakaan-live.js. Standardmäßig aus – wer nicht gezielt in
@@ -244,7 +263,10 @@ const ENUMS = {
   winBackdrop: ['mica', 'acrylic', 'tabbed', 'none'],
   vibrancy: ['under-window', 'sidebar', 'fullscreen-ui', 'hud', 'popover', 'content', 'header', 'none'],
   printPaper: ['A4', 'Letter'],
+  titelleisteModus: ['standard', 'wochentag', 'eigene'],
 };
+
+const HEX_FARBE_SCHLUESSEL = new Set(['accent', 'titelleisteEigeneFarbe']);
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -277,7 +299,7 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
         : previous;
       continue;
     }
-    if (key === 'accent') {
+    if (HEX_FARBE_SCHLUESSEL.has(key)) {
       clean[key] = /^#[0-9a-f]{6}$/i.test(value) ? value : previous;
       continue;
     }

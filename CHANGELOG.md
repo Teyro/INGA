@@ -6,6 +6,43 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.2.0-beta.3 – 2026-09-18
+
+### Neu
+- **Titelleiste einfärben** (Einstellungen → Verschiedenes): entweder
+  automatisch nach Wochentag (Montag gelb, Dienstag grün, Mittwoch blau,
+  Donnerstag rot, Freitag orange, Wochenende dezentes Grau/Rosé – angelehnt
+  an das in Förder-/Grundschulen verbreitete METACOM-Farbschema für
+  Wochentage) oder mit einer frei gewählten eigenen Farbe. Standardmäßig
+  aus (Standardfarbe wie gewohnt). Unter Windows passt sich dabei auch die
+  Farbe der nativen Fensterknöpfe an, damit sie lesbar bleiben.
+- **Automatische Sicherung beim Start abschaltbar** (Einstellungen →
+  Aussehen → Datensicherung): wer eine eigene, bereits zuverlässige
+  Sicherung hat, kann INGAs automatisches Backup beim Programmstart jetzt
+  komplett ausschalten – "Backup jetzt" bleibt immer verfügbar. Die
+  zusätzliche Dokumente-Ordner-Sicherung (seit 1.2.0-beta.1) wirkt nur
+  noch, solange diese Grundeinstellung aktiv ist.
+- **Automatische Klassenerkennung** (Einstellungen → Verschiedenes,
+  standardmäßig an): trägt jemand mehrere Klassen kommagetrennt in das
+  Klasse/Jahrgang-Feld ein (z.&nbsp;B. „4a,4b,4c“), zeigen Nutzerliste,
+  Rückstandsliste, Im-Umlauf und Papierkorb das jetzt als saubere,
+  einzeln abgesetzte Kürzel-Chips statt eines Komma-Klumpens – rein
+  optisch, der gespeicherte Text bleibt unverändert. Ausgeschaltet
+  erscheint das Feld exakt wie eingetragen.
+
+### Behoben
+- **Experimentell (Perpustakaan-Direktzugriff): TIMESTAMP-Werte beim
+  Live-Lesen falsch formatiert.** `dump` las Zeitstempel bisher generisch
+  wie jede andere Spalte, wodurch Werte exakt zur vollen Sekunde (der
+  Normalfall bei Ausleih-/Fälligkeitsdatum) als `"…00:00:00.0"` statt wie
+  überall sonst in INGA üblich als `"…00:00:00.000"` zurückkamen. Betraf
+  nur den Live-Lesezugriff (ein normaler, von Perpustakaan selbst
+  erzeugter CSV-Export war davon nie betroffen); konnte dazu führen, dass
+  die Rückstandsliste eine bereits verschickte Erinnerung/Mahnung zu
+  einer neu eingelesenen Ausleihe nicht mehr wiedererkannte. Gefunden und
+  behoben bei einer erneuten Prüfung gegen synthetische Testdatenbanken
+  (siehe `derby-bridge/README.md`).
+
 ## 1.2.0-beta.2 – 2026-09-17
 
 ### Behoben

@@ -141,6 +141,43 @@ public class Bridge {
     return wert;
   }
 
+  /**
+   * TIMESTAMP-Spalten NICHT über das generische rs.getString() lesen (siehe
+   * dump() unten): java.sql.Timestamp#toString() gibt die Nachkommastellen
+   * nur mit MINDESTENS einer Ziffer aus, ohne führende/nachfolgende Nullen
+   * aufzufüllen – ein Wert exakt zur vollen Sekunde (der praktische Normalfall
+   * bei Ausleih-/Fälligkeitsdatum) kommt dadurch als "…00:00:00.0" zurück,
+   * nicht als "…00:00:00.000" wie in echten Perpustakaan-CSV-Exporten und wie
+   * INGA selbst neue Datensätze schreibt (siehe date-utils.js heuteStamp()).
+   * Rein kosmetisch für die reine Kalenderrechnung (date-utils.js liest
+   * ohnehin nur die ersten 10 Zeichen), ABER an mindestens einer Stelle
+   * sicherheitsrelevant: repo.js letzteMahnungFuer() vergleicht AuslDatum
+   * per EXAKTER Zeichenkettengleichheit, um eine bereits verschickte
+   * Mahnung/Erinnerung wiederzufinden – bei unterschiedlicher
+   * Nachkommastellenzahl für denselben Zeitpunkt schlägt dieser Abgleich
+   * nach einem "Jetzt aus Perpustakaan lesen" stillschweigend fehl (gefunden
+   * und hier behoben, ohne dass es zuvor gegen eine echte Installation
+   * auffiel – reine Perpustakaan-CSV-Exporte durchlaufen diesen JDBC-Weg
+   * nie, nur der Live-Lesezugriff).
+   */
+  static String csvWert(ResultSet rs, int spalte, int jdbcTyp) throws SQLException {
+    if (jdbcTyp == Types.TIMESTAMP) {
+      Timestamp ts = rs.getTimestamp(spalte);
+      if (ts == null) return "";
+      // Timestamp#toString() liefert Datum/Uhrzeit bereits korrekt (lokale
+      // Kalenderfelder, keine Zeitzonenumrechnung nötig) – nur die
+      // Nachkommastellen (1 bis 9 Ziffern, je nachdem) auf exakt drei
+      // Ziffern normiert (abschneiden bei mehr, mit Nullen auffüllen bei
+      // weniger), statt selbst irgendetwas an Datum/Uhrzeit umzurechnen.
+      String basis = ts.toString();
+      int punkt = basis.indexOf('.');
+      if (punkt < 0) return basis + ".000"; // laut Javadoc nie der Fall, sicherheitshalber trotzdem abgefangen
+      String nachkomma = (basis.substring(punkt + 1) + "000").substring(0, 3);
+      return basis.substring(0, punkt + 1) + nachkomma;
+    }
+    return csvEscape(rs.getString(spalte));
+  }
+
   static String quoteIdent(String name) { return "\"" + name.replace("\"", "\"\"") + "\""; }
 
   static void dump(String dbPfad, String schemaDatei, String zipZiel) throws Exception {
@@ -156,10 +193,16 @@ public class Bridge {
         inhalt.append(String.join(";", spalten)).append("\r\n");
         try (Statement st = c.createStatement();
              ResultSet rs = st.executeQuery("SELECT " + spaltenSql + " FROM " + quoteIdent(tabelle))) {
+          // Spaltentypen EINMAL vor der Zeilenschleife lesen (nicht je Zeile
+          // neu über rs.getMetaData()) – nur TIMESTAMP-Spalten brauchen die
+          // Sonderbehandlung in csvWert(), siehe dort.
+          ResultSetMetaData meta = rs.getMetaData();
+          int[] jdbcTypen = new int[spalten.size()];
+          for (int i = 1; i <= spalten.size(); i++) jdbcTypen[i - 1] = meta.getColumnType(i);
           while (rs.next()) {
             for (int i = 1; i <= spalten.size(); i++) {
               if (i > 1) inhalt.append(';');
-              inhalt.append(csvEscape(rs.getString(i)));
+              inhalt.append(csvWert(rs, i, jdbcTypen[i - 1]));
             }
             inhalt.append("\r\n");
           }
