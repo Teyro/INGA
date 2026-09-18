@@ -124,6 +124,31 @@ function verschiebeWurzelinhalt(entpackterOrdner, zielOrdner) {
   fs.rmSync(entpackterOrdner, { recursive: true, force: true });
 }
 
+/**
+ * Manche Dateien im Temurin-JRE-Archiv (beobachtet: die CDS-Archivdatei
+ * `lib/server/classes.jsa`) kommen schreibgeschützt aus dem tar-Archiv –
+ * kein Problem, solange INGA die Laufzeit nur AUSFÜHRT, bricht aber den
+ * macOS-Build: electron-builder signiert (seit 1.4.0 auch im
+ * unbezahlten Ad-hoc-Modus, siehe package.json "mac.identity") das ganze
+ * App-Bündel inklusive der mitgelieferten JRE durch und scheitert dabei
+ * mit "Permission denied" an genau solchen schreibgeschützten Dateien.
+ * Deshalb nach dem Entpacken pauschal Schreibrechte für den Eigentümer
+ * ergänzen (nichts wird dadurch UNSICHERER – nur der besitzende
+ * CI-/Build-Prozess bekommt zusätzlich Schreibzugriff auf seine eigenen,
+ * gerade erst heruntergeladenen Dateien).
+ */
+function stelleSchreibrechteSicher(ordner) {
+  for (const eintrag of fs.readdirSync(ordner, { withFileTypes: true, recursive: true })) {
+    const pfad = path.join(eintrag.parentPath ?? eintrag.path, eintrag.name);
+    try {
+      const modus = fs.statSync(pfad).mode;
+      fs.chmodSync(pfad, modus | 0o200); // 0o200 = Schreibrecht für den Eigentümer (u+w)
+    } catch {
+      /* einzelne Datei nicht änderbar (z. B. Symlink auf nicht (mehr) vorhandenes Ziel) – restliche trotzdem versuchen */
+    }
+  }
+}
+
 /** Lädt die JRE nach `<basisOrdner>/jre`, sofern dort noch keine (lauffähige) steht. */
 async function holeJre(basisOrdner, plattform = aktuellePlattform()) {
   const jreZiel = path.join(basisOrdner, 'jre');
@@ -137,6 +162,7 @@ async function holeJre(basisOrdner, plattform = aktuellePlattform()) {
   const tmpEntpackt = path.join(basisOrdner, '_jre_entpackt');
   entpacken(tmpArchiv, tmpEntpackt);
   verschiebeWurzelinhalt(tmpEntpackt, jreZiel);
+  stelleSchreibrechteSicher(jreZiel);
   fs.unlinkSync(tmpArchiv);
   return { ok: true, ueberuebersprungen: false, pfad: jreZiel };
 }
@@ -165,4 +191,4 @@ async function richteVollstaendigEin(basisOrdner, plattform = aktuellePlattform(
   return { jre, jars };
 }
 
-module.exports = { aktuellePlattform, holeJre, holeDerbyJars, richteVollstaendigEin, ADOPTIUM_ASSET };
+module.exports = { aktuellePlattform, holeJre, holeDerbyJars, richteVollstaendigEin, ADOPTIUM_ASSET, stelleSchreibrechteSicher };

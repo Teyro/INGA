@@ -20,7 +20,7 @@ import os from 'node:os';
 
 const require = createRequire(import.meta.url);
 const { javaPfad, klassenpfad, setzeZusaetzlicheLaufzeitBasis, laufzeitVorhanden } = require('../src/main/perpustakaan-live.js');
-const { holeJre } = require('../src/main/derby-runtime-setup.js');
+const { holeJre, stelleSchreibrechteSicher } = require('../src/main/derby-runtime-setup.js');
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'inga-derby-fallback-test-'));
@@ -74,4 +74,17 @@ test('holeJre(): bereits vorhandene JRE wird übersprungen, kein Netzwerkzugriff
   const ergebnis = await holeJre(basis, process.platform === 'win32' ? 'win' : 'linux');
   assert.equal(ergebnis.ok, true);
   assert.equal(ergebnis.ueberuebersprungen, true);
+});
+
+test('stelleSchreibrechteSicher(): ergänzt Schreibrecht für den Eigentümer bei schreibgeschützten Dateien (behebt den macOS-Codesign-Fehler "Permission denied" bei Temurin-Dateien wie lib/server/classes.jsa)', { skip: process.platform === 'win32' && 'chmod-Bits sind unter Windows nicht aussagekräftig' }, () => {
+  const basis = tmpDir();
+  const geschuetzteDatei = path.join(basis, 'lib', 'server', 'classes.jsa');
+  fs.mkdirSync(path.dirname(geschuetzteDatei), { recursive: true });
+  fs.writeFileSync(geschuetzteDatei, 'x');
+  fs.chmodSync(geschuetzteDatei, 0o444); // wie im echten Temurin-Archiv beobachtet: schreibgeschützt
+  assert.equal(fs.statSync(geschuetzteDatei).mode & 0o200, 0, 'Testvoraussetzung: Datei muss zu Beginn schreibgeschützt sein');
+
+  stelleSchreibrechteSicher(basis);
+
+  assert.notEqual(fs.statSync(geschuetzteDatei).mode & 0o200, 0, 'Eigentümer-Schreibrecht sollte danach gesetzt sein');
 });

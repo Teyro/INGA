@@ -27,6 +27,13 @@ Abschnitte unten) als erste reguläre Version dieser Reihe, dazu:
   Notarisierung (weiterhin kein Zertifikat), siehe README „Warnung beim
   ersten Start" für die verbleibenden, plattformüblichen Klick-Schritte
   (macOS und Windows SmartScreen).
+- **macOS-Build brach durch das neue Ad-hoc-Signieren zunächst komplett
+  ab** ("Permission denied" beim Signieren einer Datei aus der
+  mitgelieferten Java-Laufzeit, `lib/server/classes.jsa`) – manche
+  Dateien im heruntergeladenen Temurin-JRE-Archiv sind schreibgeschützt,
+  kein Problem beim reinen Ausführen, bricht aber das nachträgliche
+  Signieren des ganzen App-Bündels. `derby-runtime-setup.js` ergänzt
+  nach dem Entpacken jetzt pauschal Schreibrechte für den Eigentümer.
 
 ### Geändert
 - **Electron 34 → 44** (aktuellste Version) – behebt nebenbei sämtliche
