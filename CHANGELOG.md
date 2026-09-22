@@ -6,6 +6,50 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.5.0 – 2026-09-22
+
+### Geändert
+- **Automatische Sicherung läuft jetzt beim Beenden statt beim Start.**
+  Stellte sich im echten Bibliotheksalltag als unpraktikabel heraus,
+  sobald das Backup mal länger dauerte – Warten VOR dem ersten Klick ist
+  ärgerlich, ein paar Sekunden länger beim ohnehin schon beendeten
+  Programm kaum spürbar. Beim Beenden erscheint dafür ein kleines
+  Abschiedsfenster ("Danke fürs Benutzen von INGA!") – aber NUR an dem
+  Tag, an dem tatsächlich noch etwas zu sichern ist; ein gewöhnliches
+  Beenden ohne anstehende Arbeit bleibt weiterhin sofort.
+- **Update-Installation verschiebt sich auf das nächste Beenden.** Bisher
+  fragte INGA sofort nach dem Herunterladen "jetzt neu starten?" – das
+  konnte mitten in eine Ausleihe/Rückgabe platzen. Jetzt lädt INGA im
+  Hintergrund herunter (nach Bestätigung im "Update verfügbar"-Dialog wie
+  gewohnt), informiert nur per Toast, und installiert automatisch beim
+  nächsten Beenden – nach einem eigenen, NICHT überspringbaren
+  Vor-Update-Backup (Dateiname `INGA_vor-Update-Backup_<Zeitstempel>.zip`,
+  wird nie automatisch mitgelöscht). Schlägt dieses Backup fehl, wird
+  NICHT installiert – das Update bleibt einfach bis zum nächsten Beenden
+  heruntergeladen liegen.
+- Die stille Update-Prüfung nach dem Start wartet jetzt 10 statt 5
+  Sekunden.
+
+### Neu
+- **5 zusätzliche Textvorschläge für Erinnerungen/Mahnungen** (jetzt 9
+  insgesamt): humorvoll, sachlich-neutral und persönlich-warm als neue
+  Tonlagen, dazu eine Checklisten-Form und eine ganz knappe Variante –
+  nicht nur mehr vom Gleichen, auch strukturell unterschiedlich.
+
+### Behoben (bei der erneuten Quellcode-Durchsicht gefunden)
+- Ein Fehler beim Vorbereiten des Beendens (z. B. beim Erstellen des
+  Abschiedsfensters) hätte INGA daran gehindert, sich überhaupt noch zu
+  beenden – jetzt mit Sicherheitsnetz, das INGA in jedem Fall schließt.
+- electron-updater installiert von sich aus beim Beenden, sobald ein
+  Download fertig ist (eigener, standardmäßig aktiver Mechanismus) – das
+  hätte theoretisch am neuen Pflicht-Backup vorbei installieren können.
+  Ausdrücklich abgeschaltet (`autoInstallOnAppQuit = false`): installiert
+  wird ausschließlich über den einen, backup-gesicherten Weg.
+- Die zusätzliche Dokumente-Ordner-Sicherung hätte sich um einen Tag
+  verzögert, wenn sie mitten am Tag eingeschaltet wird, nachdem das
+  reguläre Backup bei einem früheren Beenden desselben Tages schon
+  gelaufen war – jetzt unabhängig geprüft.
+
 ## 1.4.0 – 2026-09-19
 
 Bündelt die drei Beta-Versionen 1.2.0-beta.1 bis .3 (siehe deren eigene

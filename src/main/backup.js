@@ -166,6 +166,38 @@ function sichereOriginalPerpustakaanDbSync(derbyOrdner, backupDir) {
   }
 }
 
+// Eigenes Namensmuster statt PERPUSTAKAAN_DATEI_MUSTER, damit die normale
+// tägliche Rotation (rotiere() oben, max. 10) dieses Backup NICHT mit
+// erfasst – eigene, großzügigere Obergrenze: Updates sind selten (nicht
+// täglich), ein Stand direkt davor darf länger aufbewahrt bleiben als ein
+// gewöhnliches Tages-Backup.
+const VOR_UPDATE_MAX_BACKUPS = 20;
+const VOR_UPDATE_DATEI_MUSTER = /^INGA_vor-Update-Backup_\d{8}_\d{6}\.zip$/;
+
+/**
+ * NICHT überspringbares Backup unmittelbar vor dem Installieren eines
+ * heruntergeladenen Updates (siehe main.js bereiteBeendenVor()) – anders
+ * als die übrigen Sicherungen weder auf "einmal täglich" noch auf die
+ * Einstellung "autoBackupAktiv" beschränkt: eine Programmaktualisierung
+ * ist ein selteneres, höheres Risiko (neue Version, möglich geänderte
+ * Datenbankstruktur) und verdient IMMER einen eigenen, klar benannten
+ * Rückfallpunkt, unabhängig davon, ob heute schon ein reguläres Backup
+ * gelaufen ist. Wirft wie die übrigen Backups hier nie; der Aufrufer
+ * bricht die Installation ab, wenn `null` zurückkommt (siehe dort).
+ */
+function sichereVorUpdateSync(db, backupDir, exportZipFn) {
+  try {
+    fs.mkdirSync(backupDir, { recursive: true });
+    const ziel = path.join(backupDir, `INGA_vor-Update-Backup_${zeitstempelFuerDateiname()}.zip`);
+    exportZipFn(db, ziel);
+    rotiere(backupDir, VOR_UPDATE_DATEI_MUSTER, VOR_UPDATE_MAX_BACKUPS);
+    return ziel;
+  } catch (err) {
+    console.error('[backup] Vor-Update-Backup fehlgeschlagen:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   sichereDatenbankSync,
   backupHeuteVorhanden,
@@ -173,4 +205,5 @@ module.exports = {
   sicherePerpustakaanZipSync,
   perpustakaanBackupHeuteVorhanden,
   sichereOriginalPerpustakaanDbSync,
+  sichereVorUpdateSync,
 };

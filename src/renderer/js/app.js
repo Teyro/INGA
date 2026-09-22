@@ -2624,6 +2624,11 @@ function wireUpdate() {
   api.update.status().then(zeichneUpdateStatus);
 }
 
+// Meldet sich nur EINMAL beim Wechsel auf "bereit", nicht bei jedem
+// erneuten Aufruf mit demselben Status (z. B. beim Wechsel in die
+// Einstellungen, die den aktuellen Stand einfach erneut abfragen).
+let zuletztGemeldeterUpdateStatus = null;
+
 function zeichneUpdateStatus(s) {
   const el2 = document.getElementById('update-status');
   const notesEl = document.getElementById('update-releasenotes');
@@ -2635,10 +2640,17 @@ function zeichneUpdateStatus(s) {
     aktuell: '✓ INGA ist aktuell.',
     verfuegbar: `🆕 Version ${s.version} verfügbar.`,
     laedt: `⬇️ Lädt herunter … ${s.prozent ?? 0}%`,
-    bereit: '✓ Update heruntergeladen – bereit zum Neustart.',
+    // Kein "jetzt neu starten?"-Dialog mehr (siehe main.js wireAutoUpdater
+    // update-downloaded) – die Installation passiert automatisch beim
+    // nächsten Beenden, mit einem eigenen Pflicht-Backup davor.
+    bereit: '✓ Update heruntergeladen – wird beim nächsten Beenden automatisch installiert.',
     fehler: `⚠️ Update-Prüfung fehlgeschlagen: ${s.fehler || 'unbekannter Fehler'}`,
   };
   el2.textContent = texte[s.status] ?? '';
+  if (s.status === 'bereit' && zuletztGemeldeterUpdateStatus !== 'bereit') {
+    toast(`Version ${s.version || ''} ist heruntergeladen und wird beim nächsten Beenden von INGA installiert.`);
+  }
+  zuletztGemeldeterUpdateStatus = s.status;
   // "Was ist neu": derselbe Text aus dem Update-Dialog (CHANGELOG.md über
   // den GitHub-Release, siehe main.js formatiereReleaseNotes()) – auch
   // hier sichtbar, falls der Dialog schon einmal mit "Später" weggeklickt
@@ -2745,10 +2757,11 @@ function fuelleVorschauVorlage(vorlage, stufe) {
 }
 
 /**
- * Vorgefertigte Brieftexte zur Auswahl im Mahnstufen-Editor – 2 in normaler
- * Anrede (freundlich/formell), 2 in einfacher Sprache (kurze Sätze, aktive
- * Verben, ein Gedanke pro Satz) für Kinder oder Nutzer:innen, denen der
- * Standardtext schwerer verständlich ist. Ersetzen den Brieftext einer
+ * Vorgefertigte Brieftexte zur Auswahl im Mahnstufen-Editor – ursprünglich
+ * 4 (freundlich/formell/2× einfache Sprache), auf Wunsch um 5 weitere
+ * Varianten ergänzt: unterschiedliche Tonlagen (humorvoll, sachlich,
+ * persönlich-warm) UND unterschiedliche FORMEN (Fließtext, Checkliste,
+ * ganz knapp) – nicht nur mehr vom Gleichen. Ersetzen den Brieftext einer
  * Stufe komplett, wenn übernommen – siehe renderMahnstufen().
  */
 const MAHN_VORLAGEN = [
@@ -2791,6 +2804,55 @@ const MAHN_VORLAGEN = [
       'Das Buch ist jetzt schon {Tage} Tage überfällig.\nDas bedeutet: Die Zeit ist schon vorbei.\n\n' +
       'Bitte bring das Buch bald zurück in die Bücherei.\nDann können auch andere Kinder das Buch lesen.\n\n' +
       'Hast du Fragen? Dann komm einfach in die Bücherei.\nDanke, dass du das Buch zurückbringst!',
+  },
+  {
+    id: 'humorvoll',
+    label: 'Humorvoll (ans Kind)',
+    text:
+      'Hallo {Vorname},\n\n' +
+      '„{Titel}" vermisst dich! Seit {Tage} Tagen wartet es ganz allein und fragt sich, ' +
+      'ob du es vergessen hast (fällig war eigentlich am {Faellig}). Dabei will es doch nur ' +
+      'zurück ins Regal, ein bisschen ausruhen und dann von jemand anderem gelesen werden.\n\n' +
+      'Rettest du es? Einfach mitbringen zur {Bibliothek} – mehr braucht es nicht.',
+  },
+  {
+    id: 'sachlich_neutral',
+    label: 'Sachlich-neutral (ans Kind)',
+    text:
+      'Hallo {Vorname},\n\n' +
+      'ein kurzer Hinweis: „{Titel}" war am {Faellig} fällig und ist inzwischen seit ' +
+      '{Tage} Tagen überfällig. Bitte gib das Medium bei nächster Gelegenheit in der ' +
+      '{Bibliothek} zurück.\n\nDanke für die Rückgabe.',
+  },
+  {
+    id: 'eltern_persoenlich',
+    label: 'Persönlich-warm (an die Eltern)',
+    text:
+      'Liebe Eltern,\n\n' +
+      'Ihr Kind {Vorname} {Nachname} hat sich „{Titel}" aus der {Bibliothek} ausgeliehen – ' +
+      'die Leihfrist ist am {Faellig} abgelaufen, das Buch ist nun seit {Tage} Tagen bei Ihnen ' +
+      'zuhause. Das passiert schnell mal im Trubel des Alltags, deshalb hier nur eine kurze, ' +
+      'freundliche Erinnerung: Wir würden uns freuen, wenn es bald wieder seinen Weg zurück ' +
+      'in die Bücherei findet.\n\nVielen Dank für Ihre Unterstützung!',
+  },
+  {
+    id: 'einfach_checkliste',
+    label: 'Einfache Sprache – als Checkliste',
+    text:
+      'Hallo {Vorname}!\n\n' +
+      'Hier ist deine Erinnerung als Liste:\n\n' +
+      '• Buch: „{Titel}"\n' +
+      '• Rückgabe-Termin war: {Faellig}\n' +
+      '• Das Buch ist überfällig seit: {Tage} Tagen\n' +
+      '• Das musst du tun: Buch mitbringen zur {Bibliothek}\n\n' +
+      'Danke, dass du daran denkst!',
+  },
+  {
+    id: 'kurz_knapp',
+    label: 'Ganz kurz',
+    text:
+      '{Vorname}, bitte „{Titel}" zurückbringen (seit {Tage} Tagen überfällig, ' +
+      'fällig war {Faellig}). Danke!',
   },
 ];
 

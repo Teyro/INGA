@@ -31,7 +31,7 @@ const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
-const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('./backup');
+const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync, sichereVorUpdateSync } = require('./backup');
 const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
 const { formatiereReleaseNotes } = require('./release-notes');
 const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
@@ -56,6 +56,7 @@ let printWindow = null;
 let umlaufPrintWindow = null;
 let etikettenPrintWindow = null;
 let splashWindow = null;
+let abschiedFenster = null;
 let store = null;
 let db = null;
 let coversDir = null;
@@ -227,6 +228,8 @@ async function bootstrapPayload() {
   };
 }
 
+const STATUS_PRELOAD = path.join(__dirname, '..', 'preload', 'status-preload.js');
+
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 420,
@@ -241,7 +244,7 @@ function createSplashWindow() {
     show: false,
     backgroundColor: '#3d6fe0',
     ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
-    webPreferences: { sandbox: true, preload: path.join(__dirname, '..', 'preload', 'splash-preload.js') },
+    webPreferences: { sandbox: true, preload: STATUS_PRELOAD },
   });
   splashWindow.loadFile(path.join(RENDERER, 'splash.html'));
   splashWindow.once('ready-to-show', () => splashWindow.show());
@@ -249,19 +252,52 @@ function createSplashWindow() {
 
 /**
  * Meldet den aktuellen Startschritt an die Splash (siehe splash.js/
- * splash-preload.js) – rein informativ für den Fall, dass der Start
+ * status-preload.js) – rein informativ für den Fall, dass der Start
  * einmal länger dauert oder hängen bleibt: bisher zeigte die Splash nur
  * eine unbewegte Ladeanimation, ohne erkennen zu lassen, WO es klemmt.
  * Harmlos außerhalb des Starts (Splash existiert dann nicht mehr) oder
  * ganz ohne Splash (z. B. in Tests) – einfach ein No-Op.
  */
 function splashStatus(text) {
-  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.webContents.send('splash:status', text);
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.webContents.send('fenster:status', text);
 }
 
 function closeSplashWindow() {
   if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
   splashWindow = null;
+}
+
+/**
+ * Abschiedsfenster beim Beenden – siehe bereiteBeendenVor(). Erscheint NUR,
+ * wenn tatsächlich etwas zu tun ist (fälliges Tages-Backup verschoben vom
+ * Start ans Ende, siehe dort; oder ein wartendes Update), ein normales
+ * Beenden ohne anstehende Arbeit bleibt sofort. Bewusst ohne eigenes
+ * `show:false`+`ready-to-show`-Timing wie Splash/Hauptfenster: beim
+ * Beenden zählt jede Millisekunde, das Fenster darf ruhig einen Frame
+ * lang leer aufblitzen, statt die Sicherung zu verzögern.
+ */
+function createAbschiedFenster() {
+  abschiedFenster = new BrowserWindow({
+    width: 420,
+    height: 300,
+    frame: false,
+    resizable: false,
+    movable: true,
+    show: true,
+    backgroundColor: '#3d6fe0',
+    ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
+    webPreferences: { sandbox: true, preload: STATUS_PRELOAD },
+  });
+  abschiedFenster.loadFile(path.join(RENDERER, 'abschied.html'));
+}
+
+function abschiedStatus(text) {
+  if (abschiedFenster && !abschiedFenster.isDestroyed()) abschiedFenster.webContents.send('fenster:status', text);
+}
+
+function closeAbschiedFenster() {
+  if (abschiedFenster && !abschiedFenster.isDestroyed()) abschiedFenster.close();
+  abschiedFenster = null;
 }
 
 function createMainWindow() {
@@ -501,10 +537,112 @@ function dokumenteBackupFallsFaelligSync() {
     }
   } catch (err) {
     // Wirft absichtlich nie weiter – ein fehlendes/nicht schreibbares
-    // Dokumente-Verzeichnis (z. B. auf einem Server-Profil) darf den
-    // Programmstart nicht verhindern, die userData-Sicherung oben lief zu
-    // diesem Zeitpunkt bereits.
+    // Dokumente-Verzeichnis (z. B. auf einem Server-Profil) darf das
+    // Beenden nicht verhindern, die userData-Sicherung oben lief zu diesem
+    // Zeitpunkt bereits.
     console.error('[wartung] Dokumente-Backup fehlgeschlagen:', err.message);
+  }
+}
+
+/**
+ * Letzter Schritt auf JEDEM Weg aus bereiteBeendenVor() hinaus (auch dem
+ * Fehler-Sicherheitsnetz): den debounced Einstellungen-Speicher (store.js
+ * schreibt sonst bis zu 250ms verzögert, siehe dort) synchron leeren und
+ * die Datenbank sauber schließen, GENAU wie der alte, einfache
+ * 'before-quit'-Handler das schon immer tat – beim Umbau auf das
+ * Abschiedsfenster ist das hier fast verlorengegangen (app.exit() wartet
+ * auf NICHTS, ein noch ausstehender Store-Schreibvorgang wäre sonst
+ * einfach weg).
+ */
+function wirklichBeenden() {
+  // Jeder Schritt einzeln abgesichert: selbst wenn Store-Schreiben oder
+  // Datenbank-Schließen ausnahmsweise wirft, MUSS app.exit() trotzdem
+  // erreicht werden.
+  try {
+    store?.flushAllSync();
+  } catch (err) {
+    console.error('[beenden] Einstellungen konnten nicht gespeichert werden:', err.message);
+  }
+  try {
+    db?.close();
+  } catch (err) {
+    console.error('[beenden] Datenbank konnte nicht sauber geschlossen werden:', err.message);
+  }
+  app.exit(0);
+}
+
+/**
+ * Läuft beim Beenden (siehe app.on('before-quit') unten) statt wie bis
+ * 1.4.0 beim Start: stellte sich im echten Bibliotheksalltag als
+ * unpraktikabel heraus, sobald das Backup mal länger dauerte – vor dem
+ * ersten Klick warten ist ärgerlich, beim ohnehin schon beendeten
+ * Programm ein paar Sekunden länger warten kaum spürbar. Zeigt dafür ein
+ * kleines Abschiedsfenster, aber NUR, wenn tatsächlich etwas zu tun ist
+ * (heute noch kein Backup gelaufen, oder ein Update wartet) – ein
+ * gewöhnliches Beenden ohne anstehende Arbeit bleibt weiterhin sofort.
+ *
+ * Reihenfolge bewusst: erst das gewohnte Tages-Backup, DANN – falls ein
+ * Update heruntergeladen und bereit ist – zusätzlich das eigene, nicht
+ * überspringbare Vor-Update-Backup und die Installation. Schlägt das
+ * Vor-Update-Backup fehl, wird NICHT installiert (Sicherheit vor
+ * Bequemlichkeit) – das Update bleibt einfach bis zum nächsten Beenden
+ * heruntergeladen und wird dann erneut versucht.
+ */
+async function bereiteBeendenVor() {
+  // Äußeres try/catch als Sicherheitsnetz: WAS AUCH IMMER hier schiefgeht,
+  // INGA muss sich trotzdem beenden lassen. Ohne dieses Netz würde ein
+  // unerwarteter Fehler (z. B. beim Erstellen des Abschiedsfensters) dafür
+  // sorgen, dass wirklichBeenden() nie erreicht wird – das Programm ließe
+  // sich dann gar nicht mehr schließen, der mit Abstand schlimmere Fehler
+  // gegenüber einem einmal ausgefallenen Backup.
+  try {
+    const s = settings();
+    const brauchtTagesBackup = Boolean(db && dbFile && backupDir) && s.autoBackupAktiv !== false && !backupHeuteVorhanden(backupDir, 'ende');
+    // Eigenständig geprüft (nicht einfach an brauchtTagesBackup gehängt):
+    // wird "Dokumente/INGA Backups" erst MITTEN am Tag eingeschaltet,
+    // nachdem das reguläre Backup bei einem früheren Beenden desselben
+    // Tages schon gelaufen ist, soll es trotzdem noch an DIESEM Tag
+    // nachgeholt werden, statt erst am nächsten.
+    const dokumenteBackupDir = path.join(app.getPath('documents'), 'INGA Backups');
+    const brauchtDokumenteBackup = Boolean(db && dbFile) && s.autoBackupAktiv !== false && s.dokumenteBackupAktiv && !backupHeuteVorhanden(dokumenteBackupDir, 'dokumente');
+    const brauchtUpdateInstall = updateStatus.status === 'bereit';
+
+    if (!brauchtTagesBackup && !brauchtDokumenteBackup && !brauchtUpdateInstall) {
+      wirklichBeenden();
+      return;
+    }
+
+    createAbschiedFenster();
+    abschiedStatus('Ich sichere noch kurz deine Daten …');
+
+    if (brauchtTagesBackup) {
+      sichereDatenbankSync(db, dbFile, backupDir, { grund: 'ende' });
+      if (!perpustakaanBackupHeuteVorhanden(backupDir)) sicherePerpustakaanZipSync(db, backupDir, exportZip);
+    }
+    if (brauchtDokumenteBackup) dokumenteBackupFallsFaelligSync();
+
+    if (brauchtUpdateInstall) {
+      abschiedStatus('Sichere ein zusätzliches Backup vor dem Update …');
+      const erfolg = db && backupDir ? sichereVorUpdateSync(db, backupDir, exportZip) : null;
+      if (erfolg) {
+        abschiedStatus('Installiere Update …');
+        // Store/DB VOR quitAndInstall() sauber wegschreiben (wie
+        // wirklichBeenden(), aber ohne dessen app.exit() – quitAndInstall()
+        // kümmert sich selbst ums Beenden, löst erneut 'before-quit' aus,
+        // siehe dort).
+        try { store?.flushAllSync(); } catch (err) { console.error('[beenden] Einstellungen konnten nicht gespeichert werden:', err.message); }
+        try { db?.close(); } catch (err) { console.error('[beenden] Datenbank konnte nicht sauber geschlossen werden:', err.message); }
+        autoUpdater.quitAndInstall();
+        return;
+      }
+      console.error('[update] Vor-Update-Backup fehlgeschlagen – Update bleibt heruntergeladen, wird beim nächsten Beenden erneut versucht.');
+    }
+
+    closeAbschiedFenster();
+    wirklichBeenden();
+  } catch (err) {
+    console.error('[beenden] Unerwarteter Fehler beim Vorbereiten des Beendens, beende trotzdem:', err);
+    wirklichBeenden();
   }
 }
 
@@ -512,15 +650,18 @@ function dokumenteBackupFallsFaelligSync() {
  * Auto-Update über GitHub Releases (siehe package.json "build.publish" +
  * die vom Build erzeugten latest*.yml-Dateien im Release). Fragt IMMER erst
  * nach, bevor irgendetwas heruntergeladen wird (autoDownload = false) – wie
- * ausdrücklich gewünscht: "soll ich jetzt updaten?".
+ * ausdrücklich gewünscht: "soll ich jetzt updaten?". Installiert wird NIE
+ * sofort, sondern erst beim nächsten Beenden von INGA, mit einem eigenen
+ * Pflicht-Backup davor (siehe bereiteBeendenVor()) – passt sich damit in
+ * eine laufende Ausleihe/Rückgabe ein, statt mittendrin zu unterbrechen.
  *
  * Vollautomatisches Herunterladen + Installieren nur unter Windows: INGA
  * ist nicht code-signiert (siehe package.json "win.signExecutable": false /
- * "mac.identity": null – bewusste Entscheidung, ein Zertifikat kostet Geld
+ * "mac.identity": "-" – nur ad-hoc, kein echtes Zertifikat, das kostet Geld
  * und ist für ein kostenloses Schulprojekt kaum zu rechtfertigen). Ohne
- * Signatur prüft Squirrel.Mac auf macOS die heruntergeladene App NICHT
- * erfolgreich und würde mit einer kryptischen Fehlermeldung abbrechen -
- * dort (und unter Linux, wo INGA als AppImage/deb/rpm auf sehr
+ * echte Signatur prüft Squirrel.Mac auf macOS die heruntergeladene App
+ * NICHT erfolgreich und würde mit einer kryptischen Fehlermeldung
+ * abbrechen - dort (und unter Linux, wo INGA als AppImage/deb/rpm auf sehr
  * unterschiedliche Arten installiert sein kann) öffnet INGA stattdessen die
  * Release-Seite im Browser, die Aktualisierung bleibt dort ein bewusster,
  * manueller Schritt.
@@ -532,6 +673,14 @@ function setzeUpdateStatus(next) {
 
 function wireAutoUpdater() {
   autoUpdater.autoDownload = false;
+  // WICHTIG: electron-updater installiert sonst von SICH AUS beim
+  // nächsten 'quit'-Ereignis, sobald ein Download fertig ist (eigener,
+  // von uns unabhängiger Mechanismus, Vorgabe an!) – das würde das
+  // Pflicht-Backup in bereiteBeendenVor() umgehen können, falls der Ablauf
+  // dort aus irgendeinem Grund NICHT bis zum expliziten
+  // autoUpdater.quitAndInstall() kommt. Deshalb hier abgeschaltet:
+  // installiert wird ausschließlich über genau diesen einen, ausdrücklich
+  // aufgerufenen Weg.
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('error', (err) => {
@@ -572,19 +721,16 @@ function wireAutoUpdater() {
     setzeUpdateStatus({ status: 'laedt', prozent: Math.round(p.percent) });
   });
 
-  autoUpdater.on('update-downloaded', async () => {
-    setzeUpdateStatus({ status: 'bereit' });
-    if (!mainWindow) return;
-    const { response } = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Jetzt neu starten und installieren', 'Später'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Update heruntergeladen',
-      message: 'Das Update ist bereit. INGA jetzt neu starten, um es zu installieren?',
-      detail: 'Bitte vorher laufende Vorgänge (Ausleihe, Rückgabe, offene Bearbeitung) abschließen.',
-    });
-    if (response === 0) autoUpdater.quitAndInstall();
+  // Bewusst KEIN "jetzt neu starten?"-Dialog mehr hier: das Herunterladen
+  // wurde schon beim "Jetzt herunterladen"-Klick im update-available-Dialog
+  // bestätigt (siehe oben). Die Installation selbst passiert automatisch
+  // beim nächsten Beenden von INGA, mit einem eigenen, nicht
+  // überspringbaren Backup davor (siehe bereiteBeendenVor()) – so, wie es
+  // sich im echten Bibliotheksalltag NICHT störend in eine laufende
+  // Ausleihe/Rückgabe drängt. Nur ein kurzer Toast informiert, siehe
+  // app.js zeichneUpdateStatus().
+  autoUpdater.on('update-downloaded', (info) => {
+    setzeUpdateStatus({ status: 'bereit', version: info?.version });
   });
 }
 
@@ -1392,30 +1538,16 @@ if (!gotLock) {
     coversDir = path.join(userDataDir, 'covers');
     await fs.mkdir(coversDir, { recursive: true }).catch(() => {});
 
-    // Einmal täglich beim ersten Start ein Backup – zusätzlich zum
-    // automatischen Backup vor einer fälligen Migration (siehe db.js), die
-    // UNABHÄNGIG von "autoBackupAktiv" immer läuft (kein optionales Extra,
-    // sondern Voraussetzung für eine gefahrlose Aktualisierung).
     dbFile = path.join(userDataDir, 'inga.sqlite3');
     backupDir = path.join(userDataDir, 'backups');
-    if (settings().autoBackupAktiv !== false) {
-      splashStatus('Sichere Datenbank …');
-      if (!backupHeuteVorhanden(backupDir, 'start')) {
-        sichereDatenbankSync(db, dbFile, backupDir, { grund: 'start' });
-      }
-      // Zusätzlich einmal täglich eine Perpustakaan-kompatible Zip-Sicherung
-      // (dieselbe wie "Als Zip exportieren …" in Import/Export) – unabhängig
-      // von der .sqlite3-Sicherung oben, eigene Rotation/eigener Tages-Check.
-      if (!perpustakaanBackupHeuteVorhanden(backupDir)) {
-        sicherePerpustakaanZipSync(db, backupDir, exportZip);
-      }
-    }
-    // Die zusätzliche Dokumente-Ordner-Sicherung (dokumenteBackupFallsFaelligSync)
-    // ist NICHT mehr hier – die verdoppelte praktisch die obigen zwei
-    // Sicherungen und damit die Wartezeit VOR dem ersten sichtbaren
-    // Fenster. Läuft jetzt wie das Cover-Nachladen erst im Hintergrund
-    // NACH dem Start (siehe unten), das Ergebnis ändert sich dadurch
-    // nicht – nur WANN es passiert.
+    // Das tägliche Backup (und die zusätzliche Dokumente-Ordner-Sicherung)
+    // läuft NICHT mehr hier beim Start – stellte sich im echten Alltag als
+    // unpraktikabel heraus, sobald es mal länger dauerte (siehe
+    // bereiteBeendenVor() unten: läuft jetzt beim Beenden, wo eine kurze
+    // Wartezeit nicht stört). Die automatische Sicherung vor einer
+    // fälligen Migration (siehe db.js) ist davon UNABHÄNGIG und lief schon
+    // oben in openDatabase() – kein optionales Extra, sondern Voraussetzung
+    // für eine gefahrlose Aktualisierung.
     // EXPERIMENTELL: bei jedem Start (nicht nur einmal täglich wie oben –
     // siehe backup.js) die ECHTE Perpustakaan-Datenbank sichern, BEVOR
     // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
@@ -1433,15 +1565,15 @@ if (!gotLock) {
     });
 
     // Hintergrundaufgaben NACH dem Start, mit etwas Abstand, damit sie das
-    // Öffnen des Hauptfensters nicht verzögern: die zusätzliche
-    // Dokumente-Ordner-Sicherung, eine stille Update-Prüfung (kein Dialog,
-    // wenn ohnehin schon aktuell) und – falls seit über einer Woche nicht
-    // mehr gelaufen – das automatische Cover-Nachladen.
+    // Öffnen des Hauptfensters nicht verzögern: eine stille Update-Prüfung
+    // (kein Dialog, wenn ohnehin schon aktuell) und – falls seit über einer
+    // Woche nicht mehr gelaufen – das automatische Cover-Nachladen. Das
+    // tägliche Backup läuft NICHT mehr hier, sondern beim Beenden (siehe
+    // bereiteBeendenVor()).
     setTimeout(() => {
-      dokumenteBackupFallsFaelligSync();
       if (settings().autoUpdateAktiv) autoUpdatePruefen();
       coverAutoNachladenFallsFaellig().catch((err) => console.error('[wartung] Cover-Nachladen fehlgeschlagen:', err.message));
-    }, 5000);
+    }, 10000);
     // Erneute stille Prüfung alle 6 Stunden – für Sitzungen, die tagelang
     // durchlaufen, nicht nur bei jedem Neustart.
     setInterval(() => {
@@ -1453,8 +1585,15 @@ if (!gotLock) {
     if (!platform.IS_MAC) app.quit();
   });
 
-  app.on('before-quit', () => {
-    store?.flushAllSync();
-    db?.close();
+  // Nur EINMAL vorbereiten: bereiteBeendenVor() beendet den Prozess selbst
+  // am Ende über app.exit() (löst KEIN erneutes 'before-quit' aus, anders
+  // als app.quit()) bzw. autoUpdater.quitAndInstall() (löst selbst ein
+  // 'before-quit' aus, das durch diese Sperre unverändert durchläuft).
+  let beendenVorbereitet = false;
+  app.on('before-quit', (event) => {
+    if (beendenVorbereitet) return;
+    event.preventDefault();
+    beendenVorbereitet = true;
+    bereiteBeendenVor();
   });
 }

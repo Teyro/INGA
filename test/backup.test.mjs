@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { sichereDatenbankSync, listeBackups, backupHeuteVorhanden, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync } = require('../src/main/backup.js');
+const { sichereDatenbankSync, listeBackups, backupHeuteVorhanden, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync, sichereVorUpdateSync } = require('../src/main/backup.js');
 const { openDatabase } = require('../src/main/db.js');
 const { exportZip } = require('../src/main/csvio.js');
 const repo = require('../src/main/repo.js');
@@ -103,6 +103,45 @@ test('sichereOriginalPerpustakaanDbSync: nicht vorhandener Ordner liefert null s
   const dir = tmpDir();
   const ergebnis = sichereOriginalPerpustakaanDbSync(path.join(dir, 'gibt-es-nicht'), path.join(dir, 'backups'));
   assert.equal(ergebnis, null);
+});
+
+/**
+ * Nicht überspringbares Backup unmittelbar vor einer Update-Installation
+ * (siehe main.js bereiteBeendenVor()) – anders als die übrigen Sicherungen
+ * NICHT auf "einmal täglich" beschränkt: jeder Aufruf legt ein neues,
+ * eigens benanntes Backup an.
+ */
+test('sichereVorUpdateSync: legt ein eigens benanntes, nicht überspringbares Backup mit Bestandsdaten an', () => {
+  const dir = tmpDir();
+  const backupDir = path.join(dir, 'backups');
+  const db = openDatabase(dir);
+  repo.saveKatalog(db, { Titel: 'Testbuch vor Update' });
+
+  const ziel = sichereVorUpdateSync(db, backupDir, exportZip);
+  assert.ok(ziel && fs.existsSync(ziel));
+  assert.match(path.basename(ziel), /^INGA_vor-Update-Backup_\d{8}_\d{6}\.zip$/);
+
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip(ziel);
+  const katalog = zip.getEntry('Katalog.csv').getData().toString('utf8');
+  assert.match(katalog, /Testbuch vor Update/);
+  db.close();
+});
+
+test('sichereVorUpdateSync: nicht auf "einmal täglich" beschränkt – zwei Aufrufe legen zwei Backups an', async () => {
+  const dir = tmpDir();
+  const backupDir = path.join(dir, 'backups');
+  const db = openDatabase(dir);
+
+  const ziel1 = sichereVorUpdateSync(db, backupDir, exportZip);
+  // Eigener Zeitstempel bis auf die Sekunde genau (siehe Dateimuster) – kurz warten, damit
+  // zwei Aufrufe garantiert unterschiedliche Dateinamen bekommen, nicht denselben überschreiben.
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const ziel2 = sichereVorUpdateSync(db, backupDir, exportZip);
+
+  assert.notEqual(ziel1, ziel2);
+  assert.equal(fs.readdirSync(backupDir).filter((f) => f.startsWith('INGA_vor-Update-Backup_')).length, 2);
+  db.close();
 });
 
 test('sicherePerpustakaanZipSync: alte Sicherungen werden rotiert, sqlite3- und Perpustakaan-Sicherungen stören sich nicht gegenseitig', () => {

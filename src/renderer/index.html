@@ -683,11 +683,11 @@
 
               <div class="section-title">Datensicherung</div>
               <div class="card" style="padding:18px; margin-bottom:16px">
-                <label class="checkbox-label"><input type="checkbox" id="set-autoBackupAktiv" /> Automatische Sicherung beim Programmstart</label>
-                <p class="hint">INGA sichert die Datenbank standardmäßig automatisch einmal täglich beim Programmstart (zusätzlich zur Sicherung vor jeder Aktualisierung, die eine Datenänderung braucht – die läuft unabhängig davon immer). Ausgeschaltet bleibt nur noch „Backup jetzt“ unten als Rückfalloption – ausschalten also nur, wenn eine andere Sicherung bereits zuverlässig läuft.</p>
+                <label class="checkbox-label"><input type="checkbox" id="set-autoBackupAktiv" /> Automatische Sicherung beim Beenden</label>
+                <p class="hint">INGA sichert die Datenbank standardmäßig automatisch einmal täglich beim Beenden des Programms (zusätzlich zur Sicherung vor jeder Aktualisierung, die eine Datenänderung braucht – die läuft unabhängig davon immer). Läuft NICHT mehr beim Start (stellte sich im Alltag als unpraktikabel heraus, sobald es mal länger dauerte) – beim Beenden erscheint dafür kurz ein kleines Fenster, aber nur an dem Tag, an dem tatsächlich noch gesichert wird. Ausgeschaltet bleibt nur noch „Backup jetzt“ unten als Rückfalloption – ausschalten also nur, wenn eine andere Sicherung bereits zuverlässig läuft.</p>
                 <label class="checkbox-label" style="margin-top:10px"><input type="checkbox" id="set-dokumenteBackupAktiv" /> Zusätzlich täglich nach „Dokumente/INGA Backups“ sichern</label>
                 <p class="hint">Praktisch, falls der interne Programmordner mal nicht griffbereit ist (Umzug auf einen neuen Rechner, Mitnehmen per USB-Stick) – derselbe Inhalt wie oben, nur an einem leichter zu findenden Ort. Wirkt nur, solange die automatische Sicherung oben eingeschaltet ist.</p>
-                <p class="hint">Zusätzlich legt INGA einmal täglich beim Start auch eine Perpustakaan-kompatible Zip-Sicherung an (<code>perpustakaan_backup_…zip</code> im selben Sicherungsordner) – falls die Daten einmal in einer echten Perpustakaan-Installation gebraucht werden.</p>
+                <p class="hint">Zusätzlich legt INGA einmal täglich beim Beenden auch eine Perpustakaan-kompatible Zip-Sicherung an (<code>perpustakaan_backup_…zip</code> im selben Sicherungsordner) – falls die Daten einmal in einer echten Perpustakaan-Installation gebraucht werden.</p>
                 <div class="row-inline" style="margin:10px 0">
                   <button class="button" id="backup-jetzt">Backup jetzt erstellen</button>
                   <button class="button" id="backup-einspielen-datei">Sicherung aus Datei einspielen …</button>

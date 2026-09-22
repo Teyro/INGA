@@ -218,10 +218,12 @@ Autor) für einen kompakten, aber vollständigen Ausdruck. Schnellzugriff
   contenteditable-Feld statt eines reinen Textfelds) samt Menü zum
   Einfügen der Platzhalter (`{Vorname}` `{Nachname}` `{Titel}` `{Tage}`
   `{Gebuehr}` `{Datum}` `{Faellig}` `{Stufe}` `{Bibliothek}`, live Vorschau
-  direkt im Editor) – dazu 4 vorgefertigte **Textvorlagen** zur Auswahl
-  (freundlich, bestimmt/formell, sowie zwei in **einfacher Sprache** für
-  Kinder oder Nutzer:innen, denen der Standardtext schwerer verständlich
-  ist). Die Formatierung erscheint im Druck/PDF; in E-Mail und Element
+  direkt im Editor) – dazu 9 vorgefertigte **Textvorlagen** zur Auswahl
+  in unterschiedlichen Tonlagen und Formen (freundlich, bestimmt/formell,
+  humorvoll, sachlich-neutral, persönlich-warm, als Checkliste, ganz
+  knapp, sowie zwei in **einfacher Sprache** für Kinder oder Nutzer:innen,
+  denen der Standardtext schwerer verständlich ist). Die Formatierung
+  erscheint im Druck/PDF; in E-Mail und Element
   (die kein Fett/Kursiv darstellen können) kommt automatisch die reine
   Textfassung an
 - **Rückstandsliste** zum Abarbeiten: einstellbare Schwelle ("überfällig
@@ -284,21 +286,24 @@ Dialoge:
   `+14` während einer kurzfristigen, noch nicht als Ferieneintrag
   erfassten Schließzeit), **einmalige Verschiebung** des Ausleihdatums
   aller offenen Ausleihen um X Tage, die **Datensicherung**:
-  automatisches Backup einmal
-  täglich beim Programmstart (abschaltbar – "Backup jetzt" bleibt immer
-  verfügbar) und vor jeder Migration (Rotation: die
-  letzten 10 bleiben erhalten, zusätzlich eine Perpustakaan-kompatible
-  Zip-Sicherung), dazu „Backup jetzt“ und „Sicherung einspielen“ direkt in
-  den Einstellungen – Einspielen sichert vorher automatisch noch einmal
-  den aktuellen Stand und startet INGA neu. Wahlweise (Vorgabe: an, wirkt
-  nur solange die automatische Sicherung insgesamt aktiv ist)
-  zusätzlich dieselbe tägliche Sicherung noch einmal nach
-  `Dokumente/INGA Backups` – leichter zu finden/mitzunehmen als der
-  interne Programmdaten-Ordner. Dazu unter **Wartung**: wöchentliches
-  automatisches Nachladen fehlender Cover im Hintergrund sowie
-  automatische Updates (prüft beim Start und danach alle paar Stunden
-  beim GitHub-Repository nach, fragt vor jedem Download nach – siehe
-  „Automatische Updates“ unten). Alle drei einzeln abschaltbar.
+  automatisches Backup einmal täglich beim BEENDEN des Programms
+  (abschaltbar – "Backup jetzt" bleibt immer verfügbar) und vor jeder
+  Migration (Rotation: die letzten 10 bleiben erhalten, zusätzlich eine
+  Perpustakaan-kompatible Zip-Sicherung), dazu „Backup jetzt“ und
+  „Sicherung einspielen“ direkt in den Einstellungen – Einspielen sichert
+  vorher automatisch noch einmal den aktuellen Stand und startet INGA
+  neu. Läuft bewusst beim Beenden statt beim Start (dauert es einmal
+  länger, stört das dort weit weniger) – dafür erscheint kurz ein kleines
+  Abschiedsfenster, aber nur an dem Tag, an dem tatsächlich noch etwas zu
+  sichern ist. Wahlweise (Vorgabe: an, wirkt nur solange die automatische
+  Sicherung insgesamt aktiv ist) zusätzlich dieselbe tägliche Sicherung
+  noch einmal nach `Dokumente/INGA Backups` – leichter zu finden/
+  mitzunehmen als der interne Programmdaten-Ordner. Dazu unter
+  **Wartung**: wöchentliches automatisches Nachladen fehlender Cover im
+  Hintergrund sowie automatische Updates (prüft 10 Sekunden nach dem
+  Start und danach alle paar Stunden beim GitHub-Repository nach, fragt
+  vor jedem Download nach – siehe „Automatische Updates“ unten). Alle
+  drei einzeln abschaltbar.
 - **Experimentell ⚠️**: deutlich gekennzeichnet, standardmäßig aus.
   Direkter Zugriff auf die echte, live verwendete Perpustakaan-Datenbank
   (Apache Derby) statt nur auf Zip-Sicherungen – „Jetzt aus Perpustakaan
@@ -517,12 +522,21 @@ neuere Version veröffentlicht wurde (`electron-updater`, `package.json`
 „build.publish“) – der Build lädt dabei NICHTS automatisch hoch
 (`--publish never` in den `dist:*`-Skripten), das GitHub-Release entsteht
 weiterhin ausschließlich über den bestehenden `release`-Job in
-`build.yml`. Unter Windows lädt ein bestätigtes Update automatisch
-herunter und bietet danach einen Neustart an; unter macOS/Linux öffnet
-sich stattdessen die Release-Seite im Browser (INGA ist nicht
-code-signiert – ohne Signatur kann macOS ein heruntergeladenes Update
-nicht zuverlässig verifizieren, und unter Linux ist INGA auf zu
-unterschiedliche Arten installierbar, um das automatisch abzudecken).
+`build.yml`. Unter Windows lädt ein bestätigtes Update automatisch im
+Hintergrund herunter; unter macOS/Linux öffnet sich stattdessen die
+Release-Seite im Browser (INGA ist nicht code-signiert – ohne echte
+Signatur kann macOS ein heruntergeladenes Update nicht zuverlässig
+verifizieren, und unter Linux ist INGA auf zu unterschiedliche Arten
+installierbar, um das automatisch abzudecken).
+
+Installiert wird NIE sofort nach dem Download, sondern erst beim
+nächsten Beenden von INGA (siehe unten „Automatische Sicherung") – davor
+immer ein eigenes, nicht überspringbares Backup
+(`INGA_vor-Update-Backup_<Zeitstempel>.zip`). Schlägt dieses Backup fehl,
+installiert INGA nicht – das Update bleibt einfach bis zum nächsten
+Beenden heruntergeladen liegen. `autoInstallOnAppQuit` ist bewusst
+abgeschaltet: electron-updater hätte sonst einen eigenen, von diesem
+Backup unabhängigen Installationsweg beim Beenden.
 
 Eine Versionsnummer mit Vorabkennzeichnung (z. B. `1.2.0-beta.1`) läuft
 automatisch über einen eigenen Beta-Update-Kanal – Installationen dieser
