@@ -42,6 +42,7 @@
     "electron": true,
     "electron-winstaller": true
   },
+  "//build.artifactName": "Dateinamen OHNE Leerzeichen: GitHub ersetzt Leerzeichen beim Hochladen durch Punkte (\"INGA.Setup.1.5.0.exe\"), latest.yml verwies aber auf \"INGA-Setup-1.5.0.exe\" – das Windows-Auto-Update lief dadurch bis 1.5.0 ins Leere (HTTP 404).",
   "build": {
     "publish": {
       "provider": "github",
@@ -192,7 +193,6 @@
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.${ext}"
-    },
-    "//artifactName": "Dateinamen OHNE Leerzeichen: GitHub ersetzt Leerzeichen beim Hochladen durch Punkte (\"INGA.Setup.1.5.0.exe\"), latest.yml verwies aber auf \"INGA-Setup-1.5.0.exe\" – das Windows-Auto-Update lief dadurch bis 1.5.0 ins Leere (HTTP 404)."
+    }
   }
 }
