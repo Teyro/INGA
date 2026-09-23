@@ -31,7 +31,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 
+// "check" ist schnell, Lesen/Schreiben der kompletten Datenbank kann auf
+// einem langsamen Schulrechner (JVM-Start, Virenscanner, große Tabellen)
+// deutlich länger dauern – bei 30 s für alles brach ein an sich
+// erfolgreicher Schreibvorgang sonst mitten drin mit "Zeitüberschreitung"
+// ab (Derby rollt die Transaktion dann zwar sauber zurück, geschrieben ist
+// aber nichts).
 const BRIDGE_TIMEOUT_MS = 30000;
+const BRIDGE_TIMEOUT_DATEN_MS = 5 * 60 * 1000;
 
 // Gemeinsamer Text für main.js (schneller Vorab-Check über
 // laufzeitVorhanden(), siehe perpustakaanLiveBereitPruefen()) UND den
@@ -129,7 +136,7 @@ function schreibeSchemaDatei(tables) {
  * kein auswertbares JSON enthält (Absturz vor dem ersten druckeJson(),
  * fehlendes Java, …), gilt der Aufruf als grundsätzlich fehlgeschlagen.
  */
-function rufeBridgeAuf(args) {
+function rufeBridgeAuf(args, zeitlimitMs = BRIDGE_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -141,8 +148,13 @@ function rufeBridgeAuf(args) {
       beendet = true;
       kind.kill();
       resolve({ ok: false, fehler: 'Zeitüberschreitung beim Zugriff auf die Perpustakaan-Datenbank.' });
-    }, BRIDGE_TIMEOUT_MS);
+    }, zeitlimitMs);
 
+    // Als Text statt Buffer-Stücke aneinanderhängen: ein Umlaut, der genau
+    // auf eine Stückgrenze fällt, käme sonst als Zeichensalat in der
+    // Fehlermeldung an.
+    kind.stdout.setEncoding('utf8');
+    kind.stderr.setEncoding('utf8');
     kind.stdout.on('data', (d) => { stdout += d; });
     kind.stderr.on('data', (d) => { stderr += d; });
     kind.on('error', (err) => {
@@ -181,7 +193,7 @@ async function pruefeZugriff(dbPfad) {
 async function dumpNachZip(dbPfad, tables, zielZip) {
   const schemaDatei = schreibeSchemaDatei(tables);
   try {
-    return await rufeBridgeAuf(['dump', dbPfad, schemaDatei, zielZip]);
+    return await rufeBridgeAuf(['dump', dbPfad, schemaDatei, zielZip], BRIDGE_TIMEOUT_DATEN_MS);
   } finally {
     fs.unlink(schemaDatei, () => {});
   }
@@ -195,7 +207,7 @@ async function dumpNachZip(dbPfad, tables, zielZip) {
  * Rollback, nichts wird halb geschrieben).
  */
 async function ladeAusZip(dbPfad, quellZip) {
-  return rufeBridgeAuf(['load', dbPfad, quellZip]);
+  return rufeBridgeAuf(['load', dbPfad, quellZip], BRIDGE_TIMEOUT_DATEN_MS);
 }
 
 module.exports = { pruefeZugriff, dumpNachZip, ladeAusZip, javaPfad, klassenpfad, setzeZusaetzlicheLaufzeitBasis, laufzeitVorhanden, LAUFZEIT_FEHLT_HINWEIS };

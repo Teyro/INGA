@@ -44,20 +44,63 @@ function aktuellePlattform() {
   return 'linux';
 }
 
-function einmalHerunterladen(url, zielDatei) {
+// Ohne jede Datenübertragung für diese Zeit gilt die Verbindung als
+// abgerissen – bis 1.5.0 hing der "Java-Laufzeit reparieren"-Assistent bei
+// einer stehengebliebenen Verbindung sonst endlos auf "Lädt herunter …".
+const LEERLAUF_ZEITLIMIT_MS = 60000;
+
+/**
+ * Lädt nach `<zielDatei>.part` und benennt erst nach VOLLSTÄNDIGEM Empfang
+ * um: ein abgebrochener Download ließ bisher eine halbe Datei unter dem
+ * endgültigen Namen liegen – holeDerbyJars() hielt ein solches
+ * unvollständiges Jar danach für "schon vorhanden" und lud es nie wieder
+ * nach, der Live-Zugriff blieb dauerhaft kaputt.
+ */
+function einmalHerunterladen(url, zielDatei, weiterleitungen = 0) {
   return new Promise((resolve, reject) => {
+    const teilDatei = `${zielDatei}.part`;
+    let erledigt = false;
+    let datei = null;
+    const fehlschlag = (err) => {
+      if (erledigt) return;
+      erledigt = true;
+      // Erst die Datei schließen, dann löschen – unter Windows lässt sich
+      // eine noch geöffnete Datei nicht entfernen.
+      const aufraeumen = () => fs.rm(teilDatei, { force: true }, () => reject(err));
+      if (datei && !datei.closed) datei.destroy();
+      if (datei && !datei.closed) datei.once('close', aufraeumen);
+      else aufraeumen();
+    };
     const anfrage = https.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        einmalHerunterladen(res.headers.location, zielDatei).then(resolve, reject);
+        res.resume();
+        erledigt = true;
+        if (weiterleitungen >= 10) { reject(new Error(`Zu viele Weiterleitungen bei ${url}`)); return; }
+        einmalHerunterladen(new URL(res.headers.location, url).toString(), zielDatei, weiterleitungen + 1).then(resolve, reject);
         return;
       }
-      if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode} bei ${url}`)); return; }
-      const datei = fs.createWriteStream(zielDatei);
+      if (res.statusCode !== 200) { res.resume(); fehlschlag(new Error(`HTTP ${res.statusCode} bei ${url}`)); return; }
+      datei = fs.createWriteStream(teilDatei);
+      res.on('error', fehlschlag);
+      res.on('aborted', () => fehlschlag(new Error(`Verbindung abgebrochen bei ${url}`)));
+      datei.on('error', fehlschlag);
+      datei.on('finish', () => {
+        datei.close((err) => {
+          if (err) { fehlschlag(err); return; }
+          if (erledigt) return;
+          try {
+            fs.renameSync(teilDatei, zielDatei);
+            erledigt = true;
+            resolve();
+          } catch (renameFehler) {
+            fehlschlag(renameFehler);
+          }
+        });
+      });
       res.pipe(datei);
-      datei.on('finish', () => datei.close(resolve));
-      datei.on('error', reject);
     });
-    anfrage.on('error', reject);
+    anfrage.setTimeout(LEERLAUF_ZEITLIMIT_MS, () => anfrage.destroy(new Error(`Zeitüberschreitung beim Herunterladen von ${url}`)));
+    anfrage.on('error', fehlschlag);
   });
 }
 
@@ -191,4 +234,4 @@ async function richteVollstaendigEin(basisOrdner, plattform = aktuellePlattform(
   return { jre, jars };
 }
 
-module.exports = { aktuellePlattform, holeJre, holeDerbyJars, richteVollstaendigEin, ADOPTIUM_ASSET, stelleSchreibrechteSicher };
+module.exports = { aktuellePlattform, holeJre, holeDerbyJars, richteVollstaendigEin, ADOPTIUM_ASSET, stelleSchreibrechteSicher, einmalHerunterladen };

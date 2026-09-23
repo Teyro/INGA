@@ -93,7 +93,7 @@ test('importZip: laufende Ausleihe (Perpustakaan "Ausleihe", Rueckgabe = Fällig
 
   const offen = db.prepare(`SELECT * FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
   assert.equal(offen.length, 1);
-  assert.equal(offen[0].MedienNi, '1352');
+  assert.equal(offen[0].MedienNi, 1352, 'Nummern werden beim Import als Zahl gespeichert (sonst Typ-Vergleichsfehler, siehe db.js istNiSpalte())');
   db.close();
 });
 
@@ -106,7 +106,7 @@ test('importZip: abgeschlossene Ausleihe (Perpustakaan "AuslHist", Rueckgabe = t
   importZip(db, zipPath);
 
   assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).get().n, 0);
-  const zeile = db.prepare(`SELECT * FROM "Ausleihe" WHERE "MedienNi" = '500'`).get();
+  const zeile = db.prepare(`SELECT * FROM "Ausleihe" WHERE "MedienNi" = 500`).get();
   assert.equal(zeile.Rueckgabe.slice(0, 10), '2026-08-27');
   db.close();
 });

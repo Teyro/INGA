@@ -29,7 +29,7 @@ const repo = require('./repo');
 const ferien = require('./ferien');
 const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
-const { heuteISO } = require('./date-utils');
+const { heuteISO, addTage } = require('./date-utils');
 const { importZip, exportZip } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync, sichereVorUpdateSync } = require('./backup');
 const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
@@ -49,12 +49,13 @@ function sichererDateiname(name) {
 }
 
 const RENDERER = path.join(__dirname, '..', 'renderer');
-const WINDOW_ICON = process.platform === 'linux' ? path.join(__dirname, '..', '..', 'build', 'icon-256.png') : undefined;
+// Aus src/renderer/img statt build/: der build/-Ordner (Installer-Symbole)
+// landet laut package.json "files" gar nicht im fertigen Programmpaket –
+// bis 1.5.0 zeigten Splash und Abschiedsfenster deshalb ein kaputtes Bild
+// statt des INGA-Symbols, und das Linux-Fenstersymbol fehlte.
+const WINDOW_ICON = process.platform === 'linux' ? path.join(RENDERER, 'img', 'icon-256.png') : undefined;
 
 let mainWindow = null;
-let printWindow = null;
-let umlaufPrintWindow = null;
-let etikettenPrintWindow = null;
 let splashWindow = null;
 let abschiedFenster = null;
 let store = null;
@@ -71,6 +72,13 @@ let coverBulkLaeuft = false;
 // bei jeder erneuten (z. B. periodischen) Prüfung erneut als Dialog aufpoppt.
 let updateStatus = { status: 'unbekannt' };
 let angeboteneVersion = null;
+// Version eines FERTIG heruntergeladenen Updates, das beim nächsten
+// Beenden installiert wird (siehe bereiteBeendenVor()). Bewusst getrennt
+// von updateStatus: der ist nur die Anzeige und wurde bis 1.5.0 von der
+// 6-stündlichen Prüfung (electron-updater meldet dieselbe Version dann
+// erneut als "verfügbar") oder einem Netzwerkfehler überschrieben – die
+// Installation beim Beenden fiel damit stillschweigend aus.
+let heruntergeladeneVersion = null;
 // EXPERIMENTELL (siehe perpustakaan-live.js): Zustand für die Statusanzeige
 // in den Einstellungen. `bereit` entscheidet NICHT allein über einen
 // tatsächlichen Zugriff – "Jetzt lesen"/"Jetzt schreiben" prüfen bei jedem
@@ -288,11 +296,25 @@ function createAbschiedFenster() {
     ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
     webPreferences: { sandbox: true, preload: STATUS_PRELOAD },
   });
-  abschiedFenster.loadFile(path.join(RENDERER, 'abschied.html'));
+  const fenster = abschiedFenster;
+  // Die Sicherungen danach laufen synchron und blockieren den Hauptprozess
+  // – ohne dieses kurze Warten konnte das Fenster seinen Inhalt gar nicht
+  // erst laden und blieb für die ganze Sicherung eine leere Fläche. Obergrenze
+  // 1,5 s, damit ein hängendes Laden das Beenden nie aufhält.
+  return new Promise((resolve) => {
+    const zeitlimit = setTimeout(resolve, 1500);
+    fenster.webContents.once('did-finish-load', () => {
+      clearTimeout(zeitlimit);
+      setTimeout(resolve, 150); // ein, zwei Frames zum Zeichnen
+    });
+    fenster.loadFile(path.join(RENDERER, 'abschied.html')).catch(() => {});
+  });
 }
 
-function abschiedStatus(text) {
+/** Statuszeile im Abschiedsfenster setzen UND kurz Luft lassen, damit sie vor der nächsten (synchronen, blockierenden) Sicherung auch wirklich gezeichnet wird. */
+async function abschiedStatus(text) {
   if (abschiedFenster && !abschiedFenster.isDestroyed()) abschiedFenster.webContents.send('fenster:status', text);
+  await new Promise((resolve) => setTimeout(resolve, 80));
 }
 
 function closeAbschiedFenster() {
@@ -467,8 +489,14 @@ async function downloadCoverForKatalog(katalogNiRoh) {
   try {
     const ergebnis = await coverFuerIsbnLaden(isbn, { titel: katalog?.Titel, autor: katalog?.Autor });
     if (!ergebnis.ok) return ergebnis;
-    const dateiname = `${katalogNi}.jpg`;
+    // Endung nach dem tatsächlichen Bildformat (siehe cover-quellen.js
+    // bildEndung) – ein PNG unter ".jpg" bekäme sonst den falschen MIME-Typ.
+    const dateiname = `${katalogNi}.${ergebnis.endung || 'jpg'}`;
     await fs.writeFile(path.join(coversDir, dateiname), ergebnis.buf);
+    const bisher = repo.coverInfo(db, katalogNi);
+    if (bisher && bisher.dateiname !== dateiname) {
+      await fs.unlink(path.join(coversDir, path.basename(bisher.dateiname))).catch(() => {});
+    }
     repo.setCover(db, katalogNi, dateiname, ergebnis.quelle);
     return { ok: true, quelle: ergebnis.quelleName };
   } catch (err) {
@@ -605,15 +633,15 @@ async function bereiteBeendenVor() {
     // nachgeholt werden, statt erst am nächsten.
     const dokumenteBackupDir = path.join(app.getPath('documents'), 'INGA Backups');
     const brauchtDokumenteBackup = Boolean(db && dbFile) && s.autoBackupAktiv !== false && s.dokumenteBackupAktiv && !backupHeuteVorhanden(dokumenteBackupDir, 'dokumente');
-    const brauchtUpdateInstall = updateStatus.status === 'bereit';
+    const brauchtUpdateInstall = Boolean(heruntergeladeneVersion);
 
     if (!brauchtTagesBackup && !brauchtDokumenteBackup && !brauchtUpdateInstall) {
       wirklichBeenden();
       return;
     }
 
-    createAbschiedFenster();
-    abschiedStatus('Ich sichere noch kurz deine Daten …');
+    await createAbschiedFenster();
+    await abschiedStatus('Ich sichere noch kurz deine Daten …');
 
     if (brauchtTagesBackup) {
       sichereDatenbankSync(db, dbFile, backupDir, { grund: 'ende' });
@@ -622,16 +650,24 @@ async function bereiteBeendenVor() {
     if (brauchtDokumenteBackup) dokumenteBackupFallsFaelligSync();
 
     if (brauchtUpdateInstall) {
-      abschiedStatus('Sichere ein zusätzliches Backup vor dem Update …');
+      await abschiedStatus('Sichere ein zusätzliches Backup vor dem Update …');
       const erfolg = db && backupDir ? sichereVorUpdateSync(db, backupDir, exportZip) : null;
       if (erfolg) {
-        abschiedStatus('Installiere Update …');
+        await abschiedStatus('Installiere Update …');
         // Store/DB VOR quitAndInstall() sauber wegschreiben (wie
         // wirklichBeenden(), aber ohne dessen app.exit() – quitAndInstall()
         // kümmert sich selbst ums Beenden, löst erneut 'before-quit' aus,
         // siehe dort).
         try { store?.flushAllSync(); } catch (err) { console.error('[beenden] Einstellungen konnten nicht gespeichert werden:', err.message); }
         try { db?.close(); } catch (err) { console.error('[beenden] Datenbank konnte nicht sauber geschlossen werden:', err.message); }
+        // Sicherheitsnetz: kann electron-updater die Installation doch
+        // nicht anstoßen (z. B. heruntergeladene Datei inzwischen weg),
+        // meldet es nur einen Fehler und beendet INGA NICHT – INGA hinge
+        // dann mit geschlossener Datenbank und stehengebliebenem
+        // Abschiedsfenster und blockierte als unsichtbarer Prozess sogar
+        // den nächsten Start (Einzelinstanz-Sperre). Im Normalfall ist
+        // INGA lange vor Ablauf dieser Frist beendet.
+        setTimeout(() => app.exit(0), 15000);
         autoUpdater.quitAndInstall();
         return;
       }
@@ -684,6 +720,13 @@ function wireAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('error', (err) => {
+    // Ein fertig heruntergeladenes Update bleibt installierbereit – eine
+    // spätere Fehlermeldung (z. B. keine Verbindung bei einer weiteren
+    // Prüfung) darf das nicht aus der Anzeige verdrängen.
+    if (heruntergeladeneVersion) {
+      console.error('[update]', err.message);
+      return;
+    }
     setzeUpdateStatus({ status: 'fehler', fehler: err.message });
   });
 
@@ -711,9 +754,12 @@ function wireAutoUpdater() {
     });
     if (response !== 0) return;
     if (process.platform === 'win32') {
-      autoUpdater.downloadUpdate();
+      // Fehler meldet electron-updater zusätzlich über das 'error'-Ereignis
+      // (siehe oben) – das Promise hier nur abfangen, damit ein
+      // abgebrochener Download keine unbehandelte Ablehnung hinterlässt.
+      autoUpdater.downloadUpdate().catch((err) => console.error('[update] Download fehlgeschlagen:', err.message));
     } else {
-      shell.openExternal(`https://github.com/Teyro/INGA/releases/tag/v${info.version}`);
+      shell.openExternal(`https://github.com/Teyro/INGA/releases/tag/v${info.version}`).catch(() => {});
     }
   });
 
@@ -730,6 +776,7 @@ function wireAutoUpdater() {
   // Ausleihe/Rückgabe drängt. Nur ein kurzer Toast informiert, siehe
   // app.js zeichneUpdateStatus().
   autoUpdater.on('update-downloaded', (info) => {
+    heruntergeladeneVersion = info?.version || heruntergeladeneVersion || '?';
     setzeUpdateStatus({ status: 'bereit', version: info?.version });
   });
 }
@@ -751,6 +798,13 @@ async function autoUpdatePruefen(manuell = false) {
     setzeUpdateStatus({ status: 'entwicklung' });
     return updateStatus;
   }
+  // Schon heruntergeladen: keine erneute Prüfung – electron-updater meldete
+  // dieselbe Version sonst noch einmal als "verfügbar" und die Anzeige
+  // fiele von "wird beim Beenden installiert" auf "verfügbar" zurück.
+  if (heruntergeladeneVersion) {
+    setzeUpdateStatus({ status: 'bereit', version: heruntergeladeneVersion });
+    return updateStatus;
+  }
   try {
     setzeUpdateStatus({ status: 'prueft' });
     await autoUpdater.checkForUpdates();
@@ -760,24 +814,39 @@ async function autoUpdatePruefen(manuell = false) {
   return updateStatus;
 }
 
-/* ------------------------------------------------------ Mahnungen drucken */
+/* ------------------------------------------------------------ Druckfenster */
 
-async function openMahnungPrintWindow(briefe) {
-  const s = settings();
-  const data = { briefe, settings: { ...s, os: platform.OS, ui: activeStyle } };
+// Je Art (Mahnungen, Umlaufliste, Etiketten) höchstens ein offenes
+// Druckfenster. `bereit` wird erst mit 'did-finish-load' wahr: kam eine
+// zweite Druckanfrage, während das Fenster noch lud, ging sie bis 1.5.0
+// verloren bzw. wurde nach dem Laden vom ersten Datensatz überschrieben –
+// so erschien bei "Erinnerung + Mahnung erstellen" nur eine der beiden
+// Gruppen, obwohl beide als verschickt vermerkt wurden. Jetzt gilt immer
+// die zuletzt angeforderte Seite.
+const DRUCKFENSTER = {
+  mahnung: { datei: 'print.html', titel: 'Mahnungen', breite: 900 },
+  umlauf: { datei: 'umlauf-print.html', titel: 'Im Umlauf', breite: 1100 },
+  etiketten: { datei: 'etiketten-print.html', titel: 'Etiketten', breite: 900 },
+};
+const offeneDruckfenster = new Map();
 
-  if (printWindow && !printWindow.isDestroyed()) {
-    printWindow.focus();
-    printWindow.webContents.send('print:data', data);
+function oeffneDruckfenster(art, payload) {
+  const data = { ...payload, settings: { ...settings(), os: platform.OS, ui: activeStyle } };
+  const vorhanden = offeneDruckfenster.get(art);
+  if (vorhanden && !vorhanden.win.isDestroyed()) {
+    vorhanden.win.focus();
+    if (vorhanden.bereit) vorhanden.win.webContents.send('print:data', data);
+    else vorhanden.ausstehend = data;
     return;
   }
 
-  printWindow = new BrowserWindow({
-    width: 900,
+  const { datei, titel, breite } = DRUCKFENSTER[art];
+  const win = new BrowserWindow({
+    width: breite,
     height: 820,
     minWidth: 640,
     minHeight: 480,
-    title: 'Mahnungen',
+    title: titel,
     show: false,
     ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
     ...windowChrome('print'),
@@ -788,93 +857,19 @@ async function openMahnungPrintWindow(briefe) {
       sandbox: true,
     },
   });
+  const eintrag = { win, bereit: false, ausstehend: data };
+  offeneDruckfenster.set(art, eintrag);
 
-  harden(printWindow);
-  printWindow.loadFile(path.join(RENDERER, 'print.html'));
-  printWindow.webContents.once('did-finish-load', () => {
-    printWindow.webContents.send('print:data', data);
-    printWindow.show();
+  harden(win);
+  win.loadFile(path.join(RENDERER, datei));
+  win.webContents.once('did-finish-load', () => {
+    eintrag.bereit = true;
+    win.webContents.send('print:data', eintrag.ausstehend);
+    eintrag.ausstehend = null;
+    win.show();
   });
-  printWindow.on('closed', () => {
-    printWindow = null;
-  });
-}
-
-/* ---------------------------------------------------------- Umlaufliste drucken */
-
-async function openUmlaufPrintWindow(payload) {
-  const s = settings();
-  const data = { ...payload, settings: { ...s, os: platform.OS, ui: activeStyle } };
-
-  if (umlaufPrintWindow && !umlaufPrintWindow.isDestroyed()) {
-    umlaufPrintWindow.focus();
-    umlaufPrintWindow.webContents.send('print:data', data);
-    return;
-  }
-
-  umlaufPrintWindow = new BrowserWindow({
-    width: 1100,
-    height: 820,
-    minWidth: 640,
-    minHeight: 480,
-    title: 'Im Umlauf',
-    show: false,
-    ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
-    ...windowChrome('print'),
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-
-  harden(umlaufPrintWindow);
-  umlaufPrintWindow.loadFile(path.join(RENDERER, 'umlauf-print.html'));
-  umlaufPrintWindow.webContents.once('did-finish-load', () => {
-    umlaufPrintWindow.webContents.send('print:data', data);
-    umlaufPrintWindow.show();
-  });
-  umlaufPrintWindow.on('closed', () => {
-    umlaufPrintWindow = null;
-  });
-}
-
-async function openEtikettenPrintWindow(payload) {
-  const s = settings();
-  const data = { ...payload, settings: { ...s, os: platform.OS, ui: activeStyle } };
-
-  if (etikettenPrintWindow && !etikettenPrintWindow.isDestroyed()) {
-    etikettenPrintWindow.focus();
-    etikettenPrintWindow.webContents.send('print:data', data);
-    return;
-  }
-
-  etikettenPrintWindow = new BrowserWindow({
-    width: 900,
-    height: 820,
-    minWidth: 640,
-    minHeight: 480,
-    title: 'Etiketten',
-    show: false,
-    ...(WINDOW_ICON ? { icon: WINDOW_ICON } : {}),
-    ...windowChrome('print'),
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-
-  harden(etikettenPrintWindow);
-  etikettenPrintWindow.loadFile(path.join(RENDERER, 'etiketten-print.html'));
-  etikettenPrintWindow.webContents.once('did-finish-load', () => {
-    etikettenPrintWindow.webContents.send('print:data', data);
-    etikettenPrintWindow.show();
-  });
-  etikettenPrintWindow.on('closed', () => {
-    etikettenPrintWindow = null;
+  win.on('closed', () => {
+    if (offeneDruckfenster.get(art) === eintrag) offeneDruckfenster.delete(art);
   });
 }
 
@@ -893,14 +888,46 @@ async function openEtikettenPrintWindow(payload) {
  * die neu eingespielte Datei angewendet werden.
  */
 async function einspielenUndNeustarten(quelle) {
+  // Nur echte SQLite-Datenbanken (Dateikopf "SQLite format 3") – eine
+  // versehentlich gewählte andere Datei hätte die laufende Datenbank sonst
+  // durch etwas Unbrauchbares ersetzt.
+  const kopf = Buffer.alloc(16);
+  const datei = await fs.open(quelle, 'r');
+  try {
+    await datei.read(kopf, 0, 16, 0);
+  } finally {
+    await datei.close();
+  }
+  if (kopf.toString('latin1') !== 'SQLite format 3\u0000') {
+    throw new Error('Die gewählte Datei ist keine INGA-Datenbanksicherung (.sqlite3).');
+  }
+
   const tmp = `${dbFile}.einspielen-tmp`;
   await fs.copyFile(quelle, tmp);
-  sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-einspielen' });
+  // Die Sicherung des aktuellen Stands MUSS klappen, bevor er
+  // überschrieben wird – sie ist die einzige Rückfallmöglichkeit, falls
+  // die falsche Sicherung gewählt wurde (bis 1.5.0 wurde ihr Ergebnis
+  // nicht geprüft).
+  if (!sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-einspielen' })) {
+    await fs.unlink(tmp).catch(() => {});
+    throw new Error('Der aktuelle Stand ließ sich vorher nicht sichern – aus Sicherheitsgründen wurde nichts eingespielt. Bitte Speicherplatz und Schreibrechte prüfen.');
+  }
   db.close();
-  await fs.rename(tmp, dbFile);
+  try {
+    await fs.rename(tmp, dbFile);
+  } catch (err) {
+    // Die bisherige Datenbankdatei ist dann noch unverändert – wieder
+    // öffnen, damit INGA ohne Neustart normal weiterarbeiten kann.
+    await fs.unlink(tmp).catch(() => {});
+    db = openDatabase(path.dirname(dbFile));
+    throw err;
+  }
   for (const suffix of ['-wal', '-shm', '-journal']) {
     await fs.unlink(`${dbFile}${suffix}`).catch(() => {});
   }
+  // app.exit() umgeht 'before-quit' – die (verzögert geschriebenen)
+  // Einstellungen deshalb hier selbst sichern, wie in wirklichBeenden().
+  try { store?.flushAllSync(); } catch (err) { console.error('[einspielen] Einstellungen konnten nicht gespeichert werden:', err.message); }
   app.relaunch();
   app.exit(0);
 }
@@ -915,7 +942,10 @@ function registerIpc() {
   ipcMain.handle('katalog:ueberfaellige-ni', () => repo.katalogNiMitUeberfaelligemExemplar(db, settings()));
   ipcMain.handle('katalog:get', (_e, katalogNi) => repo.getKatalog(db, katalogNi));
   ipcMain.handle('katalog:save', sicher((_e, row) => repo.saveKatalog(db, row)));
-  ipcMain.handle('katalog:delete', sicher((_e, katalogNi) => repo.deleteKatalog(db, katalogNi)));
+  ipcMain.handle('katalog:delete', sicher(async (_e, katalogNi) => {
+    const { coverDatei } = repo.deleteKatalog(db, katalogNi);
+    if (coverDatei) await fs.unlink(path.join(coversDir, path.basename(coverDatei))).catch(() => {});
+  }));
   ipcMain.handle('katalog:exemplare', (_e, katalogNi) => repo.exemplareFuer(db, katalogNi));
   ipcMain.handle('katalog:exemplare-mit-status', (_e, katalogNi) => repo.exemplareMitStatusFuer(db, katalogNi));
   ipcMain.handle('katalog:exemplare-mit-ausleihe', (_e, katalogNi) => repo.exemplareMitAusleiheInfoFuer(db, katalogNi, settings()));
@@ -974,19 +1004,16 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
-  ipcMain.handle('ausleihe:verschieben-alle', (_e, tage) => {
-    const anzahl = repo.verschiebeOffeneAusleihen(db, tage);
-    return { anzahl };
-  });
+  ipcMain.handle('ausleihe:verschieben-alle', sicher((_e, tage) => ({ anzahl: repo.verschiebeOffeneAusleihen(db, tage) })));
   ipcMain.handle('ausleihe:umlaufliste', () => repo.umlaufliste(db, settings()));
 
   ipcMain.handle('umlauf:drucken', async (_e, payload) => {
-    await openUmlaufPrintWindow(payload);
+    oeffneDruckfenster('umlauf', payload);
     return { ok: true };
   });
 
   ipcMain.handle('etiketten:drucken', async (_e, payload) => {
-    await openEtikettenPrintWindow(payload);
+    oeffneDruckfenster('etiketten', payload);
     return { ok: true };
   });
 
@@ -1019,43 +1046,56 @@ function registerIpc() {
   ipcMain.handle('mahnung:ueberfaellige', () => repo.ueberfaelligeMitStufe(db, settings()));
   ipcMain.handle('mahnung:rueckstandsliste', (_e, schwelleTage) => repo.rueckstandsliste(db, settings(), schwelleTage));
   /**
-   * Erstellt für die ausgewählten Positionen EINE der beiden Stufen –
-   * bewusst von der Kollegin am Knopf gewählt ("Erinnerung erstellen" /
-   * "Mahnung erstellen", Abschnitt 5.2), nicht mehr automatisch pro Fall
-   * bestimmt. Alle Positionen bekommen dieselbe Stufe, gruppiert wie bisher
-   * zu einem Schreiben je Kind. Protokolliert je Fall, welche Stufe verschickt
-   * wurde (repo.mahnungEintragen/IngaStufe) – Grundlage für die
+   * Erstellt die Schreiben für die ausgewählten Positionen – je Gruppe
+   * EINE der beiden Stufen, bewusst von der Kollegin am Knopf gewählt
+   * ("Erinnerung erstellen" / "Mahnung erstellen", Abschnitt 5.2), nicht
+   * mehr automatisch pro Fall bestimmt; "Erinnerung + Mahnung erstellen"
+   * schickt beide Gruppen in EINEM Aufruf (bis 1.5.0 zwei Aufrufe
+   * nacheinander, der zweite verdrängte den ersten im Druckfenster). Je
+   * Gruppe ein Schreiben je Kind. Protokolliert je Fall, welche Stufe
+   * verschickt wurde (repo.mahnungEintragen/IngaStufe) – Grundlage für die
    * "Erinnerung am …"-Anzeige in der Rückstandsliste.
    */
-  ipcMain.handle('mahnung:erzeugen-und-drucken', async (_e, { positionen, stufeIndex }) => {
+  ipcMain.handle('mahnung:erzeugen-und-drucken', sicher(async (_e, anfrage) => {
     const s = settings();
-    const stufe = s.mahnstufen[stufeIndex] || s.mahnstufen[0] || { text: 'Mahnung', briefText: '' };
-    const nachLeser = new Map();
-    for (const p of positionen) {
-      const gebuehr = repo.berechneMahngebuehr(p.tageUeberfaellig, s);
-      repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr, stufe: stufeIndex + 1 });
-      const position = { ...p, gebuehr, stufe, stufeIndex };
-      if (!nachLeser.has(p.LeserNi)) nachLeser.set(p.LeserNi, { leser: repo.getLeser(db, p.LeserNi), posten: [] });
-      nachLeser.get(p.LeserNi).posten.push(position);
-    }
-    const briefe = [...nachLeser.values()].map(({ leser, posten }) => ({
-      leser,
-      posten,
-      summe: posten.reduce((sum, p) => sum + Number(p.gebuehr || 0), 0),
-      mahngebuehrenAktiv: s.mahngebuehrenAktiv,
-      absenderName: s.absenderName,
-      absenderAdresse: s.absenderAdresse,
-      absenderEmail: s.absenderEmail,
-      absenderTelefon: s.absenderTelefon,
-      mahnBetreffVorlage: s.mahnBetreffVorlage,
-      mahnSchluss: s.mahnSchluss,
-      mahnLogoDataUrl: s.mahnLogoDataUrl,
-      bibliotheksName: s.bibliotheksName,
-      datum: new Date().toLocaleDateString('de-DE'),
-    }));
-    await openMahnungPrintWindow(briefe);
+    const gruppen = Array.isArray(anfrage?.gruppen) ? anfrage.gruppen : [{ positionen: anfrage?.positionen, stufeIndex: anfrage?.stufeIndex }];
+    const datum = new Date().toLocaleDateString('de-DE');
+    const briefe = [];
+    db.transaction(() => {
+      for (const { positionen, stufeIndex: stufeIndexRoh } of gruppen) {
+        if (!Array.isArray(positionen) || !positionen.length) continue;
+        const stufeIndex = stufeIndexRoh === 1 ? 1 : 0;
+        const stufe = s.mahnstufen[stufeIndex] || s.mahnstufen[0] || { text: 'Mahnung', briefText: '' };
+        const nachLeser = new Map();
+        for (const p of positionen) {
+          const gebuehr = repo.berechneMahngebuehr(p.tageUeberfaellig, s);
+          repo.mahnungEintragen(db, { medienNi: p.MedienNi, leserNi: p.LeserNi, auslDatum: p.AuslDatum, gebuehr, stufe: stufeIndex + 1 });
+          const schluessel = String(p.LeserNi);
+          if (!nachLeser.has(schluessel)) nachLeser.set(schluessel, { leser: repo.getLeser(db, p.LeserNi), posten: [] });
+          nachLeser.get(schluessel).posten.push({ ...p, gebuehr, stufe, stufeIndex });
+        }
+        for (const { leser, posten } of nachLeser.values()) {
+          briefe.push({
+            leser,
+            posten,
+            summe: posten.reduce((sum, p) => sum + Number(p.gebuehr || 0), 0),
+            mahngebuehrenAktiv: s.mahngebuehrenAktiv,
+            absenderName: s.absenderName,
+            absenderAdresse: s.absenderAdresse,
+            absenderEmail: s.absenderEmail,
+            absenderTelefon: s.absenderTelefon,
+            mahnBetreffVorlage: s.mahnBetreffVorlage,
+            mahnSchluss: s.mahnSchluss,
+            mahnLogoDataUrl: s.mahnLogoDataUrl,
+            bibliotheksName: s.bibliotheksName,
+            datum,
+          });
+        }
+      }
+    })();
+    if (briefe.length) oeffneDruckfenster('mahnung', { briefe });
     return { anzahl: briefe.length };
-  });
+  }));
 
   /**
    * "Probe-Mahnung drucken" im Mahnstufen-Editor (Einstellungen): exakt
@@ -1070,13 +1110,14 @@ function registerIpc() {
     const s = settings();
     const stufe = s.mahnstufen[stufeIndex] || s.mahnstufen[0] || { text: 'Mahnung', briefText: '' };
     const heute = new Date();
-    const faelligkeit = new Date(heute.getTime() - (stufe.tageUeberfaellig || 7) * 86400000);
-    const gebuehr = repo.berechneMahngebuehr(stufe.tageUeberfaellig || 7, s);
+    const tageUeberfaellig = stufe.tageUeberfaellig || 7;
+    const faelligAm = addTage(heuteISO(), -tageUeberfaellig);
+    const gebuehr = repo.berechneMahngebuehr(tageUeberfaellig, s);
     const posten = [{
       Titel: 'Beispielbuch – Die Reise zum Mond',
-      AuslDatum: new Date(faelligkeit.getTime() - (s.leihfristTage || 7) * 86400000).toISOString().slice(0, 10),
-      faelligAm: faelligkeit.toISOString().slice(0, 10),
-      tageUeberfaellig: stufe.tageUeberfaellig || 7,
+      AuslDatum: addTage(faelligAm, -(s.leihfristTage || 7)),
+      faelligAm,
+      tageUeberfaellig,
       gebuehr,
       stufe,
       stufeIndex,
@@ -1097,7 +1138,7 @@ function registerIpc() {
       datum: heute.toLocaleDateString('de-DE'),
       probe: true,
     };
-    await openMahnungPrintWindow([brief]);
+    oeffneDruckfenster('mahnung', { briefe: [brief] });
     return { ok: true };
   }));
 

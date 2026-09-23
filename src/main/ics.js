@@ -57,7 +57,10 @@ function parseIcs(text) {
     } else if (schluessel === 'DTSTART') {
       aktuelles.start = parseIcsDatum(wert);
     } else if (schluessel === 'DTEND') {
-      aktuelles.endeExklusiv = parseIcsDatum(wert);
+      aktuelles.ende = parseIcsDatum(wert);
+      // Nur ein reines Datum (oder exakt Mitternacht) ist exklusiv gemeint;
+      // ein Termin mit Uhrzeit (z. B. 08:00–13:00) endet an genau diesem Tag.
+      aktuelles.endeExklusiv = !/T(?!000000)\d{6}/.test(wert);
     }
   }
   return termine
@@ -68,8 +71,17 @@ function parseIcs(text) {
       // DTEND ist bei ganztägigen ICS-Terminen exklusiv (der Termin endet AM
       // DTEND-Tag um 00:00, nicht an dessen Ende) – ohne eigenes DTEND gilt
       // der Termin nur am Starttag.
-      enddatum: t.endeExklusiv ? addTage(t.endeExklusiv, -1) : t.start,
+      // Nie vor dem Start – ein eintägiger Termin mit Uhrzeit ergab sonst
+      // ein Ende VOR dem Beginn, und die Validierung ließ den ganzen
+      // Import scheitern.
+      enddatum: endeFuer(t),
     }));
+}
+
+function endeFuer(t) {
+  if (!t.ende) return t.start;
+  const ende = t.endeExklusiv ? addTage(t.ende, -1) : t.ende;
+  return ende < t.start ? t.start : ende;
 }
 
 module.exports = { parseIcs };

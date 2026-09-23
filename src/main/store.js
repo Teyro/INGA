@@ -270,6 +270,19 @@ const HEX_FARBE_SCHLUESSEL = new Set(['accent', 'titelleisteEigeneFarbe']);
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const ZAHL_GRENZEN = {
+  fontScale: [50, 250],
+  leihfristTage: [1, 365],
+  maxVerlaengerung: [0, 99],
+  verlaengerungDauerTage: [1, 365],
+  leihfristOffsetTage: [-365, 365],
+  ausleihLimit: [0, 999],
+  sperreDauerTage: [1, 3650],
+  mahnGebuehrProTag: [0, 100],
+  mahnGebuehrMax: [0, 1000],
+  mahnKarenztage: [0, 365],
+};
+
 function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
   const clean = {};
   if (!next || typeof next !== 'object') return clean;
@@ -322,7 +335,11 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
     }
     if (typeof fallback === 'number') {
       const number = Number(value);
-      clean[key] = Number.isFinite(number) ? number : previous;
+      if (!Number.isFinite(number)) { clean[key] = previous; continue; }
+      // Plausible Grenzen: ein vertipptes Minus (-7 Tage Leihfrist) ergab
+      // bis 1.5.0 Fälligkeiten VOR dem Ausleihtag.
+      const grenzen = ZAHL_GRENZEN[key];
+      clean[key] = grenzen ? clamp(number, grenzen[0], grenzen[1]) : number;
       continue;
     }
     if (typeof value !== 'string') {

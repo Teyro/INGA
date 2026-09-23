@@ -138,9 +138,22 @@ function aktualisiereUhr() {
   uhrEl.className = `uhr ${uhrFarbKlasse(jetzt.getHours(), jetzt.getMinutes())}`.trim();
 }
 
+let uhrTag = new Date().toDateString();
+
 function wireUhr() {
   aktualisiereUhr();
-  setInterval(aktualisiereUhr, 1000);
+  setInterval(() => {
+    aktualisiereUhr();
+    // "Titelleiste nach Wochentag": bei durchlaufendem Programm färbte sie
+    // sich um Mitternacht nicht um. Ein leerer Einstellungs-Patch lässt den
+    // Hauptprozess Fenster (inkl. Windows-Fensterknopffarbe) und Oberfläche
+    // neu einfärben.
+    const tag = new Date().toDateString();
+    if (tag !== uhrTag) {
+      uhrTag = tag;
+      if (state.settings?.titelleisteModus === 'wochentag') api.settings.save({}).catch(() => {});
+    }
+  }, 1000);
 }
 
 function applyChrome(data) {
@@ -198,6 +211,10 @@ function showView(name) {
   else if (name === 'statistik') loadStatistik();
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
+  // Scanner tippen einfach "blind" los – ohne Fokus im Eingabefeld ging
+  // der erste Scan nach dem Wechsel in die Ansicht ins Leere.
+  if (name === 'ausleihe') document.getElementById('ausleihe-etikett').focus();
+  else if (name === 'rueckgabe') document.getElementById('rueckgabe-suche').focus();
 }
 
 /** Aktualisiert Kennzahlen und Zähler in Kopfleiste/Sidebar; liefert die Liste aller überfälligen Ausleihen zurück. */
@@ -411,6 +428,11 @@ function openSheet({ title, fields, values, onSave, onDelete, extra, before, wid
       ]);
     } else if (f.type === 'textarea') {
       input = el('textarea', { id: `f-${f.name}`, rows: 3, value });
+    } else if (f.type === 'date') {
+      // Perpustakaan speichert Datumsfelder als "2026-07-31 00:00:00.000" –
+      // das versteht <input type="date"> nicht, das Feld blieb leer und das
+      // nächste Speichern löschte den Wert (bis 1.5.0).
+      input = el('input', { id: `f-${f.name}`, type: 'date', value: String(value).slice(0, 10) });
     } else {
       input = el('input', { id: `f-${f.name}`, type: f.type || 'text', value });
     }
@@ -427,7 +449,12 @@ function readSheetValues() {
   const out = {};
   for (const f of sheetState.fields) {
     const node = document.getElementById(`f-${f.name}`);
-    out[f.name] = node.value === '' ? null : node.value;
+    if (node.value === '') out[f.name] = null;
+    // Zurück ins Perpustakaan-Format (ein Derby-TIMESTAMP-Feld nimmt ein
+    // reines Datum beim Zurückschreiben nicht an) – nur für Perpustakaan-
+    // Felder (zeitstempel: true), INGA-eigene wie die Ferien bleiben reine Daten.
+    else if (f.type === 'date' && f.zeitstempel) out[f.name] = `${node.value} 00:00:00.000`;
+    else out[f.name] = node.value;
   }
   return out;
 }
@@ -457,7 +484,8 @@ function closeSheet() {
  * behandeln. Number(...) macht den Vergleich unabhängig von der Herkunft.
  */
 function medArtIstVerborgen(m) {
-  return Number(m?.verbergen) === 1;
+  // Echte Perpustakaan-Sicherungen tragen hier "true"/"false" ein.
+  return Number(m?.verbergen) === 1 || String(m?.verbergen).toLowerCase() === 'true';
 }
 
 function medArtOptions({ mitAuchKb } = {}) {
@@ -1341,7 +1369,7 @@ async function openLeserSheet(row) {
     { name: 'LeserGruNi', label: 'Nutzergruppe', type: 'select', options: leserGruppOptions() },
     { name: 'emailPriv', label: 'E-Mail', type: 'email' },
     { name: 'FonPrivat', label: 'Telefon' },
-    { name: 'AusleihBis', label: 'Ausleihberechtigt bis', type: 'date' },
+    { name: 'AusleihBis', label: 'Ausleihberechtigt bis', type: 'date', zeitstempel: true },
     { name: 'Notizen', label: 'Notizen', type: 'textarea' },
   ];
 
@@ -2019,12 +2047,15 @@ function zeigeMahnungVorschau(gruppen) {
   document.getElementById('mahnung-vorschau-backdrop').hidden = false;
   document.getElementById('mahnung-vorschau-weiter').onclick = async () => {
     schliesseMahnungVorschau();
-    let erzeugt = 0;
-    for (const g of belegt) {
-      const result = await api.mahnung.erzeugenUndDrucken(g.positionen, g.stufeIndex);
-      erzeugt += result.anzahl;
+    try {
+      // Alle Gruppen in EINEM Aufruf: bei zwei Aufrufen hintereinander
+      // verdrängte die zweite Gruppe die erste im Druckfenster, obwohl
+      // beide als verschickt vermerkt wurden.
+      const result = await api.mahnung.erzeugenUndDrucken(belegt.map((g) => ({ positionen: g.positionen, stufeIndex: g.stufeIndex })));
+      toast(`${result.anzahl} Schreiben erzeugt.`);
+    } catch (err) {
+      toast(err.message || String(err), 'error');
     }
-    toast(`${erzeugt} Schreiben erzeugt.`);
     await loadMahnungen();
     await refreshKennzahlen();
   };
@@ -2062,7 +2093,6 @@ function wireUmlauf() {
   document.getElementById('umlauf-csv').addEventListener('click', () => umlaufExport('csv'));
   document.getElementById('umlauf-xlsx').addEventListener('click', () => umlaufExport('xlsx'));
   document.getElementById('umlauf-drucken').addEventListener('click', umlaufDrucken);
-  document.getElementById('mahnungen-im-umlauf').addEventListener('click', () => showView('umlauf'));
 }
 
 async function loadUmlauf() {
@@ -2510,8 +2540,12 @@ function wireEinstellungen() {
     const tage = Number(document.getElementById('fristverschiebung-tage').value) || 0;
     if (!tage) { toast('Bitte eine Anzahl Tage ungleich 0 angeben.', 'error'); return; }
     if (!confirm(`Wirklich das Ausleihdatum aller offenen Ausleihen um ${tage} Tage verschieben? Das lässt sich nicht rückgängig machen.`)) return;
-    const result = await api.ausleihe.verschiebenAlle(tage);
-    toast(`${result.anzahl} offene Ausleihe(n) verschoben.`);
+    try {
+      const result = await api.ausleihe.verschiebenAlle(tage);
+      toast(`${result.anzahl} offene Ausleihe(n) verschoben.`);
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    }
     await refreshKennzahlen();
   });
 
@@ -2577,7 +2611,12 @@ function wirePerpustakaanLive() {
     btn.disabled = true;
     try {
       const result = await api.perpustakaanLive.jetztLesen();
-      if (result.ok) { toast('Aus Perpustakaan gelesen.'); await refreshKennzahlen(); }
+      if (result.ok) {
+        toast('Aus Perpustakaan gelesen.');
+        state.stammdaten = await api.stammdaten.get();
+        await fuelleAlleFilter();
+        await refreshKennzahlen();
+      }
       else toast(result.gesperrt ? result.fehler : `Fehlgeschlagen: ${result.fehler || 'unbekannter Fehler'}`, 'error');
     } finally {
       btn.disabled = false;
@@ -2955,8 +2994,16 @@ function renderMahnstufen() {
   );
   box.appendChild(tabs);
 
-  arr.forEach((stufe, i) => {
+  arr.forEach((stufeBeimZeichnen, i) => {
     if (i !== mahnstufenAktiverTab) return; // nur die aktive Stufe zeigen – beide untereinander war unübersichtlich
+    // Jedes Speichern ersetzt state.settings durch ein frisches Objekt aus
+    // dem Hauptprozess. Hielten die Handler unten das beim Zeichnen
+    // gültige Stufen-Objekt fest (bis 1.5.0), landeten alle Änderungen nach
+    // dem ersten Speichern in einer veralteten Kopie – und das nächste
+    // Speichern schickte den ALTEN Text, die Änderung war stillschweigend
+    // weg. Deshalb bei jedem Zugriff die aktuelle Stufe nachschlagen.
+    const stufeAktuell = () => state.settings.mahnstufen[i] || stufeBeimZeichnen;
+    const stufe = stufeBeimZeichnen;
 
     const previewBox = el('div', { class: 'mahnstufe-preview', hidden: true, innerHTML: fuelleVorschauVorlage(stufe.briefText, stufe) });
     const previewToggle = el('button', {
@@ -2984,11 +3031,11 @@ function renderMahnstufen() {
         }
       },
     }, ['🖨️ Probe-Mahnung drucken']);
-    const aktualisierePreview = () => { previewBox.innerHTML = fuelleVorschauVorlage(stufe.briefText, stufe); };
+    const aktualisierePreview = () => { previewBox.innerHTML = fuelleVorschauVorlage(stufeAktuell().briefText, stufeAktuell()); };
 
     const editor = baueBrieftextEditor({
       inhalt: stufe.briefText || '',
-      onAendern: (html) => { stufe.briefText = html; aktualisierePreview(); },
+      onAendern: (html) => { stufeAktuell().briefText = html; aktualisierePreview(); },
     });
     const vorlagenAuswahl = el('select', {}, MAHN_VORLAGEN.map((v) => el('option', { value: v.id }, [v.label])));
     const vorlageUebernehmen = el('button', {
@@ -2998,8 +3045,8 @@ function renderMahnstufen() {
       onclick: () => {
         const vorlage = MAHN_VORLAGEN.find((v) => v.id === vorlagenAuswahl.value);
         if (!vorlage) return;
-        if (stufe.briefText?.trim() && !confirm('Aktuellen Brieftext durch die Vorlage ersetzen?')) return;
-        stufe.briefText = vorlage.text;
+        if (stufeAktuell().briefText?.trim() && !confirm('Aktuellen Brieftext durch die Vorlage ersetzen?')) return;
+        stufeAktuell().briefText = vorlage.text;
         renderMahnstufen();
         speichereEinstellungenFormular();
       },
@@ -3008,8 +3055,8 @@ function renderMahnstufen() {
     const bezeichnungFeld = el('input', {
       type: 'text', value: stufe.text, title: 'Bezeichnung', class: 'mahnstufe-text',
       onchange: (e) => {
-        stufe.text = e.target.value;
-        tabKnoepfe[i].textContent = stufe.text || (i === 0 ? 'Stufe 1' : 'Stufe 2');
+        stufeAktuell().text = e.target.value;
+        tabKnoepfe[i].textContent = stufeAktuell().text || (i === 0 ? 'Stufe 1' : 'Stufe 2');
         aktualisierePreview();
         speichereEinstellungenFormular();
       },
@@ -3024,7 +3071,7 @@ function renderMahnstufen() {
         el('div', { class: 'field-row' }, [
           el('div', { class: 'field' }, [
             el('label', {}, [i === 0 ? 'Ab wie vielen Tagen überfällig als Erinnerung vorschlagen' : 'Ab wie vielen Tagen überfällig als Mahnung vorschlagen']),
-            el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufe.tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } }),
+            el('input', { type: 'number', value: stufe.tageUeberfaellig, onchange: (e) => { stufeAktuell().tageUeberfaellig = Number(e.target.value); aktualisierePreview(); speichereEinstellungenFormular(); } }),
           ]),
         ]),
         el('div', { class: 'field' }, [
@@ -3166,11 +3213,21 @@ function wireFerien() {
     behandleFerienImportErgebnis(result);
   });
 
-  document.getElementById('ferien-ics-url').addEventListener('click', async () => {
-    const url = prompt('Adresse (URL) des ICS-Ferienkalenders:');
-    if (!url) return;
-    const result = await api.ferien.importIcsUrl(url.trim());
-    behandleFerienImportErgebnis(result);
+  // Eigenes Eingabefeld statt prompt(): Electron unterstützt prompt() nicht
+  // (wirft nur einen Fehler) – bis 1.5.0 tat dieser Knopf deshalb gar nichts.
+  document.getElementById('ferien-ics-url').addEventListener('click', () => {
+    openSheet({
+      title: 'Ferienkalender von einer Adresse importieren',
+      fields: [{ name: 'url', label: 'Adresse (URL) des ICS-Ferienkalenders', type: 'url' }],
+      values: {},
+      onSave: async ({ url }) => {
+        if (!url?.trim()) throw new Error('Bitte eine Adresse eingeben.');
+        const result = await api.ferien.importIcsUrl(url.trim());
+        if (!result.ok) throw new Error(result.error);
+        // erst schließen (onSave kehrt zurück), dann die Vorschau öffnen
+        setTimeout(() => behandleFerienImportErgebnis(result), 0);
+      },
+    });
   });
 
   const abrufBtn = document.getElementById('ferien-api-abrufen');

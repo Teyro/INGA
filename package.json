@@ -1,7 +1,7 @@
 {
   "name": "inga",
   "productName": "INGA",
-  "version": "1.5.0",
+  "version": "1.9.0",
   "description": "INGA Ist Nicht Genehmigungspflichtige Anschaffung – freie Schulbibliotheksverwaltung",
   "main": "src/main/main.js",
   "//desktopName": "Electron leitet daraus unter Linux die app_id und WM_CLASS ab; muss zum Namen der .desktop-Datei passen, sonst ordnen GNOME und KDE das laufende Fenster nicht dem Starter zu.",
@@ -137,6 +137,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -188,6 +189,10 @@
         "libuuid",
         "libsecret"
       ]
-    }
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "//artifactName": "Dateinamen OHNE Leerzeichen: GitHub ersetzt Leerzeichen beim Hochladen durch Punkte (\"INGA.Setup.1.5.0.exe\"), latest.yml verwies aber auf \"INGA-Setup-1.5.0.exe\" – das Windows-Auto-Update lief dadurch bis 1.5.0 ins Leere (HTTP 404)."
   }
 }

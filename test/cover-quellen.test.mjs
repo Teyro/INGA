@@ -9,9 +9,16 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { coverFuerIsbnLaden, duckDuckGo, qwant, COVER_QUELLEN } = require('../src/main/cover-quellen.js');
+const { coverFuerIsbnLaden, bildEndung, duckDuckGo, qwant, COVER_QUELLEN } = require('../src/main/cover-quellen.js');
 
-/** Kleiner fetch()-Mock: Handler bekommt die URL, gibt {status, json?, text?, bytes?} zurück. */
+/** Bild-Attrappe der Größe `groesse`: beginnt wie eine echte JPEG-Datei (FF D8 FF), Rest Nullen. */
+function jpegAttrappe(groesse) {
+  const bytes = new Uint8Array(groesse);
+  bytes.set([0xff, 0xd8, 0xff, 0xe0].slice(0, groesse));
+  return bytes.buffer;
+}
+
+/** Kleiner fetch()-Mock: Handler bekommt die URL, gibt {status, json?, text?, bytes?, groesse?} zurück (groesse = JPEG-Attrappe). */
 function mitGemocktemFetch(handler, fn) {
   const original = global.fetch;
   global.fetch = async (url) => {
@@ -21,7 +28,7 @@ function mitGemocktemFetch(handler, fn) {
       status: antwort.status,
       json: async () => antwort.json,
       text: async () => antwort.text ?? '',
-      arrayBuffer: async () => antwort.bytes?.buffer ?? new ArrayBuffer(antwort.groesse ?? 0),
+      arrayBuffer: async () => antwort.bytes?.buffer ?? jpegAttrappe(antwort.groesse ?? 0),
     };
   };
   return fn().finally(() => {
@@ -180,4 +187,33 @@ test('qwant(): ohne Titel/Autor dient die ISBN als Suchbegriff', async () => {
   );
   const query = decodeURIComponent(angefragteUrls[0]);
   assert.ok(query.includes('9780000000005'), `Suchbegriff sollte auf die ISBN zurückfallen: ${query}`);
+});
+
+test('bildEndung: erkennt JPEG/PNG/GIF/WebP an den ersten Bytes, lehnt alles andere ab', () => {
+  assert.equal(bildEndung(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0])), 'jpg');
+  assert.equal(bildEndung(Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.alloc(8)])), 'png');
+  assert.equal(bildEndung(Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(8)])), 'gif');
+  assert.equal(bildEndung(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(4)])), 'webp');
+  assert.equal(bildEndung(Buffer.from('<!doctype html><html><body>Zugriff verweigert</body></html>')), null);
+  assert.equal(bildEndung(null), null);
+});
+
+test('coverFuerIsbnLaden: eine HTML-Seite statt eines Bildes (Status 200) gilt als "nicht gefunden" – nächste Quelle', async () => {
+  const html = Buffer.from('<!doctype html><html><body>' + 'x'.repeat(2000) + '</body></html>');
+  await mitGemocktemFetch(
+    (url) => {
+      if (url.includes('covers.openlibrary.org')) return { status: 200, bytes: new Uint8Array(html) };
+      if (url.includes('googleapis.com/books')) {
+        return { status: 200, json: { items: [{ volumeInfo: { imageLinks: { thumbnail: 'https://books.google.com/cover.jpg' } } }] } };
+      }
+      if (url.startsWith('https://books.google.com')) return { status: 200, groesse: 3000 };
+      return { status: 404 };
+    },
+    async () => {
+      const ergebnis = await coverFuerIsbnLaden('9783551556781');
+      assert.equal(ergebnis.ok, true);
+      assert.equal(ergebnis.quelle, 'google-books');
+      assert.equal(ergebnis.endung, 'jpg');
+    }
+  );
 });

@@ -2,10 +2,15 @@
 
 /** Fachliche Datenzugriffe: Katalog, Exemplare, Leser, Ausleihe/Rückgabe, Mahnwesen. */
 
-const { upsert, nextId, quoteIdent, TABLES } = require('./db');
+const { upsert, nextId, quoteIdent, istNiSpalte, alsNiWert, TABLES } = require('./db');
 const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz, parseKalenderdatum } = require('./date-utils');
 const ferien = require('./ferien');
 const suche = require('./suche');
+
+// Nummern (KatalogNi, MedienNi, LeserNi, …) als Parameter immer als Zahl
+// binden – kommen aus der Oberfläche teils als Text (Formularfelder,
+// data-Attribute). Siehe db.js istNiSpalte() für den Hintergrund.
+const ni = alsNiWert;
 
 // todayStr/nowStamp/addDays hießen früher so und rechneten über
 // `new Date().toISOString()` – das liefert das UTC-Datum statt des lokalen
@@ -39,6 +44,19 @@ function seitenGrenzen({ seite = 1, proSeite = STANDARD_SEITENGROESSE } = {}) {
   const groesse = alle ? null : Math.min(MAX_SEITENGROESSE, Math.max(1, Math.round(Number(proSeite)) || STANDARD_SEITENGROESSE));
   const seiteNr = Math.max(1, Math.round(Number(seite)) || 1);
   return { alle, groesse, offset: alle ? 0 : (seiteNr - 1) * groesse, seite: seiteNr };
+}
+
+/**
+ * SQL-Bedingung "Exemplar ist als nicht verfügbar markiert" (Medien.NichtVfNi
+ * verweist auf einen Grund aus der Stammdaten-Tabelle Nichtverf). Echte
+ * Perpustakaan-Sicherungen tragen für ein ganz normales, verfügbares
+ * Exemplar eine 0 ein, kein leeres Feld – ein bloßes "IS NOT NULL" ließ
+ * deshalb nach einem Import JEDES Exemplar in der Verlustliste und im
+ * Katalogfilter "nicht verfügbar" auftauchen. CAST deckt Text ('0') wie
+ * Zahl (0) ab, NULL/'' ergeben keinen Treffer.
+ */
+function nichtVerfuegbarBedingung(alias) {
+  return `CAST(${alias}."NichtVfNi" AS INTEGER) != 0`;
 }
 
 /* ------------------------------------------------------------- Katalog */
@@ -80,11 +98,11 @@ function searchKatalog(
   if (klassenstufe) { bedingungen.push(`k."Klassenstu" = ?`); params.push(klassenstufe); }
   if (standortNi) {
     bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mo WHERE mo."KatalogNi" = k."KatalogNi" AND mo."StOrtNi" = ?)`);
-    params.push(standortNi);
+    params.push(ni(standortNi));
   }
   if (Array.isArray(katalogNiIn)) {
     bedingungen.push(`k."KatalogNi" IN (${katalogNiIn.map(() => '?').join(',')})`);
-    params.push(...katalogNiIn);
+    params.push(...katalogNiIn.map(ni));
   }
   if (verfuegbarkeit === 'verfuegbar') {
     bedingungen.push(`EXISTS (
@@ -100,7 +118,9 @@ function searchKatalog(
   } else if (verfuegbarkeit === 'nicht_verfuegbar') {
     // "Nicht verfügbar" (z. B. vermisst, in Reparatur – siehe Stammdaten-
     // Tabelle Nichtverf): mindestens ein Exemplar mit gesetztem NichtVfNi.
-    bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mn WHERE mn."KatalogNi" = k."KatalogNi" AND mn."NichtVfNi" IS NOT NULL)`);
+    // Perpustakaan schreibt für "verfügbar" eine 0 statt eines leeren
+    // Felds – siehe nichtVerfuegbarBedingung().
+    bedingungen.push(`EXISTS (SELECT 1 FROM "Medien" mn WHERE mn."KatalogNi" = k."KatalogNi" AND ${nichtVerfuegbarBedingung('mn')})`);
   }
   // "überfällig" hängt an der ferienbewussten Fälligkeitsberechnung (siehe
   // ueberfaelligeAusleihen) und lässt sich nicht sinnvoll ein zweites Mal in
@@ -150,19 +170,29 @@ function saveKatalog(db, row) {
  * kennzahlen()-Zählung ("offene Ausleihen") aber weiter mitgezählt, und lässt
  * sich über die Oberfläche nie mehr zurückgeben.
  */
-function deleteKatalog(db, katalogNi) {
+function deleteKatalog(db, katalogNiRoh) {
+  const katalogNi = ni(katalogNiRoh);
   const exemplare = exemplareFuer(db, katalogNi);
   if (exemplare.some((m) => exemplarStatus(db, m.MedienNi).verliehen)) {
     throw new Error('Mindestens ein Exemplar dieses Titels ist noch ausgeliehen. Bitte erst alle Exemplare zurückgeben, dann löschen.');
   }
-  db.prepare(`DELETE FROM "Medien" WHERE "KatalogNi" = ?`).run(katalogNi);
-  db.prepare(`DELETE FROM "Katalog" WHERE "KatalogNi" = ?`).run(katalogNi);
+  // Vormerkungen und Cover eines gelöschten Titels verweisen sonst ins
+  // Leere (Cover-Datei selbst löscht der Aufrufer in main.js, siehe
+  // Rückgabewert). Alles in einer Transaktion: ganz oder gar nicht.
+  const cover = coverInfo(db, katalogNi);
+  db.transaction(() => {
+    db.prepare(`DELETE FROM "Medien" WHERE "KatalogNi" = ?`).run(katalogNi);
+    db.prepare(`DELETE FROM "Vormerkung" WHERE "KatalogNi" = ?`).run(katalogNi);
+    db.prepare(`DELETE FROM inga_covers WHERE "KatalogNi" = ?`).run(katalogNi);
+    db.prepare(`DELETE FROM "Katalog" WHERE "KatalogNi" = ?`).run(katalogNi);
+  })();
+  return { coverDatei: cover?.dateiname || null };
 }
 
 /* -------------------------------------------------------------- Medien */
 
 function exemplareFuer(db, katalogNi) {
-  return db.prepare(`SELECT * FROM "Medien" WHERE "KatalogNi" = ? ORDER BY "MedienNi"`).all(katalogNi);
+  return db.prepare(`SELECT * FROM "Medien" WHERE "KatalogNi" = ? ORDER BY "MedienNi"`).all(ni(katalogNi));
 }
 
 /** Wie exemplareFuer, aber inklusive Ausleihstatus je Exemplar – ohne dafür pro Exemplar einzeln nachzufragen. */
@@ -173,7 +203,7 @@ function exemplareMitStatusFuer(db, katalogNi) {
         EXISTS(SELECT 1 FROM "Ausleihe" a WHERE a."MedienNi" = m."MedienNi" AND a."Rueckgabe" IS NULL) AS verliehen
        FROM "Medien" m WHERE m."KatalogNi" = ? ORDER BY m."MedienNi"`
     )
-    .all(katalogNi)
+    .all(ni(katalogNi))
     .map((m) => ({ ...m, verliehen: Boolean(m.verliehen) }));
 }
 
@@ -265,23 +295,26 @@ function saveMedium(db, row) {
  * überschneidenden Spalten (KatalogNi, ErfassDat, ErfassAnw) gewinnt das
  * Exemplar, genau wie im Perpustakaan-Format vorgesehen.
  */
-function deleteMedium(db, medienNi, benutzer) {
+function deleteMedium(db, medienNiRoh, benutzer) {
+  const medienNi = ni(medienNiRoh);
   if (exemplarStatus(db, medienNi).verliehen) {
     throw new Error('Dieses Exemplar ist noch ausgeliehen. Bitte erst zurückgeben, dann löschen.');
   }
   const medium = db.prepare(`SELECT * FROM "Medien" WHERE "MedienNi" = ?`).get(medienNi);
-  if (medium) {
-    const katalog = db.prepare(`SELECT * FROM "Katalog" WHERE "KatalogNi" = ?`).get(medium.KatalogNi) || {};
-    verschiebeInPapierkorb(db, 'MedienAbg', { ...katalog, ...medium }, benutzer);
-  }
-  db.prepare(`DELETE FROM "Medien" WHERE "MedienNi" = ?`).run(medienNi);
+  db.transaction(() => {
+    if (medium) {
+      const katalog = db.prepare(`SELECT * FROM "Katalog" WHERE "KatalogNi" = ?`).get(medium.KatalogNi) || {};
+      verschiebeInPapierkorb(db, 'MedienAbg', { ...katalog, ...medium }, benutzer);
+    }
+    db.prepare(`DELETE FROM "Medien" WHERE "MedienNi" = ?`).run(medienNi);
+  })();
 }
 
 /** Ist das Exemplar gerade verliehen? */
 function exemplarStatus(db, medienNi) {
   const offen = db
     .prepare(`SELECT * FROM "Ausleihe" WHERE "MedienNi" = ? AND "Rueckgabe" IS NULL`)
-    .get(medienNi);
+    .get(ni(medienNi));
   return offen ? { verliehen: true, ausleihe: offen } : { verliehen: false, ausleihe: null };
 }
 
@@ -316,12 +349,12 @@ function searchLeser(db, { query, leserGruNi, zweigId, jahrgang, aktiveAusleihen
     const like = `%${query}%`;
     params.push(like, like, like, like);
   }
-  if (leserGruNi) { bedingungen.push(`l."LeserGruNi" = ?`); params.push(leserGruNi); }
+  if (leserGruNi) { bedingungen.push(`l."LeserGruNi" = ?`); params.push(ni(leserGruNi)); }
   if (zweigId) { bedingungen.push(`l."ZweigId" = ?`); params.push(zweigId); }
   if (jahrgang) { bedingungen.push(`l."Jahrgang" = ?`); params.push(jahrgang); }
   if (Array.isArray(leserNiIn)) {
     bedingungen.push(`l."LeserNi" IN (${leserNiIn.map(() => '?').join(',')})`);
-    params.push(...leserNiIn);
+    params.push(...leserNiIn.map(ni));
   }
   const offeneAusleihenAusdruck = `(SELECT COUNT(*) FROM "Ausleihe" ao WHERE ao."LeserNi" = l."LeserNi" AND ao."Rueckgabe" IS NULL)`;
   if (aktiveAusleihen === '0') bedingungen.push(`${offeneAusleihenAusdruck} = 0`);
@@ -394,13 +427,16 @@ function saveLeser(db, row) {
  * deleteKatalog für die Begründung). Landet zuvor im Papierkorb (Tabelle
  * "LeserAbg", siehe verschiebeInPapierkorb und deleteMedium).
  */
-function deleteLeser(db, leserNi, benutzer) {
+function deleteLeser(db, leserNiRoh, benutzer) {
+  const leserNi = ni(leserNiRoh);
   if (offeneAusleihenVonLeser(db, leserNi).length) {
     throw new Error('Dieser Nutzer hat noch offene Ausleihen. Bitte erst alle Bücher zurückgeben, dann löschen.');
   }
   const leser = getLeser(db, leserNi);
-  if (leser) verschiebeInPapierkorb(db, 'LeserAbg', leser, benutzer);
-  db.prepare(`DELETE FROM "Leser" WHERE "LeserNi" = ?`).run(leserNi);
+  db.transaction(() => {
+    if (leser) verschiebeInPapierkorb(db, 'LeserAbg', leser, benutzer);
+    db.prepare(`DELETE FROM "Leser" WHERE "LeserNi" = ?`).run(leserNi);
+  })();
 }
 
 /**
@@ -463,7 +499,7 @@ function offeneAusleihenVonLeser(db, leserNi) {
        WHERE a."LeserNi" = ? AND a."Rueckgabe" IS NULL
        ORDER BY a."AuslDatum"`
     )
-    .all(leserNi);
+    .all(ni(leserNi));
 }
 
 /**
@@ -531,9 +567,18 @@ function umlaufliste(db, einstellungen) {
 
 const addDays = addTage;
 
-/** true, wenn ein aus der Datenbank gelesener Wert tatsächlich gesetzt ist (0 zählt als gesetzt, '' und NULL nicht). */
-function istGesetzt(wert) {
-  return wert !== null && wert !== undefined && wert !== '';
+/**
+ * Eigene Leih-/Verlängerungsfrist einer Medienart – nur eine positive
+ * Tageszahl zählt als gesetzt. Echte Perpustakaan-Sicherungen tragen bei
+ * "FristVerl" für JEDE Medienart eine 0 ein; bis 1.5.0 galt die als
+ * "Verlängerung um 0 Tage", "Verlängern" erhöhte dann nur den Zähler, ohne
+ * dass sich das Rückgabedatum bewegte. 0, leer und NULL bedeuten deshalb
+ * jetzt einheitlich "Vorgabe aus den Einstellungen verwenden" (so steht es
+ * auch als Platzhalter im Eingabefeld der Einstellungen).
+ */
+function medArtFrist(wert) {
+  const tage = Number(wert);
+  return Number.isFinite(tage) && tage > 0 ? tage : null;
 }
 
 /**
@@ -601,8 +646,8 @@ function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstel
   const katalog = katalogNi ? getKatalog(db, katalogNi) : null;
   const art = katalog?.MedArtKb ? db.prepare(`SELECT * FROM "MedArt" WHERE "MedArtKb" = ?`).get(katalog.MedArtKb) : null;
   const { gesamt, hinweise } = fristTageGesamt({
-    basisFristTage: istGesetzt(art?.Frist) ? art.Frist : einstellungen.leihfristTage,
-    verlaengerungFristTage: istGesetzt(art?.FristVerl) ? art.FristVerl : einstellungen.verlaengerungDauerTage,
+    basisFristTage: medArtFrist(art?.Frist) ?? einstellungen.leihfristTage,
+    verlaengerungFristTage: medArtFrist(art?.FristVerl) ?? einstellungen.verlaengerungDauerTage,
     anzVerl,
     offsetTage: einstellungen.leihfristOffsetTage,
   });
@@ -618,8 +663,8 @@ function berechneRueckgabedatum(db, { auslDatum, katalogNi, anzVerl = 0, einstel
  */
 function berechneRueckgabedatumAusRow(row, einstellungen, ferienListe = []) {
   const { gesamt, hinweise } = fristTageGesamt({
-    basisFristTage: istGesetzt(row.medArtFrist) ? row.medArtFrist : einstellungen.leihfristTage,
-    verlaengerungFristTage: istGesetzt(row.medArtFristVerl) ? row.medArtFristVerl : einstellungen.verlaengerungDauerTage,
+    basisFristTage: medArtFrist(row.medArtFrist) ?? einstellungen.leihfristTage,
+    verlaengerungFristTage: medArtFrist(row.medArtFristVerl) ?? einstellungen.verlaengerungDauerTage,
     anzVerl: row.AnzVerl,
     offsetTage: einstellungen.leihfristOffsetTage,
   });
@@ -647,14 +692,20 @@ function berechneMahngebuehr(tageUeberfaellig, einstellungen) {
 /* ------------------------------------------------------------ Vormerkungen */
 
 /** Merkt einen Titel für einen Nutzer vor – lehnt eine doppelte Vormerkung (derselbe Nutzer, derselbe Titel) ab. */
-function vormerken(db, { katalogNi, leserNi }) {
+function vormerken(db, { katalogNi: katalogNiRoh, leserNi: leserNiRoh }) {
+  const katalogNi = ni(katalogNiRoh);
+  const leserNi = ni(leserNiRoh);
   const doppelt = db.prepare(`SELECT id FROM "Vormerkung" WHERE "KatalogNi" = ? AND "LeserNi" = ?`).get(katalogNi, leserNi);
   if (doppelt) throw new Error('Dieser Titel ist für diesen Nutzer bereits vorgemerkt.');
   const bisherige = db.prepare(`SELECT MAX(CAST("Prioritaet" AS INTEGER)) AS max FROM "Vormerkung" WHERE "KatalogNi" = ?`).get(katalogNi);
   const naechstePrioritaet = (bisherige?.max || 0) + 1;
+  // Voller Zeitstempel wie bei allen übrigen Perpustakaan-Datumsfeldern
+  // (AuslDatum, Mahndatum, ErfassDat …) statt eines reinen Datums: ein
+  // Derby-TIMESTAMP-Feld lehnt "2026-09-23" ohne Uhrzeit beim Zurück-
+  // schreiben ab, ein DATE-Feld nimmt die Uhrzeit dagegen klaglos hin.
   const info = db
     .prepare(`INSERT INTO "Vormerkung" ("LeserNi","KatalogNi","Prioritaet","VormerkDat") VALUES (?, ?, ?, ?)`)
-    .run(leserNi, katalogNi, naechstePrioritaet, heuteISO());
+    .run(leserNi, katalogNi, naechstePrioritaet, todayStr());
   return { id: info.lastInsertRowid, prioritaet: naechstePrioritaet };
 }
 
@@ -666,7 +717,7 @@ function vormerkungenFuer(db, katalogNi) {
        JOIN "Leser" l ON l."LeserNi" = v."LeserNi"
        WHERE v."KatalogNi" = ? ORDER BY CAST(v."Prioritaet" AS INTEGER)`
     )
-    .all(katalogNi);
+    .all(ni(katalogNi));
 }
 
 /** Vormerkungen eines Nutzers, für die Nutzerakte. */
@@ -677,7 +728,7 @@ function vormerkungenVonLeser(db, leserNi) {
        JOIN "Katalog" k ON k."KatalogNi" = v."KatalogNi"
        WHERE v."LeserNi" = ? ORDER BY v."VormerkDat"`
     )
-    .all(leserNi);
+    .all(ni(leserNi));
 }
 
 function vormerkungLoeschen(db, id) {
@@ -689,7 +740,9 @@ function vormerkungLoeschen(db, id) {
  * Wirft eine Error mit sprechender Meldung, wenn es nicht geht – der Aufrufer
  * (IPC-Handler) reicht die Meldung unverändert an die Oberfläche weiter.
  */
-function ausleihen(db, { medienNi, leserNi, benutzer, einstellungen }) {
+function ausleihen(db, { medienNi: medienNiRoh, leserNi: leserNiRoh, benutzer, einstellungen }) {
+  const medienNi = ni(medienNiRoh);
+  const leserNi = ni(leserNiRoh);
   const medium = db.prepare(`SELECT * FROM "Medien" WHERE "MedienNi" = ?`).get(medienNi);
   if (!medium) throw new Error('Unbekanntes Exemplar.');
   const status = exemplarStatus(db, medienNi);
@@ -758,7 +811,10 @@ function verlaengern(db, ausleiheId, einstellungen) {
   if ((row.AnzVerl || 0) >= maxVerlaengerung) throw new Error('Maximale Anzahl Verlängerungen erreicht.');
 
   if (einstellungen.verlaengerungGesperrtBeiVormerkung) {
-    const vonAnderen = vormerkungenFuer(db, row.KatalogNi).filter((v) => v.LeserNi !== row.LeserNi);
+    // String-Vergleich: aus einem älteren Import können Nummern noch als
+    // Text vorliegen – "176" !== 176 hätte die eigene Vormerkung der
+    // ausleihenden Person fälschlich als fremde gewertet.
+    const vonAnderen = vormerkungenFuer(db, row.KatalogNi).filter((v) => String(v.LeserNi) !== String(row.LeserNi));
     if (vonAnderen.length) {
       throw new Error(`Verlängerung nicht möglich: Dieser Titel ist von ${vonAnderen[0].Nachname}, ${vonAnderen[0].Vorname} vorgemerkt.`);
     }
@@ -784,11 +840,20 @@ function verlaengern(db, ausleiheId, einstellungen) {
 function verschiebeOffeneAusleihen(db, tage) {
   const delta = Math.round(Number(tage) || 0);
   if (!delta) return 0;
-  const offen = db.prepare(`SELECT id, "AuslDatum" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
+  const offen = db.prepare(`SELECT id, "MedienNi", "LeserNi", "AuslDatum" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
   const stmt = db.prepare(`UPDATE "Ausleihe" SET "AuslDatum" = ? WHERE id = ?`);
+  // Bereits verschickte Erinnerungen/Mahnungen hängen über genau dieses
+  // AuslDatum an ihrer Ausleihe (siehe letzteMahnungFuer) – ohne das
+  // Mitziehen zeigte die Rückstandsliste danach "Zuletzt: –", als wäre nie
+  // gemahnt worden.
+  const mahnungMitziehen = db.prepare(
+    `UPDATE "Mahnung" SET "AuslDatum" = ? WHERE "MedienNi" = ? AND "LeserNi" = ? AND "AuslDatum" = ?`
+  );
   const tx = db.transaction(() => {
     for (const row of offen) {
-      stmt.run(`${addDays(row.AuslDatum, delta)} 00:00:00.000`, row.id);
+      const neu = `${addDays(row.AuslDatum, delta)} 00:00:00.000`;
+      stmt.run(neu, row.id);
+      mahnungMitziehen.run(neu, row.MedienNi, row.LeserNi, row.AuslDatum);
     }
   });
   tx();
@@ -889,7 +954,7 @@ function letzteMahnungFuer(db, medienNi, leserNi, auslDatum) {
        WHERE "MedienNi" = ? AND "LeserNi" = ? AND "AuslDatum" = ?
        ORDER BY "Mahndatum" DESC, id DESC LIMIT 1`
     )
-    .get(medienNi, leserNi, auslDatum);
+    .get(ni(medienNi), ni(leserNi), auslDatum);
   if (!row) return null;
   const stufeIndex = row.IngaStufe && row.IngaStufe <= 1 ? 0 : 1;
   return { datum: row.Mahndatum, stufeIndex };
@@ -936,8 +1001,8 @@ function vorschauFristenMitFerien(db, einstellungen) {
   const ergebnis = [];
   for (const a of offen) {
     const { gesamt } = fristTageGesamt({
-      basisFristTage: istGesetzt(a.medArtFrist) ? a.medArtFrist : einstellungen.leihfristTage,
-      verlaengerungFristTage: istGesetzt(a.medArtFristVerl) ? a.medArtFristVerl : einstellungen.verlaengerungDauerTage,
+      basisFristTage: medArtFrist(a.medArtFrist) ?? einstellungen.leihfristTage,
+      verlaengerungFristTage: medArtFrist(a.medArtFristVerl) ?? einstellungen.verlaengerungDauerTage,
       anzVerl: a.AnzVerl,
       offsetTage: einstellungen.leihfristOffsetTage,
     });
@@ -967,7 +1032,7 @@ function mahnungEintragen(db, { medienNi, leserNi, auslDatum, gebuehr, stufe }) 
   db.prepare(
     `INSERT INTO "Mahnung" ("MedienNi","LeserNi","Mahndatum","MaGebuehr","AuslDatum","Rueckgabe","IngaStufe")
      VALUES (?, ?, ?, ?, ?, NULL, ?)`
-  ).run(medienNi, leserNi, todayStr(), gebuehr, auslDatum, stufe || null);
+  ).run(ni(medienNi), ni(leserNi), todayStr(), gebuehr, auslDatum, stufe || null);
 }
 
 function mahnhistorieVonLeser(db, leserNi) {
@@ -978,7 +1043,7 @@ function mahnhistorieVonLeser(db, leserNi) {
        JOIN "Katalog" k ON k."KatalogNi" = me."KatalogNi"
        WHERE mh."LeserNi" = ? ORDER BY mh."Mahndatum" DESC`
     )
-    .all(leserNi);
+    .all(ni(leserNi));
 }
 
 /**
@@ -1008,7 +1073,7 @@ function ausleihStatistikFuerKatalog(db, katalogNi) {
        JOIN "Medien" m ON m."MedienNi" = a."MedienNi"
        WHERE m."KatalogNi" = ?`
     )
-    .get(katalogNi);
+    .get(ni(katalogNi));
   return { gesamt: row?.gesamt || 0 };
 }
 
@@ -1092,7 +1157,7 @@ function verlustliste(db) {
        FROM "Medien" m
        JOIN "Katalog" k ON k."KatalogNi" = m."KatalogNi"
        LEFT JOIN "Nichtverf" nv ON nv."NichtVfNi" = m."NichtVfNi"
-       WHERE m."NichtVfNi" IS NOT NULL
+       WHERE ${nichtVerfuegbarBedingung('m')}
        ORDER BY k."Titel"`
     )
     .all();
@@ -1231,7 +1296,10 @@ function verschiebeInPapierkorb(db, abgTable, row, benutzer) {
   const spalten = TABLES[abgTable].filter((c) => c !== 'LoeschDat' && c !== 'LoeschAnw');
   const cols = ['LoeschDat', 'LoeschAnw', ...spalten];
   const eintrag = { LoeschDat: nowStamp(), LoeschAnw: benutzer || 'inga' };
-  for (const spalte of spalten) eintrag[spalte] = Object.hasOwn(row, spalte) ? row[spalte] : null;
+  for (const spalte of spalten) {
+    const wert = Object.hasOwn(row, spalte) ? row[spalte] : null;
+    eintrag[spalte] = istNiSpalte(spalte) ? ni(wert) : wert;
+  }
   db.prepare(
     `INSERT INTO ${quoteIdent(abgTable)} (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
   ).run(eintrag);
@@ -1252,14 +1320,30 @@ function papierkorbEintrag(db, table, id) {
   return row;
 }
 
-/** Stellt einen gelöschten Nutzer wieder her (gleiche LeserNi wie vor dem Löschen) und entfernt den Papierkorb-Eintrag. */
+/**
+ * Ist die alte Nummer eines Papierkorb-Eintrags inzwischen wieder an einen
+ * ANDEREN, lebenden Datensatz vergeben (kam vor 1.9 vor, siehe db.js
+ * NUMMERN_VERWENDUNGEN)? Dann bekommt der wiederhergestellte Eintrag eine
+ * neue, freie Nummer – upsert() hätte den anderen Datensatz sonst per
+ * ON CONFLICT stillschweigend überschrieben.
+ */
+function freieNummerFuerWiederherstellung(db, table, pk, bisherigeNummer) {
+  if (bisherigeNummer === null || bisherigeNummer === undefined || bisherigeNummer === '') return nextId(db, table, pk);
+  const belegt = db.prepare(`SELECT 1 FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk)} = ?`).get(ni(bisherigeNummer));
+  return belegt ? nextId(db, table, pk) : ni(bisherigeNummer);
+}
+
+/** Stellt einen gelöschten Nutzer wieder her (möglichst mit derselben LeserNi wie vor dem Löschen) und entfernt den Papierkorb-Eintrag. */
 function leserWiederherstellen(db, id) {
   const eintrag = papierkorbEintrag(db, 'LeserAbg', id);
   const spalten = TABLES.Leser;
   const row = {};
   for (const s of spalten) row[s] = eintrag[s];
-  upsert(db, 'Leser', row);
-  db.prepare(`DELETE FROM "LeserAbg" WHERE id = ?`).run(id);
+  db.transaction(() => {
+    row.LeserNi = freieNummerFuerWiederherstellung(db, 'Leser', 'LeserNi', row.LeserNi);
+    upsert(db, 'Leser', row);
+    db.prepare(`DELETE FROM "LeserAbg" WHERE id = ?`).run(id);
+  })();
   return row.LeserNi;
 }
 
@@ -1279,8 +1363,11 @@ function medienWiederherstellen(db, id) {
   for (const s of spalten) row[s] = eintrag[s];
   const doppelt = db.prepare(`SELECT "MedienNi" FROM "Medien" WHERE "MedienEtik" = ?`).get(row.MedienEtik);
   if (doppelt) throw new Error(`Das Etikett/der Barcode „${row.MedienEtik}“ wird bereits von einem anderen Exemplar verwendet – bitte dort erst ändern.`);
-  upsert(db, 'Medien', row);
-  db.prepare(`DELETE FROM "MedienAbg" WHERE id = ?`).run(id);
+  db.transaction(() => {
+    row.MedienNi = freieNummerFuerWiederherstellung(db, 'Medien', 'MedienNi', row.MedienNi);
+    upsert(db, 'Medien', row);
+    db.prepare(`DELETE FROM "MedienAbg" WHERE id = ?`).run(id);
+  })();
   return row.MedienNi;
 }
 

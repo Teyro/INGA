@@ -79,6 +79,30 @@ function quoteIdent(name) {
 }
 
 /**
+ * *Ni-Spalten sind in der Perpustakaan-Namenskonvention durchlaufende
+ * Nummern (KatalogNi, MedienNi, LeserNi, NichtVfNi, …). Nur die jeweils
+ * eigene Primärschlüsselspalte ist ein "INTEGER PRIMARY KEY" – alle
+ * übrigen (Ausleihe.MedienNi, Medien.KatalogNi, …) sind typlose Spalten,
+ * in denen SQLite genau den Typ speichert, der hineingeschrieben wird. Der
+ * CSV-Import lieferte dort bis 1.5.0 Text ('5'), INGA selbst schreibt
+ * Zahlen (5) – und SQLite hält '5' und 5 bei einem Vergleich mit einem
+ * gebundenen Parameter für VERSCHIEDEN. Folge: eine importierte offene
+ * Ausleihe galt für exemplarStatus() als nicht vorhanden (Doppelausleihe
+ * möglich), die Nutzerakte zeigte keine offenen Ausleihen/Vormerkungen/
+ * Mahnhistorie. Deshalb werden solche Werte beim Schreiben (upsert,
+ * Import, repo.js) und einmalig per Migration 10 einheitlich zu Zahlen.
+ */
+function istNiSpalte(spalte) {
+  return /Ni$/.test(spalte);
+}
+
+/** '5' → 5 (nur kanonische Ganzzahl-Schreibweise, damit der Export exakt denselben Text zurückliefert); alles andere unverändert. */
+function alsNiWert(wert) {
+  if (typeof wert !== 'string') return wert;
+  return /^-?(0|[1-9]\d{0,14})$/.test(wert) ? Number(wert) : wert;
+}
+
+/**
  * Standard-Sichtbarkeit einer Medienart anhand ihrer Bezeichnung, für
  * "MedArt"."verbergen" (natives Perpustakaan-Feld, bisher ungenutzt): unsere
  * Bücherei verleiht nur Bücher und Hörbuch-/Audio-CDs, alles andere
@@ -218,7 +242,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 const MIGRATIONS = [
   {
     version: 2,
@@ -369,6 +393,27 @@ const MIGRATIONS = [
       for (const art of arten) setzen.run(medArtStandardVerbergen(art.MedArtBz) ? 1 : 0, art.MedArtKb);
     },
   },
+  {
+    version: 10,
+    beschreibung: 'Nummern-Spalten (*Ni) einheitlich als Zahl statt teils als Text (importierte Ausleihen wurden sonst übersehen)',
+    up(db) {
+      // Siehe istNiSpalte(): nur kanonische Ganzzahl-Texte ('5', nicht
+      // '05' oder ' 5') werden umgewandelt – CAST(CAST(x AS INTEGER) AS
+      // TEXT) = x prüft genau das direkt in SQL. Die eigenen
+      // INTEGER-PRIMARY-KEY-Spalten sind ohnehin schon Zahlen.
+      for (const table of Object.keys(NATIVE_TABLES)) {
+        const vorhanden = new Set(db.prepare(`PRAGMA table_info(${quoteIdent(table)})`).all().map((c) => c.name));
+        for (const spalte of (TABLES[table] || []).filter(istNiSpalte)) {
+          if (!vorhanden.has(spalte) || spalte === NATIVE_TABLES[table]) continue;
+          const s = quoteIdent(spalte);
+          db.prepare(
+            `UPDATE ${quoteIdent(table)} SET ${s} = CAST(${s} AS INTEGER)
+             WHERE typeof(${s}) = 'text' AND CAST(CAST(${s} AS INTEGER) AS TEXT) = ${s}`
+          ).run();
+        }
+      }
+    },
+  },
 ];
 
 function gespeicherteSchemaVersion(db) {
@@ -442,21 +487,66 @@ function upsert(db, table, row) {
     ${pk ? `ON CONFLICT(${quoteIdent(pk)}) DO UPDATE SET ${updateSet.join(', ')}` : ''}`;
   const stmt = db.prepare(sql);
   const params = {};
-  for (const c of cols) params[c] = row[c] ?? null;
+  for (const c of cols) params[c] = istNiSpalte(c) ? alsNiWert(row[c] ?? null) : row[c] ?? null;
   const info = stmt.run(params);
-  return pk ? row[pk] ?? info.lastInsertRowid : info.lastInsertRowid;
+  return pk ? (istNiSpalte(pk) ? alsNiWert(row[pk]) : row[pk]) ?? info.lastInsertRowid : info.lastInsertRowid;
+}
+
+/**
+ * Wo eine einmal vergebene Nummer weiterlebt, obwohl der Datensatz selbst
+ * gelöscht ist: Papierkorb, Ausleih-/Mahnhistorie, Vormerkungen, Cover.
+ * Bis 1.5.0 vergab nextId() schlicht MAX+1 der eigenen Tabelle – wurde
+ * der zuletzt angelegte Datensatz gelöscht, bekam der nächste neue
+ * dieselbe Nummer, "erbte" dadurch fremde Ausleih-/Mahnhistorie (bzw.
+ * beim Titel das alte Cover) und wurde beim Wiederherstellen des
+ * gelöschten aus dem Papierkorb sogar stillschweigend überschrieben.
+ */
+const NUMMERN_VERWENDUNGEN = {
+  Katalog: [['Medien', 'KatalogNi'], ['MedienAbg', 'KatalogNi'], ['Vormerkung', 'KatalogNi'], ['inga_covers', 'KatalogNi']],
+  Medien: [['MedienAbg', 'MedienNi'], ['Ausleihe', 'MedienNi'], ['Mahnung', 'MedienNi']],
+  Leser: [['LeserAbg', 'LeserNi'], ['Ausleihe', 'LeserNi'], ['Mahnung', 'LeserNi'], ['Vormerkung', 'LeserNi']],
+};
+
+/**
+ * Perpustakaan führt seinen eigenen Nummernzähler je Tabelle in der
+ * (von INGA nur durchgereichten) Tabelle "IdentCnt" ("Entity;IdentNr",
+ * IdentNr = zuletzt vergebene Nummer). Liefert 0, wenn es keinen Eintrag
+ * gibt – z. B. bei einem Bestand, der nie aus Perpustakaan kam.
+ */
+function perpustakaanZaehler(db, entity) {
+  for (const { data } of db.prepare(`SELECT data FROM legacy_rows WHERE table_name = 'IdentCnt'`).all()) {
+    try {
+      const zeile = JSON.parse(data);
+      if (zeile.Entity === entity) return Number(zeile.IdentNr) || 0;
+    } catch {
+      // eine kaputte Zeile darf die Nummernvergabe nicht verhindern
+    }
+  }
+  return 0;
+}
+
+/** Höchste bisher irgendwo verwendete Nummer einer Tabelle – eigene Tabelle, NUMMERN_VERWENDUNGEN und Perpustakaans IdentCnt. */
+function hoechsteVergebeneNummer(db, table, pk) {
+  let hoechste = Number(db.prepare(`SELECT MAX(CAST(${quoteIdent(pk)} AS INTEGER)) AS m FROM ${quoteIdent(table)}`).get()?.m) || 0;
+  for (const [andereTabelle, spalte] of NUMMERN_VERWENDUNGEN[table] || []) {
+    const m = Number(db.prepare(`SELECT MAX(CAST(${quoteIdent(spalte)} AS INTEGER)) AS m FROM ${quoteIdent(andereTabelle)}`).get()?.m) || 0;
+    if (m > hoechste) hoechste = m;
+  }
+  return Math.max(hoechste, perpustakaanZaehler(db, table));
 }
 
 function nextId(db, table, pk) {
-  const row = db.prepare(`SELECT MAX(${quoteIdent(pk)}) AS m FROM ${quoteIdent(table)}`).get();
-  return (row?.m || 0) + 1;
+  return hoechsteVergebeneNummer(db, table, pk) + 1;
 }
 
 module.exports = {
   openDatabase,
   upsert,
   nextId,
+  hoechsteVergebeneNummer,
   quoteIdent,
+  istNiSpalte,
+  alsNiWert,
   medArtStandardVerbergen,
   NATIVE_TABLES,
   DERIVED_TABLES,

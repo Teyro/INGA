@@ -108,6 +108,22 @@ async function qwant(isbn, kontext) {
   return bildLaden(json?.data?.result?.items?.[0]?.media);
 }
 
+/**
+ * Bildformat anhand der ersten Bytes ("magische Zahl") statt der URL oder
+ * des Content-Type – die Bildersuche liefert gelegentlich statt eines
+ * Bildes eine HTML-Fehler-/Sperrseite mit Status 200, die bis 1.5.0 als
+ * ".jpg" gespeichert wurde und danach als kaputtes Bild im Katalog stand.
+ * Liefert die Dateiendung oder null, wenn es kein unterstütztes Bild ist.
+ */
+function bildEndung(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.toString('latin1', 0, 8) === '\x89PNG\r\n\x1a\n') return 'png';
+  if (buf.toString('latin1', 0, 4) === 'GIF8') return 'gif';
+  if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
 const COVER_QUELLEN = [
   { id: 'openlibrary', name: 'Open Library', hole: openLibrary },
   { id: 'google-books', name: 'Google Books', hole: googleBooks },
@@ -129,7 +145,8 @@ async function coverFuerIsbnLaden(isbnRoh, { titel = '', autor = '', quellen = C
   for (const quelle of quellen) {
     try {
       const buf = await quelle.hole(isbn, { titel, autor });
-      if (buf) return { ok: true, buf, quelle: quelle.id, quelleName: quelle.name };
+      const endung = bildEndung(buf);
+      if (endung) return { ok: true, buf, endung, quelle: quelle.id, quelleName: quelle.name };
     } catch {
       // diese Quelle hat nicht geklappt (Zeitüberschreitung, Netzwerkfehler, kaputtes JSON, …) – nächste versuchen
     }
@@ -137,4 +154,4 @@ async function coverFuerIsbnLaden(isbnRoh, { titel = '', autor = '', quellen = C
   return { ok: false, grund: `bei keiner der Quellen (${quellen.map((q) => q.name).join(', ')}) gefunden` };
 }
 
-module.exports = { COVER_QUELLEN, coverFuerIsbnLaden, openLibrary, googleBooks, duckDuckGo, qwant };
+module.exports = { COVER_QUELLEN, coverFuerIsbnLaden, bildEndung, openLibrary, googleBooks, duckDuckGo, qwant };

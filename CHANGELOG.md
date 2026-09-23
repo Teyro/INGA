@@ -6,6 +6,91 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.9.0 – 2026-09-23
+
+Komplette Quellcode-Durchsicht mit Fehlersuche. Keine neuen Funktionen,
+aber eine ganze Reihe echter Fehler behoben – mehrere davon betrafen nur
+Daten aus einer echten Perpustakaan-Sicherung und fielen deshalb mit
+selbst in INGA angelegten Testdaten nicht auf.
+
+### Behoben – wichtig
+- **Automatisches Update unter Windows lief ins Leere.** Die
+  Update-Beschreibung (`latest.yml`) verwies auf `INGA-Setup-….exe`,
+  GitHub hatte die Datei aber als `INGA.Setup.….exe` gespeichert
+  (Leerzeichen werden beim Hochladen zu Punkten) – "Jetzt
+  herunterladen" scheiterte deshalb. Installer heißen jetzt
+  `INGA-Setup-1.9.0.exe` bzw. `INGA-1.9.0-portable.exe`. **Von 1.5.0
+  aus bitte dieses eine Mal noch von Hand installieren**, danach klappt
+  das automatische Update wieder.
+- **Aus Perpustakaan importierte laufende Ausleihen wurden teilweise
+  übersehen:** Ein bereits verliehenes Buch ließ sich ein zweites Mal
+  ausleihen, und die Nutzerakte zeigte weder offene Ausleihen noch
+  Vormerkungen oder Mahnhistorie. Ursache: Nummern kamen beim Import als
+  Text an, INGA vergleicht mit Zahlen. Wird beim ersten Start von 1.9
+  einmalig in der Datenbank bereinigt (mit automatischer Sicherung davor)
+  und bei jedem Import gleich richtig gespeichert.
+- **Verlustliste und Katalogfilter "nicht verfügbar" zeigten nach einem
+  Perpustakaan-Import alle Exemplare** (Perpustakaan trägt für
+  "verfügbar" eine 0 ein, nicht ein leeres Feld).
+- **"Verlängern" verschob das Rückgabedatum bei importierten
+  Medienarten nicht** (Perpustakaan trägt als Verlängerungsfrist 0 ein).
+  0 bedeutet jetzt – wie ein leeres Feld – "Vorgabe aus den
+  Einstellungen".
+- **"Erinnerung + Mahnung erstellen" druckte nur eine der beiden
+  Gruppen**, obwohl beide als verschickt vermerkt wurden. Jetzt landen
+  alle Schreiben zusammen im Druckfenster.
+- **Änderungen im Mahntext-Editor gingen verloren**, sobald zwischendurch
+  schon einmal gespeichert worden war (z. B. nach dem ersten Klick
+  außerhalb des Textfelds) – das nächste Speichern schrieb dann wieder
+  den alten Text.
+- **Ein heruntergeladenes Update wurde bei langen Sitzungen nie
+  installiert:** die 6-stündliche Update-Prüfung setzte den Status von
+  "wird beim Beenden installiert" wieder auf "verfügbar" zurück.
+- **Nummern gelöschter Nutzer/Exemplare/Titel wurden neu vergeben.** Ein
+  neuer Datensatz erbte dadurch fremde Ausleih-/Mahnhistorie (beim Titel
+  sogar das alte Cover), und "Wiederherstellen" aus dem Papierkorb
+  überschrieb ihn stillschweigend. INGA berücksichtigt jetzt außerdem
+  Perpustakaans eigenen Nummernzähler und hebt ihn beim Export an, damit
+  Perpustakaan nach dem Zurückspielen keine Nummer doppelt vergibt.
+- **"Ferien von URL importieren …" tat nichts** (die dafür genutzte
+  Eingabeabfrage gibt es in Electron nicht) – jetzt mit eigenem
+  Eingabefenster.
+
+### Behoben – weitere
+- Beim Beenden mit wartendem Update konnte INGA hängen bleiben (und
+  danach den nächsten Start blockieren), falls die Installation nicht
+  angestoßen werden konnte – jetzt mit Sicherheitsnetz.
+- Das Abschiedsfenster blieb während der Sicherung eine leere Fläche; es
+  zeigt jetzt seinen Text.
+- INGA-Symbol fehlte in Startbildschirm und Abschiedsfenster des
+  fertigen Programms (kaputtes Bild).
+- "Sicherung einspielen": die Sicherung des aktuellen Stands davor wird
+  jetzt geprüft (sonst Abbruch), Nicht-Datenbankdateien werden abgelehnt.
+- Nutzerakte: "Ausleihberechtigt bis" aus Perpustakaan wurde nicht
+  angezeigt und beim Speichern gelöscht.
+- "Alle offenen Ausleihen verschieben" ließ die Angabe "Zuletzt
+  erinnert/gemahnt" in der Rückstandsliste verschwinden.
+- Ferienkalender (ICS) mit Terminen mit Uhrzeit ließen den ganzen
+  Import scheitern; eine Ausleihe am letzten Ferientag wurde nicht
+  verlängert.
+- Cover-Suche speicherte gelegentlich eine Fehlerseite statt eines
+  Bildes; gelöschte Titel hinterließen ihr Cover.
+- "Java-Laufzeit reparieren" (experimentell): ein abgebrochener Download
+  blieb dauerhaft kaputt liegen, eine hängende Verbindung ließ den
+  Assistenten ewig warten; Lesen/Schreiben großer Perpustakaan-Datenbanken
+  brach nach 30 Sekunden ab.
+- Import: Zip-Dateien mit Unterordner wurden stillschweigend ignoriert,
+  eine falsche Datei wurde als "erfolgreich importiert" gemeldet.
+- Nach "Jetzt aus Perpustakaan lesen" waren Medienarten-/Filterlisten bis
+  zum Neustart veraltet; von Perpustakaan ausgeblendete Medienarten
+  wurden angezeigt.
+- Einstellungen: unsinnige Zahlen (z. B. negative Leihfrist) werden
+  begrenzt; Excel-Export mit Anführungszeichen im Blattnamen war
+  unlesbar.
+- Ausleihe/Rückgabe: das Scanfeld hat beim Öffnen der Ansicht sofort den
+  Fokus; die Wochentagsfarbe der Titelleiste wechselt auch um
+  Mitternacht.
+
 ## 1.5.0 – 2026-09-22
 
 ### Geändert

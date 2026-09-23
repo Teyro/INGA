@@ -10,10 +10,19 @@
  */
 
 const AdmZip = require('adm-zip');
-const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, ID_BASIERTE_TABELLEN, TABLES, quoteIdent, medArtStandardVerbergen } = require('./db');
+const { NATIVE_TABLES, DERIVED_TABLES, LEGACY_TABLES, ID_BASIERTE_TABELLEN, TABLES, quoteIdent, medArtStandardVerbergen, istNiSpalte, alsNiWert, hoechsteVergebeneNummer } = require('./db');
+
+/** CSV-Zellwert → Datenbankwert: leer wird NULL, Nummern-Spalten (*Ni) werden Zahlen (siehe db.js istNiSpalte()). */
+function zellwert(spalte, wert) {
+  if (wert === '' || wert === undefined) return null;
+  return istNiSpalte(spalte) ? alsNiWert(wert) : wert;
+}
 
 function parseCsv(text) {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.length > 0);
+  // Ein UTF-8-BOM am Dateianfang (z. B. nach dem Öffnen und Speichern in
+  // Excel) klebte sonst am ersten Spaltennamen – diese Spalte wäre dann
+  // stillschweigend für jede Zeile leer importiert worden.
+  const lines = text.replace(/^﻿/, '').split(/\r\n|\n/).filter((l) => l.length > 0);
   if (!lines.length) return { header: [], rows: [] };
   const header = lines[0].split(';');
   const rows = lines.slice(1).map((line) => {
@@ -72,7 +81,7 @@ function importAusleiheUndHistorie(db, ausleiheEntry, auslHistEntry) {
     const { rows } = parseCsv(ausleiheEntry.getData().toString('utf8'));
     for (const row of rows) {
       const params = {};
-      for (const c of cols) params[c] = c === 'Rueckgabe' ? null : row[c] === '' ? null : row[c];
+      for (const c of cols) params[c] = c === 'Rueckgabe' ? null : zellwert(c, row[c]);
       stmt.run(params);
     }
   }
@@ -80,15 +89,34 @@ function importAusleiheUndHistorie(db, ausleiheEntry, auslHistEntry) {
     const { rows } = parseCsv(auslHistEntry.getData().toString('utf8'));
     for (const row of rows) {
       const params = {};
-      for (const c of cols) params[c] = row[c] === '' ? null : row[c];
+      for (const c of cols) params[c] = zellwert(c, row[c]);
       stmt.run(params);
     }
   }
 }
 
+/**
+ * Tabellenname aus einem Zip-Eintrag: nur der Dateiname zählt, nicht ein
+ * davorstehender Ordner – ein von Hand neu gepacktes Zip ("Sicherung/
+ * Katalog.csv") wurde bis 1.5.0 sonst komplett ignoriert und der Import
+ * trotzdem als erfolgreich gemeldet. Ordner-Einträge selbst: null.
+ */
+function tabellenNameAusEintrag(eintrag) {
+  if (eintrag.isDirectory) return null;
+  const datei = eintrag.entryName.split(/[\\/]/).pop();
+  return /\.csv$/i.test(datei) ? datei.replace(/\.csv$/i, '') : null;
+}
+
 function importZip(db, filePath, { onProgress } = {}) {
   const zip = new AdmZip(filePath);
-  const entries = new Map(zip.getEntries().map((e) => [e.entryName.replace(/\.csv$/i, ''), e]));
+  const entries = new Map();
+  for (const e of zip.getEntries()) {
+    const name = tabellenNameAusEintrag(e);
+    if (name && !entries.has(name)) entries.set(name, e);
+  }
+  if (!Object.keys(TABLES).some((table) => entries.has(table))) {
+    throw new Error('Die Datei enthält keine bekannten Perpustakaan-Tabellen (z. B. Katalog.csv) – bitte eine Perpustakaan-Sicherung bzw. einen INGA-Export (Zip) auswählen.');
+  }
 
   const importTx = db.transaction(() => {
     let done = 0;
@@ -115,14 +143,13 @@ function importZip(db, filePath, { onProgress } = {}) {
         );
         for (const row of rows) {
           const params = {};
-          for (const c of cols) params[c] = row[c] === '' ? null : row[c];
+          for (const c of cols) params[c] = zellwert(c, row[c]);
           stmt.run(params);
         }
         continue;
       }
 
       if (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table)) {
-        const pk = NATIVE_TABLES[table];
         const cols = TABLES[table];
         db.prepare(`DELETE FROM ${quoteIdent(table)}`).run();
         const stmt = db.prepare(
@@ -130,7 +157,7 @@ function importZip(db, filePath, { onProgress } = {}) {
         );
         for (const row of rows) {
           const params = {};
-          for (const c of cols) params[c] = row[c] === '' ? null : row[c];
+          for (const c of cols) params[c] = zellwert(c, row[c]);
           stmt.run(params);
         }
         // "verbergen" kennt das echte Perpustakaan nicht (kommt aus einer
@@ -196,6 +223,28 @@ function computeStatMedien(db) {
     .all();
 }
 
+/**
+ * Perpustakaans eigener Nummernzähler ("IdentCnt": Entity;IdentNr = zuletzt
+ * vergebene Nummer je Tabelle) – INGA reicht die Tabelle eigentlich nur
+ * unverändert durch, legt aber selbst neue Titel/Exemplare/Nutzer an. Ohne
+ * Anpassung vergäbe Perpustakaan nach dem Zurückspielen (Sicherung
+ * einspielen oder "Jetzt in Perpustakaan schreiben") genau die Nummern
+ * ein zweites Mal, die INGA inzwischen schon benutzt hat. Der Zähler wird
+ * deshalb bei Bedarf ANGEHOBEN (nie gesenkt), ein fehlender Eintrag ergänzt.
+ */
+function identCntMitIngaNummern(db, header, rows) {
+  if (!header.includes('Entity') || !header.includes('IdentNr')) return rows;
+  const ergebnis = rows.map((r) => ({ ...r }));
+  for (const [entity, pk] of [['Katalog', 'KatalogNi'], ['Medien', 'MedienNi'], ['Leser', 'LeserNi']]) {
+    const hoechste = hoechsteVergebeneNummer(db, entity, pk);
+    if (!hoechste) continue;
+    const zeile = ergebnis.find((r) => r.Entity === entity);
+    if (!zeile) ergebnis.push({ Entity: entity, IdentNr: String(hoechste) });
+    else if ((Number(zeile.IdentNr) || 0) < hoechste) zeile.IdentNr = String(hoechste);
+  }
+  return ergebnis;
+}
+
 function exportZip(db, filePath) {
   const zip = new AdmZip();
 
@@ -225,6 +274,7 @@ function exportZip(db, filePath) {
         .prepare(`SELECT data FROM legacy_rows WHERE table_name = ? ORDER BY seq`)
         .all(table)
         .map((r) => JSON.parse(r.data));
+      if (table === 'IdentCnt') rows = identCntMitIngaNummern(db, header, rows);
     }
 
     zip.addFile(`${table}.csv`, Buffer.from(serializeCsv(header, rows), 'utf8'));

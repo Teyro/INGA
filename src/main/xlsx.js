@@ -46,7 +46,8 @@ function xmlEscape(wert) {
   return ohneUngueltigeXmlZeichen(String(wert ?? ''))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function istZahl(wert) {

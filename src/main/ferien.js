@@ -294,6 +294,10 @@ function werktageInZeitraum(startdatum, enddatum) {
 
 function verlaengerungDurchFerien(auslDatum, naivesDatum, ferienListe, zaehlweise = 'kalendertage') {
   const relevante = (ferienListe || []).filter((f) => f.typ === 'Ferien' || f.typ === 'Schließzeit');
+  // Nur den Kalendertag vergleichen – "2026-10-20 00:00:00.000" ist als
+  // Zeichenkette GRÖSSER als "2026-10-20", eine Ausleihe am letzten
+  // Ferientag wäre sonst nicht als in die Ferien fallend erkannt worden.
+  const ausleihTag = String(auslDatum).slice(0, 10);
   let ende = naivesDatum;
   const beruecksichtigt = new Set();
   const namen = [];
@@ -302,7 +306,7 @@ function verlaengerungDurchFerien(auslDatum, naivesDatum, ferienListe, zaehlweis
   // Ferienabschnitt nur einmal zählt.
   for (let i = 0; i < 1000; i++) {
     const treffer = relevante.find(
-      (f) => !beruecksichtigt.has(f) && auslDatum <= f.enddatum.slice(0, 10) && ende >= f.startdatum.slice(0, 10)
+      (f) => !beruecksichtigt.has(f) && ausleihTag <= f.enddatum.slice(0, 10) && ende >= f.startdatum.slice(0, 10)
     );
     if (!treffer) break;
     beruecksichtigt.add(treffer);

@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld('inga', {
   mahnung: {
     ueberfaellige: () => ipcRenderer.invoke('mahnung:ueberfaellige'),
     rueckstandsliste: (schwelleTage) => ipcRenderer.invoke('mahnung:rueckstandsliste', schwelleTage),
-    erzeugenUndDrucken: (positionen, stufeIndex) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', { positionen, stufeIndex }),
+    erzeugenUndDrucken: (gruppen) => ipcRenderer.invoke('mahnung:erzeugen-und-drucken', { gruppen }),
     probeDrucken: (stufeIndex) => ipcRenderer.invoke('mahnung:probe-drucken', stufeIndex),
     logoAuswaehlen: () => ipcRenderer.invoke('mahnung:logo-auswaehlen'),
   },

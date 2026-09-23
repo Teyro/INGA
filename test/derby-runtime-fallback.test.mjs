@@ -88,3 +88,57 @@ test('stelleSchreibrechteSicher(): ergänzt Schreibrecht für den Eigentümer be
 
   assert.notEqual(fs.statSync(geschuetzteDatei).mode & 0o200, 0, 'Eigentümer-Schreibrecht sollte danach gesetzt sein');
 });
+
+/**
+ * Download-Robustheit des "Java-Laufzeit reparieren"-Assistenten: ein
+ * abgebrochener Download darf KEINE halbe Datei unter dem endgültigen
+ * Namen hinterlassen (holeDerbyJars() hielte sie sonst für vorhanden und
+ * lüde sie nie wieder nach). Gegen ein gemocktes https.get – kein echtes
+ * Netzwerk nötig.
+ */
+function mitGemocktemHttpsGet(verhalten, fn) {
+  const https = require('node:https');
+  const { EventEmitter } = require('node:events');
+  const { PassThrough } = require('node:stream');
+  const original = https.get;
+  https.get = (url, ...rest) => {
+    const rueckruf = rest.find((r) => typeof r === 'function');
+    const anfrage = new EventEmitter();
+    anfrage.setTimeout = () => anfrage;
+    anfrage.destroy = (err) => { if (err) anfrage.emit('error', err); };
+    const res = new PassThrough();
+    res.statusCode = 200;
+    res.headers = {};
+    setImmediate(() => {
+      rueckruf(res);
+      const art = verhalten(String(url));
+      if (art === 'abbruch') {
+        res.write(Buffer.from('nur die erste Hälfte'));
+        setImmediate(() => res.emit('aborted'));
+      } else {
+        res.end(Buffer.from(art));
+      }
+    });
+    return anfrage;
+  };
+  return fn().finally(() => { https.get = original; });
+}
+
+test('einmalHerunterladen(): vollständiger Download landet unter dem endgültigen Namen, keine .part-Datei bleibt übrig', async () => {
+  const { einmalHerunterladen } = require('../src/main/derby-runtime-setup.js');
+  const ziel = path.join(tmpDir(), 'derby.jar');
+  await mitGemocktemHttpsGet(() => 'kompletter Inhalt', () => einmalHerunterladen('https://example.invalid/derby.jar', ziel));
+  assert.equal(fs.readFileSync(ziel, 'utf8'), 'kompletter Inhalt');
+  assert.equal(fs.existsSync(`${ziel}.part`), false);
+});
+
+test('einmalHerunterladen(): abgebrochener Download hinterlässt weder eine halbe Zieldatei noch eine .part-Datei', async () => {
+  const { einmalHerunterladen } = require('../src/main/derby-runtime-setup.js');
+  const ziel = path.join(tmpDir(), 'derby.jar');
+  await assert.rejects(
+    mitGemocktemHttpsGet(() => 'abbruch', () => einmalHerunterladen('https://example.invalid/derby.jar', ziel)),
+    /abgebrochen/
+  );
+  assert.equal(fs.existsSync(ziel), false, 'eine halbe Datei unter dem endgültigen Namen würde nie wieder nachgeladen');
+  assert.equal(fs.existsSync(`${ziel}.part`), false);
+});

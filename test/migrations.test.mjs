@@ -138,7 +138,7 @@ test('Migration Version 5: Vormerkung-Altdaten aus legacy_rows gehen beim Upgrad
 
   db = openDatabase(dir);
   assert.equal(gespeicherteSchemaVersion(db), SCHEMA_VERSION);
-  const vormerkung = db.prepare(`SELECT * FROM "Vormerkung" WHERE "LeserNi" = '3' AND "KatalogNi" = '9'`).get();
+  const vormerkung = db.prepare(`SELECT * FROM "Vormerkung" WHERE "LeserNi" = 3 AND "KatalogNi" = 9`).get(); // seit Migration 10 als Zahl, siehe db.js istNiSpalte()
   assert.ok(vormerkung, 'Vormerkung-Altdatensatz muss in die native Tabelle übernommen werden');
   assert.equal(vormerkung.Prioritaet, '1');
   assert.ok(Number.isInteger(vormerkung.id), 'die neue Tabelle muss eine eigene id-Spalte haben (kein *Ni-Einzelschlüssel im Original)');
