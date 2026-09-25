@@ -4,7 +4,8 @@
  * Erzeugt das INGA-App-Symbol aus den Quellen in diesem Ordner:
  *   avatar-freigestellt.png – der freigestellte INGA-Avatar (links fehlende
  *                             Haare aus der rechten Seite gespiegelt ergänzt,
- *                             Shirt nach links/unten fortgesetzt)
+ *                             Haarkante rechts geglättet, Oberkörper links
+ *                             schmaler mit natürlicher Schulter)
  *   buch.svg                – das aufgeschlagene Buch mit Lesezeichen
  * und schreibt alle benötigten Größen: build/icon.png (1024, macOS),
  * build/icon-flat.png (512, Linux), build/icon-256.png, build/icon.ico
@@ -43,7 +44,7 @@ async function symbol() {
   const avatar = await sharp(path.join(QUELLEN, 'avatar-freigestellt.png')).resize({ width: Math.round(570 * 1.55) }).toBuffer();
 
   // Buch: leicht gedreht, weicher Schatten, schwebt über der präsentierenden Hand
-  const buchRoh = await sharp(path.join(QUELLEN, 'buch.svg'), { density: 200 }).resize(330).png().toBuffer();
+  const buchRoh = await sharp(path.join(QUELLEN, 'buch.svg'), { density: 200 }).resize(320).png().toBuffer();
   const buch = await sharp(buchRoh).rotate(-9, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
   const bm = await sharp(buch).metadata();
   const alpha = await sharp(buch).ensureAlpha().extractChannel(3).toColourspace('b-w').blur(10).raw().toBuffer({ resolveWithObject: true });
@@ -52,8 +53,8 @@ async function symbol() {
     schatten[i * 4] = 20; schatten[i * 4 + 1] = 40; schatten[i * 4 + 2] = 110; schatten[i * 4 + 3] = Math.round(alpha.data[i] * 0.35);
   }
   const schattenPng = await sharp(schatten, { raw: { width: alpha.info.width, height: alpha.info.height, channels: 4 } }).png().toBuffer();
-  const bx = Math.round(800 - bm.width / 2);
-  const by = Math.round(505 - bm.height);
+  const bx = Math.round(824 - bm.width / 2);
+  const by = Math.round(500 - bm.height);
 
   const ebene = await sharp({ create: { width: S, height: S, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([

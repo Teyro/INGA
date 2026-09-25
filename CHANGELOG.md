@@ -6,6 +6,16 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.10.2 – 2026-09-25
+
+### Geändert
+- **App-Symbol verfeinert:** Die Haare rechts sind jetzt sauber
+  geschnitten (glatte Kontur, runde Lockenenden, keine durchscheinenden
+  Tischreste mehr) – die linke, gespiegelte Seite profitiert automatisch
+  mit. Der Oberkörper ist links schmaler und hat eine natürlich
+  abfallende Schulter statt der zu breiten Form. Das Buch steht ein Stück
+  weiter rechts und berührt die Haare nicht mehr.
+
 ## 1.10.1 – 2026-09-25
 
 ### Geändert
