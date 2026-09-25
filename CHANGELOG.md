@@ -6,6 +6,16 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.10.1 – 2026-09-25
+
+### Geändert
+- **App-Symbol überarbeitet:** Die linke Haarseite des Avatars fehlte (im
+  Foto vom Bildrand abgeschnitten) – jetzt ergänzt, passend zur rechten
+  Seite. Der Arm ist sauber und in natürlicher Breite freigestellt, und
+  das Buch schwebt jetzt direkt über der Hand, als würde der Avatar es
+  präsentieren, statt verloren in der Ecke zu stehen. Gilt auch für
+  Start- und Abschiedsfenster.
+
 ## 1.10.0 – 2026-09-25
 
 ### Neu
