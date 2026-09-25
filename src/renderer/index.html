@@ -426,6 +426,15 @@
             <p class="hint">Schreibt den kompletten Bestand als Perpustakaan-kompatibles Zip – inklusive aller Tabellen, die INGA nicht selbst bearbeitet.</p>
             <button class="button" id="bestand-export">Als Zip exportieren …</button>
           </div>
+          <div class="card" style="padding:18px; max-width:560px; margin-bottom:16px">
+            <div class="section-title">INGA-Datenbank übertragen (anderer Rechner)</div>
+            <p class="hint">Nimmt den <strong>kompletten</strong> INGA-Stand mit – anders als der Perpustakaan-Export auch Ausleih- und Mahnhistorie, Sperren, Ferien, Papierkorb, Cover und auf Wunsch die Einstellungen. So geht's: am alten Rechner „Datenbank sichern …“ (z. B. auf einen USB-Stick), am neuen Rechner „Datenbank einbinden …“. Einbinden klappt auch mit einer einzelnen <code>inga.sqlite3</code> aus dem INGA-Datenordner eines anderen Rechners.</p>
+            <p class="hint">Beim Einbinden wird der bisherige Stand hier vorher automatisch gesichert, danach startet INGA neu.</p>
+            <div class="row-inline" style="margin-top:12px">
+              <button class="button" id="inga-db-exportieren">Datenbank sichern …</button>
+              <button class="button" id="inga-db-einbinden">Datenbank einbinden …</button>
+            </div>
+          </div>
           <div class="card" style="padding:18px; max-width:560px">
             <div class="section-title">Buchcover</div>
             <p class="hint">Lädt Cover anhand der ISBN/EAN – probiert dafür mehrere freie Quellen nacheinander (Open Library, danach Google Books), beide ohne Konto nötig. Einzelne Cover lassen sich auch direkt am jeweiligen Titel im Katalog laden oder hochladen. Neue Titel mit ISBN/EAN suchen ihr Cover automatisch, nach einem Bestandsimport wird aktiv gefragt.</p>

@@ -132,6 +132,11 @@ contextBridge.exposeInMainWorld('inga', {
     exportieren: () => ipcRenderer.invoke('bestand:export'),
   },
 
+  ingaDb: {
+    exportieren: () => ipcRenderer.invoke('inga-db:exportieren'),
+    einbinden: () => ipcRenderer.invoke('inga-db:einbinden'),
+  },
+
   backup: {
     liste: () => ipcRenderer.invoke('backup:liste'),
     jetzt: () => ipcRenderer.invoke('backup:jetzt'),

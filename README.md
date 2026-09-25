@@ -353,6 +353,17 @@ Kursverwaltung, …), werden beim Import unverändert übernommen und beim
 Export wieder mit ausgeliefert – ein Bestand geht auf dem Weg durch INGA
 nicht kaputt. Buchcover sind rein INGA-intern und nicht Teil dieses Formats.
 
+### INGA-Datenbank auf einen anderen Rechner übertragen
+
+Import / Export → „INGA-Datenbank übertragen“: **Datenbank sichern …**
+schreibt den kompletten INGA-Stand in eine Datei (`INGA-Datenbank_<Datum>.zip`:
+Datenbank, Cover, Einstellungen), **Datenbank einbinden …** liest sie am
+anderen Rechner wieder ein. Auch eine einzelne `inga.sqlite3` aus dem
+Datenordner eines anderen Rechners lässt sich einbinden (Windows:
+`%APPDATA%\INGA`, macOS: `~/Library/Application Support/INGA`, Linux:
+`~/.local/share/INGA`). Vor dem Ersetzen zeigt INGA den Inhalt der Datei an
+und sichert den bisherigen Stand automatisch.
+
 ### Native Optik
 
 Erkennt automatisch macOS (Liquid Glass), Windows 11 (Fluent/Mica) sowie

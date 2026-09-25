@@ -36,6 +36,7 @@ const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe
 const { formatiereReleaseNotes } = require('./release-notes');
 const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
 const { alsExcelCsv } = require('./export');
+const datenbankUebertragen = require('./datenbank-uebertragen');
 const { schreibeXlsx } = require('./xlsx');
 const { sicher, uebersetzeFehler } = require('./fehler');
 const { holeBuchdaten } = require('./isbn');
@@ -245,7 +246,7 @@ function createSplashWindow() {
     // ganze Sätze) reichte das nicht: der Text wurde vom festen
     // Fenster/"overflow: hidden" im unteren Bereich abgeschnitten statt zu
     // umbrechen ("da kann man den Teil nicht lesen").
-    height: 400,
+    height: 440,
     frame: false,
     resizable: false,
     movable: true,
@@ -338,7 +339,7 @@ function closeSplashWindow() {
 function createAbschiedFenster() {
   abschiedFenster = new BrowserWindow({
     width: 420,
-    height: 300,
+    height: 330,
     frame: false,
     resizable: false,
     movable: true,
@@ -956,7 +957,7 @@ function oeffneDruckfenster(art, payload) {
  * laufenden Datenbank werden entfernt, damit sie nicht versehentlich auf
  * die neu eingespielte Datei angewendet werden.
  */
-async function einspielenUndNeustarten(quelle) {
+async function einspielenUndNeustarten(quelle, { vorNeustart } = {}) {
   // Nur echte SQLite-Datenbanken (Dateikopf "SQLite format 3") – eine
   // versehentlich gewählte andere Datei hätte die laufende Datenbank sonst
   // durch etwas Unbrauchbares ersetzt.
@@ -993,6 +994,12 @@ async function einspielenUndNeustarten(quelle) {
   }
   for (const suffix of ['-wal', '-shm', '-journal']) {
     await fs.unlink(`${dbFile}${suffix}`).catch(() => {});
+  }
+  // Zusätzliche Schritte (Cover/Einstellungen beim Einbinden einer
+  // INGA-Datenbank) – ein Fehler dort darf das Einspielen selbst nicht
+  // mehr aufhalten, die Datenbank ist zu diesem Zeitpunkt schon ersetzt.
+  if (vorNeustart) {
+    try { await vorNeustart(); } catch (err) { console.error('[einspielen] Zusatzschritt fehlgeschlagen:', err.message); }
   }
   // app.exit() umgeht 'before-quit' – die (verzögert geschriebenen)
   // Einstellungen deshalb hier selbst sichern, wie in wirklichBeenden().
@@ -1452,6 +1459,83 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     await einspielenUndNeustarten(result.filePaths[0]);
+  }));
+
+  /* ------------------------------------ INGA-Datenbank übertragen (anderer Rechner) */
+
+  /** Komplette INGA-Datenbank samt Cover und Einstellungen als Paket speichern – zum Mitnehmen auf einen anderen Rechner. */
+  ipcMain.handle('inga-db:exportieren', sicher(async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'INGA-Datenbank für einen anderen Rechner sichern',
+      defaultPath: path.join(app.getPath('documents'), `INGA-Datenbank_${heuteISO()}.zip`),
+      filters: [{ name: 'INGA-Datenbank', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    const info = datenbankUebertragen.exportiereIngaDatenbank(db, {
+      coversDir,
+      einstellungen: settings(),
+      version: app.getVersion(),
+      zielZip: result.filePath,
+      tmpDir: os.tmpdir(),
+    });
+    return { pfad: result.filePath, ...info };
+  }));
+
+  /**
+   * Eine INGA-Datenbank von einem anderen Rechner einbinden: Paket (.zip,
+   * siehe oben) ODER eine einzelne inga.sqlite3. Prüft die Datei zuerst
+   * vollständig, zeigt dann was drinsteckt und fragt nach – erst danach
+   * wird (mit Sicherung des bisherigen Stands, wie beim Einspielen einer
+   * Sicherung) ersetzt und neu gestartet.
+   */
+  ipcMain.handle('inga-db:einbinden', sicher(async () => {
+    const auswahl = await dialog.showOpenDialog(mainWindow, {
+      title: 'INGA-Datenbank einbinden',
+      properties: ['openFile'],
+      filters: [
+        { name: 'INGA-Datenbank (Paket oder inga.sqlite3)', extensions: ['zip', 'sqlite3', 'db'] },
+        { name: 'Alle Dateien', extensions: ['*'] },
+      ],
+    });
+    if (auswahl.canceled || !auswahl.filePaths[0]) return null;
+    const arbeitsDir = path.join(os.tmpdir(), `inga-einbinden-${Date.now()}`);
+    try {
+      const vorbereitet = datenbankUebertragen.bereiteEinbindenVor(auswahl.filePaths[0], arbeitsDir);
+      const k = vorbereitet.kennzahlen;
+      const aktuell = repo.kennzahlen(db);
+      const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Einbinden und INGA neu starten', 'Abbrechen'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'INGA-Datenbank einbinden',
+        message: 'Aktuellen INGA-Bestand durch diese Datenbank ersetzen?',
+        detail:
+          `Gewählte Datenbank: ${k.titel} Titel, ${k.exemplare} Exemplare, ${k.leser} Nutzer, ${k.ausleihen} Ausleihen` +
+          `${vorbereitet.cover.length ? `, ${vorbereitet.cover.length} Cover` : ''}` +
+          `${vorbereitet.info?.erstellt ? ` (gesichert am ${new Date(vorbereitet.info.erstellt).toLocaleString('de-DE')})` : ''}.\n` +
+          `Bisher in INGA: ${aktuell.titel} Titel, ${aktuell.exemplare} Exemplare, ${aktuell.leser} Nutzer.\n\n` +
+          'Der bisherige Stand wird vorher automatisch gesichert (Einstellungen → Datensicherung) und lässt sich von dort wieder einspielen.',
+        ...(vorbereitet.einstellungen ? { checkboxLabel: 'Auch die Einstellungen übernehmen (Mahntexte, Leihfristen, Absender …)', checkboxChecked: true } : {}),
+      });
+      if (response !== 0) return { abgebrochen: true };
+      await einspielenUndNeustarten(vorbereitet.dbDatei, {
+        vorNeustart: async () => {
+          // Bisherige Cover beiseitelegen (nicht löschen), neue einsetzen.
+          const ablage = path.join(backupDir, 'covers-vor-einbinden');
+          await fs.rm(ablage, { recursive: true, force: true });
+          await fs.rename(coversDir, ablage).catch(() => {});
+          await fs.mkdir(coversDir, { recursive: true });
+          for (const { datei, daten } of vorbereitet.cover) {
+            await fs.writeFile(path.join(coversDir, path.basename(datei)), daten);
+          }
+          if (checkboxChecked && vorbereitet.einstellungen) speichereSettingsPatch(vorbereitet.einstellungen);
+        },
+      });
+      return { ok: true };
+    } finally {
+      await fs.rm(arbeitsDir, { recursive: true, force: true }).catch(() => {});
+    }
   }));
 
   /* ------------------------------------------- EXPERIMENTELL: Perpustakaan-Direktzugriff (siehe perpustakaan-live.js) */

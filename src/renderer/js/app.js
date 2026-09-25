@@ -2484,6 +2484,29 @@ function wireBestand() {
     }
   });
 
+  document.getElementById('inga-db-exportieren').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const result = await api.ingaDb.exportieren();
+      if (result) toast(`Gesichert: ${result.titel} Titel, ${result.leser} Nutzer, ${result.cover} Cover → ${result.pfad}`);
+    } catch (err) {
+      toast(`Sichern fehlgeschlagen: ${err.message || 'unerwarteter Fehler'}`, 'error');
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+  document.getElementById('inga-db-einbinden').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      // Bei Erfolg startet INGA von selbst neu – Rückfrage mit Inhalt der
+      // gewählten Datenbank kommt vorher als eigener Dialog aus main.js.
+      await api.ingaDb.einbinden();
+    } catch (err) {
+      toast(err.message || String(err), 'error');
+    } finally {
+      e.target.disabled = false;
+    }
+  });
   document.getElementById('cover-download-start').addEventListener('click', () => {
     starteCoverBulkDownload(!document.getElementById('cover-alle-neu').checked);
   });

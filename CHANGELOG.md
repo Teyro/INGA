@@ -6,6 +6,23 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.10.0 – 2026-09-25
+
+### Neu
+- **INGA-Datenbank auf einen anderen Rechner übertragen** (Import /
+  Export → "INGA-Datenbank übertragen"): "Datenbank sichern …" packt den
+  kompletten INGA-Stand in eine Datei (`INGA-Datenbank_<Datum>.zip`) –
+  anders als der Perpustakaan-Export auch Ausleih-/Mahnhistorie,
+  Sperren, Ferien, Papierkorb, Cover und die Einstellungen.
+  "Datenbank einbinden …" liest so ein Paket am neuen Rechner ein; eine
+  einzelne `inga.sqlite3` aus dem Datenordner eines anderen Rechners geht
+  auch (eine daneben liegende `inga.sqlite3-wal` wird automatisch
+  berücksichtigt). Vor dem Ersetzen zeigt INGA, was in der Datei steckt,
+  und sichert den bisherigen Stand automatisch. Rechnerbezogene Angaben
+  (Perpustakaan-Ordner, Element-Zugang) werden nicht mitgenommen.
+- **Neues App-Symbol mit dem INGA-Avatar**, auch im Startbildschirm und
+  im Abschiedsfenster.
+
 ## 1.9.1 – 2026-09-25
 
 ### Behoben
