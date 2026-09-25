@@ -6,6 +6,20 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.9.1 – 2026-09-25
+
+### Behoben
+- **INGA konnte im Startbildschirm hängen bleiben.** Zwei Ursachen sind
+  abgesichert: Trat beim Start ein Fehler auf (z. B. Datenbank gesperrt
+  oder beschädigt), blieb bisher einfach der Startbildschirm stehen –
+  jetzt erscheint eine verständliche Meldung, und INGA beendet sich
+  sauber. Und meldet das Hauptfenster auf einem Rechner nie
+  "fertig gezeichnet", wird es nach spätestens 10 Sekunden trotzdem
+  angezeigt.
+- Neu: ein Start-Protokoll (`logs/start.log` im INGA-Datenordner) hält
+  jeden Startschritt und jeden Fehler fest – falls es doch noch einmal
+  hakt, zeigt die letzte Zeile, wo.
+
 ## 1.9.0 – 2026-09-23
 
 Komplette Quellcode-Durchsicht mit Fehlersuche. Keine neuen Funktionen,

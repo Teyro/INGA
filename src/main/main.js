@@ -37,7 +37,7 @@ const { formatiereReleaseNotes } = require('./release-notes');
 const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
 const { alsExcelCsv } = require('./export');
 const { schreibeXlsx } = require('./xlsx');
-const { sicher } = require('./fehler');
+const { sicher, uebersetzeFehler } = require('./fehler');
 const { holeBuchdaten } = require('./isbn');
 const { coverFuerIsbnLaden } = require('./cover-quellen');
 const matrix = require('./matrix');
@@ -267,7 +267,58 @@ function createSplashWindow() {
  * ganz ohne Splash (z. B. in Tests) – einfach ein No-Op.
  */
 function splashStatus(text) {
+  startProtokoll(text);
   if (splashWindow && !splashWindow.isDestroyed()) splashWindow.webContents.send('fenster:status', text);
+}
+
+/**
+ * Start-Protokoll (userData/logs/start.log): hält jeden Startschritt, jeden
+ * Fehler und Abstürze der Oberfläche mit Uhrzeit fest. Bleibt INGA einmal
+ * beim Start hängen, zeigt die letzte Zeile, WO – ohne Entwicklerwerkzeuge.
+ * Wird bei jedem Start neu begonnen (bleibt dadurch klein), die Datei des
+ * vorigen Starts bleibt als start-vorher.log erhalten.
+ */
+let startProtokollDatei = null;
+function startProtokollBeginnen() {
+  try {
+    const ordner = path.join(app.getPath('userData'), 'logs');
+    require('node:fs').mkdirSync(ordner, { recursive: true });
+    startProtokollDatei = path.join(ordner, 'start.log');
+    try { require('node:fs').renameSync(startProtokollDatei, path.join(ordner, 'start-vorher.log')); } catch { /* erster Start */ }
+    startProtokoll(`INGA ${app.getVersion()} startet (${process.platform} ${process.arch}, Electron ${process.versions.electron})`);
+  } catch {
+    startProtokollDatei = null;
+  }
+}
+function startProtokoll(text) {
+  if (!startProtokollDatei) return;
+  try {
+    require('node:fs').appendFileSync(startProtokollDatei, `${new Date().toISOString()}  ${text}\n`);
+  } catch {
+    // Protokoll ist nur Hilfsmittel – darf nie selbst den Start verhindern
+  }
+}
+
+/**
+ * Letzter Ausweg bei einem Fehler während des Starts: bis 1.9.0 blieb dann
+ * einfach der Startbildschirm stehen (der Fehler verschwand unsichtbar in
+ * einem abgelehnten Promise). Jetzt: verständliche Meldung, Hinweis auf
+ * Protokoll und Sicherungen, sauberes Beenden.
+ */
+function startFehlgeschlagen(err) {
+  const text = err?.stack || err?.message || String(err);
+  startProtokoll(`FEHLER beim Start: ${text}`);
+  console.error('[start]', err);
+  closeSplashWindow();
+  dialog.showErrorBox(
+    'INGA konnte nicht starten',
+    `${uebersetzeFehler(err)}\n\n` +
+      'Bitte INGA erneut starten. Tritt der Fehler wieder auf: den Rechner neu starten ' +
+      '(falls noch ein altes INGA im Hintergrund läuft) und sonst diese Datei an die ' +
+      `IT-Unterstützung schicken:\n${startProtokollDatei || '(kein Protokoll)'}\n\n` +
+      `Deine Daten und die automatischen Sicherungen liegen unverändert in:\n${app.getPath('userData')}`
+  );
+  app.exit(1);
 }
 
 function closeSplashWindow() {
@@ -345,16 +396,34 @@ function createMainWindow() {
   });
 
   harden(mainWindow);
-  mainWindow.loadFile(path.join(RENDERER, 'index.html'));
-  mainWindow.once('ready-to-show', () => {
+  const fenster = mainWindow;
+  let gezeigt = false;
+  const zeigen = (grund) => {
+    if (gezeigt) return;
+    gezeigt = true;
+    startProtokoll(`Hauptfenster anzeigen (${grund})`);
+    closeSplashWindow();
+    if (!fenster.isDestroyed()) fenster.show();
+  };
+  // Oberflächen-Fehler/-Abstürze ins Start-Protokoll – sonst unsichtbar.
+  fenster.webContents.on('console-message', (event) => {
+    if (event.level === 'error') startProtokoll(`Oberfläche: ${event.message} (${event.sourceId}:${event.lineNumber})`);
+  });
+  fenster.webContents.on('did-fail-load', (_e, code, beschreibung) => startProtokoll(`Oberfläche konnte nicht geladen werden: ${code} ${beschreibung}`));
+  fenster.webContents.on('render-process-gone', (_e, details) => startProtokoll(`Oberflächen-Prozess beendet: ${details.reason} (${details.exitCode})`));
+  fenster.loadFile(path.join(RENDERER, 'index.html')).catch((err) => startProtokoll(`loadFile: ${err.message}`));
+  fenster.once('ready-to-show', () => {
     // Künstliche Verzögerung, damit der Splashscreen tatsächlich sichtbar ist –
     // auf schnellen Rechnern wäre er sonst kaum wahrnehmbar, da das Hauptfenster
     // oft schon nach wenigen hundert Millisekunden bereit ist.
-    setTimeout(() => {
-      closeSplashWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
-    }, 1000 + Math.floor(Math.random() * 2000)); // 1–3 s
+    setTimeout(() => zeigen('bereit'), 1000 + Math.floor(Math.random() * 2000)); // 1–3 s
   });
+  // Sicherheitsnetz: meldet das Fenster nie "bereit" (auf manchen
+  // Windows-Rechnern beobachtet, z. B. mit bestimmten Grafiktreibern oder
+  // Fenster-Hintergrundeffekten), blieb bisher für immer nur der
+  // Startbildschirm stehen. Nach spätestens 10 s wird das Fenster trotzdem
+  // gezeigt – im schlimmsten Fall zeichnet es sich dann einen Moment später.
+  setTimeout(() => zeigen('Zeitlimit – "bereit" kam nicht'), 10000);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -1556,7 +1625,11 @@ if (!gotLock) {
     }
   });
 
+  process.on('uncaughtException', (err) => startProtokoll(`Unbehandelter Fehler: ${err?.stack || err}`));
+  process.on('unhandledRejection', (err) => startProtokoll(`Unbehandelte Ablehnung: ${err?.stack || err}`));
+
   app.whenReady().then(async () => {
+    startProtokollBeginnen();
     // Splash ZUERST, vor jeglicher Datenbank-/Sicherungsarbeit unten –
     // die kann (siehe splashStatus-Aufrufe) spürbar dauern, vor allem die
     // Perpustakaan-Original-Sicherung bei einer großen echten Datenbank.
@@ -1620,7 +1693,8 @@ if (!gotLock) {
     setInterval(() => {
       if (settings().autoUpdateAktiv) autoUpdatePruefen();
     }, 6 * 60 * 60 * 1000);
-  });
+    startProtokoll('Start abgeschlossen, warte auf Oberfläche');
+  }).catch(startFehlgeschlagen);
 
   app.on('window-all-closed', () => {
     if (!platform.IS_MAC) app.quit();
