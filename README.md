@@ -304,8 +304,13 @@ Dialoge:
   Start und danach alle paar Stunden beim GitHub-Repository nach, fragt
   vor jedem Download nach – siehe „Automatische Updates“ unten). Alle
   drei einzeln abschaltbar.
-- **Experimentell ⚠️**: deutlich gekennzeichnet, standardmäßig aus.
-  Direkter Zugriff auf die echte, live verwendete Perpustakaan-Datenbank
+- **Perpustakaan ⚠️** (früher „Experimentell“): deutlich gekennzeichnet,
+  standardmäßig aus. **Perpustakaan-Modus** (ab 1.11.0-beta.1): Perpustakaan
+  ist die Hauptdatenbank, jede Änderung in INGA wird sofort als
+  Einzeländerung dorthin geschrieben, Änderungen aus Perpustakaan erscheinen
+  in INGA beim Zurückkehren ins Fenster; ist Perpustakaan geöffnet, trägt
+  INGA ausstehende Änderungen automatisch nach (Details:
+  `src/main/perpustakaan-modus.js`). Außerdem: direkter Zugriff auf die echte, live verwendete Perpustakaan-Datenbank
   (Apache Derby) statt nur auf Zip-Sicherungen – „Jetzt aus Perpustakaan
   lesen“ und „Jetzt in Perpustakaan schreiben“, Ordnerauswahl per Dialog,
   Statusanzeige, mehrfache Sicherheitsabfrage vor dem Schreiben. Erkennt

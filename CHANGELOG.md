@@ -6,6 +6,61 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 1.11.0-beta.1 – 2026-09-29
+
+### Neu
+- **Perpustakaan-Modus** (Einstellungen → Perpustakaan): Perpustakaan ist
+  die Hauptdatenbank, INGA liest und schreibt in Echtzeit. Jede Änderung in
+  INGA (Ausleihe, Rückgabe, Verlängerung, neue Nutzer/Titel, Mahnungen …)
+  wird sofort als Einzeländerung in die Perpustakaan-Datenbank geschrieben –
+  nur die tatsächlich geänderten Felder, in einer Transaktion. Änderungen
+  aus Perpustakaan erscheinen in INGA, sobald man ins INGA-Fenster
+  zurückkehrt (und jede Minute, solange INGA im Vordergrund ist). INGAs
+  eigene Datenbank ist nur noch Kopie und Sicherung.
+- Perpustakaan lässt immer nur ein Programm gleichzeitig an seine
+  Datenbank. Ist Perpustakaan geöffnet, arbeitet INGA mit seiner Kopie
+  weiter, merkt sich die Änderungen (auch über einen Neustart hinweg) und
+  trägt sie automatisch nach, sobald Perpustakaan geschlossen ist. INGA
+  belegt die Datenbank selbst nur wenige Sekunden je Zugriff.
+- Wurde in beiden Programmen gleichzeitig dieselbe Nummer vergeben
+  (Konflikt), schreibt INGA nichts und lässt in den Einstellungen
+  entscheiden: Perpustakaan-Stand übernehmen oder INGA-Stand schreiben.
+- Statusanzeige in der Titelleiste (✓ abgeglichen / Perpustakaan geöffnet
+  / Konflikt), Klick führt zu den Details.
+
+### Behoben
+- **Direkter Zugriff funktionierte mit einer echten Perpustakaan-Datenbank
+  nicht**: Perpustakaan legt seine Tabellen in Großbuchstaben im Schema
+  „DEFAULT“ an, Datumsfelder sind DATE, Wahrheitswerte BOOLEAN – die Brücke
+  suchte „Ausleihe“ statt „AUSLEIHE“ und hätte Datumswerte falsch
+  geschrieben. Jetzt gegen eine Kopie einer echten Perpustakaan-Datenbank
+  (Derby 10.16) geprüft; Perpustakaan öffnet die Datenbank danach
+  weiterhin problemlos.
+- **„Jetzt in Perpustakaan schreiben“ hätte Cover-Bilder und Schülerfotos
+  in Perpustakaan gelöscht** (alles leeren und neu befüllen). Schreibt
+  jetzt nur noch die Unterschiede zum tatsächlichen Perpustakaan-Stand.
+- **Import löschte INGA-eigene Angaben**: Ausleihsperren und die
+  Mahnstufe (Erinnerung/Mahnung) gingen bei jedem Import bzw. „Aus
+  Perpustakaan lesen“ verloren – bleiben jetzt erhalten.
+- Nach einem erneuten Einlesen bekamen alle Ausleihen neue interne
+  Nummern – ein Klick auf „Zurückgeben“ in einer noch offenen Liste lief
+  dann ins Leere. Die Nummern bleiben jetzt gleich; eine wirklich nicht mehr
+  vorhandene Ausleihe meldet INGA, statt still nichts zu tun.
+- Export im Perpustakaan-Format: offene Ausleihen tragen jetzt die
+  Fälligkeit (Perpustakaan zeigte für in INGA verliehene Bücher sonst
+  kein Rückgabedatum).
+- Nach „Aus Perpustakaan lesen“ wurden gewählte Filter (Medienart,
+  Klasse …) auf „Alle“ zurückgesetzt.
+- Ein zweites Löschen derselben Person (nach Wiederherstellen) bzw. eine
+  zweite Mahnung für dieselbe Ausleihe am selben Tag legte doppelte
+  Einträge an, die Perpustakaan nicht erlaubt.
+- Wählt man beim Datenbankordner den übergeordneten Ordner (z. B.
+  „Bücherei 2026“), findet INGA den eigentlichen Datenbankordner darin
+  selbst.
+- Fehlermeldungen der Perpustakaan-Brücke kamen unter Windows mit kaputten
+  Umlauten an.
+
+
 ## 1.10.2 – 2026-09-25
 
 ### Geändert

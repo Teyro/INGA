@@ -19,6 +19,7 @@
     </div>
     <div class="brand"><span>📚</span><span>INGA</span><span class="spruch" id="spruch" title="Klick für einen neuen Spruch">–&nbsp;…</span></div>
     <div class="spacer"></div>
+    <button class="perp-status" id="perp-status" hidden title="Perpustakaan-Modus – Klick für Details"></button>
     <div class="uhr" id="uhr" title="Ein-/Ausblenden in den Einstellungen (Aussehen und weitere App-Einstellungen)">–&thinsp;:&thinsp;–&thinsp;:&thinsp;–</div>
     <div class="caption-space"></div>
   </div>
@@ -479,7 +480,7 @@
             <div class="settings-nav-item active" data-einst-pane="ferien">Ferien</div>
             <div class="settings-nav-item" data-einst-pane="mahnungen">Mahnungen</div>
             <div class="settings-nav-item" data-einst-pane="allgemein">Aussehen und weitere App-Einstellungen</div>
-            <div class="settings-nav-item" data-einst-pane="experimentell">Experimentell ⚠️</div>
+            <div class="settings-nav-item" data-einst-pane="experimentell">Perpustakaan ⚠️</div>
             <div class="settings-nav-item" data-einst-pane="verschiedenes">Verschiedenes</div>
           </nav>
           <div class="settings-content">
@@ -724,17 +725,15 @@
 
             <!-- ····························································· Experimentell -->
             <section class="settings-pane" id="einst-pane-experimentell" hidden>
-              <h2>Experimentell ⚠️</h2>
+              <h2>Perpustakaan-Anbindung ⚠️</h2>
               <div class="hinweis-banner">
                 <span class="icon">⚠️</span>
                 <div class="hinweis-banner-inhalt">
                   <div class="hinweis-banner-titel">Direkter Zugriff auf die echte Perpustakaan-Datenbank</div>
                   <div class="hinweis-banner-text">
-                    Noch nicht ausgereift und nur mit einer eigens angelegten Testdatenbank geprüft – nicht mit
-                    echten Daten. "Jetzt in Perpustakaan schreiben" überschreibt die Original-Datenbank direkt.
-                    Vor jedem Programmstart mit aktiviertem Zugriff sichert INGA die Original-Datenbank automatisch
-                    (Rückfalloption bei Problemen), das ersetzt aber keine eigene, unabhängige Sicherung. Nur
-                    aktivieren, wenn du weißt, was du tust – idealerweise erst an einer Kopie ausprobieren.
+                    Geprüft mit einer Kopie einer echten Perpustakaan-Datenbank, aber noch neu. INGA sichert die
+                    Original-Datenbank bei jedem Start automatisch (Einstellungen → Datensicherung) – das ersetzt
+                    keine eigene, unabhängige Sicherung. Idealerweise zuerst an einer Kopie ausprobieren.
                   </div>
                 </div>
               </div>
@@ -753,9 +752,31 @@
                   <button class="button primary" id="perpustakaan-live-reparieren">🛠️ Java-Laufzeit reparieren</button>
                   <span class="hint">Lädt die fehlende Laufzeit einmalig neu herunter (braucht kurz eine Internetverbindung).</span>
                 </div>
-                <div class="row-inline" style="margin-top:14px">
+                <div class="row-inline" style="margin-top:14px" id="perpustakaan-live-knoepfe">
                   <button class="button" id="perpustakaan-live-lesen">Jetzt aus Perpustakaan lesen</button>
                   <button class="button danger" id="perpustakaan-live-schreiben">Jetzt in Perpustakaan schreiben …</button>
+                </div>
+              </div>
+
+              <div class="card" style="padding:18px; margin-bottom:16px">
+                <label class="checkbox-label"><input type="checkbox" id="set-perpustakaanModus" /> <strong>Perpustakaan-Modus</strong> – Perpustakaan ist die Hauptdatenbank</label>
+                <p class="hint" style="margin-top:8px">
+                  INGA liest und schreibt dann in Echtzeit direkt in Perpustakaan: jede Ausleihe, Rückgabe, jeder neue
+                  Nutzer oder Titel landet sofort in der Perpustakaan-Datenbank, Änderungen aus Perpustakaan erscheinen in
+                  INGA, sobald du ins INGA-Fenster zurückkehrst. INGAs eigene Datenbank ist nur noch Kopie und Sicherung.
+                </p>
+                <p class="hint">
+                  Wichtig: Perpustakaan lässt immer nur <strong>ein</strong> Programm gleichzeitig an seine Datenbank. Ist
+                  Perpustakaan geöffnet, arbeitet INGA mit seiner Kopie weiter und trägt alle Änderungen automatisch nach,
+                  sobald Perpustakaan geschlossen ist. Beim Einschalten übernimmt INGA den kompletten Stand aus Perpustakaan
+                  (der bisherige INGA-Stand wird vorher gesichert). Voraussetzung: direkter Zugriff oben aktiviert und Ordner gewählt.
+                </p>
+                <p class="hint perp-modus-status" id="perpustakaan-modus-status" style="margin-top:12px"></p>
+                <div class="row-inline" style="margin-top:10px" id="perpustakaan-modus-knoepfe" hidden>
+                  <button class="button" id="perpustakaan-modus-abgleichen">Jetzt abgleichen</button>
+                  <button class="button" id="perpustakaan-modus-erneut" hidden>Erneut versuchen</button>
+                  <button class="button" id="perpustakaan-modus-uebernehmen" hidden>Perpustakaan-Stand übernehmen …</button>
+                  <button class="button danger" id="perpustakaan-modus-komplett" hidden>INGA-Stand komplett schreiben …</button>
                 </div>
               </div>
             </section>

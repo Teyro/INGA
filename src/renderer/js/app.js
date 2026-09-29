@@ -83,6 +83,13 @@ async function boot() {
   });
   api.on('cover:progress', aktualisiereCoverFortschritt);
   api.on('update:status', zeichneUpdateStatus);
+  api.on('perpustakaan-modus:status', zeichnePerpustakaanModusStatus);
+  api.on('perpustakaan-modus:daten-neu', datenAusPerpustakaanNeuLaden);
+  document.getElementById('perp-status').addEventListener('click', () => {
+    showView('einstellungen');
+    document.querySelector('.settings-nav-item[data-einst-pane="experimentell"]')?.click();
+  });
+  api.perpustakaanModus.status().then(zeichnePerpustakaanModusStatus);
 
   showView('dashboard');
 }
@@ -533,6 +540,19 @@ function medArtLabel(kb) {
 
 /** Füllt die Filter-Dropdowns in Katalog und Nutzer – beim Start und nach jedem Import. */
 async function fuelleAlleFilter() {
+  // Beim erneuten Befüllen (nach "Aus Perpustakaan lesen", im Perpustakaan-
+  // Modus auch im Hintergrund) die gerade gewählten Filter behalten, statt
+  // sie stillschweigend auf "Alle" zurückzusetzen.
+  const ids = ['katalog-filter-medienart', 'katalog-filter-kategorie', 'katalog-filter-standort', 'leser-filter-gruppe', 'leser-filter-zweig', 'leser-filter-klasse', 'rueckgabe-filter-klasse'];
+  const vorher = new Map(ids.map((id) => [id, document.getElementById(id)?.value ?? '']));
+  await fuelleAlleFilterNeu();
+  for (const [id, wert] of vorher) {
+    const auswahl = document.getElementById(id);
+    if (auswahl && wert && [...auswahl.options].some((o) => o.value === wert)) auswahl.value = wert;
+  }
+}
+
+async function fuelleAlleFilterNeu() {
   const medArt = document.getElementById('katalog-filter-medienart');
   medArt.replaceChildren(el('option', { value: '' }, ['Alle Medienarten']), ...medArtOptions().map((o) => el('option', { value: o.value }, [o.label])));
   const kategorie = document.getElementById('katalog-filter-kategorie');
@@ -2611,6 +2631,32 @@ function wirePerpustakaanLive() {
     await erzwingeNeuePerpustakaanLivePruefung();
   });
 
+  document.getElementById('set-perpustakaanModus').addEventListener('change', async (e) => {
+    const box = e.target;
+    if (box.checked) {
+      if (!document.getElementById('set-perpustakaanLiveAktiv').checked || !document.getElementById('perpustakaan-live-pfad').value) {
+        toast('Bitte zuerst oben den direkten Zugriff aktivieren und den Ordner der Perpustakaan-Datenbank wählen.', 'error');
+        box.checked = false;
+        return;
+      }
+      if (!confirm('Perpustakaan-Modus einschalten?\n\nINGA übernimmt dabei den kompletten Stand aus Perpustakaan – der bisherige INGA-Stand wird vorher automatisch gesichert. Danach schreibt INGA jede Änderung sofort in die Perpustakaan-Datenbank.')) {
+        box.checked = false;
+        return;
+      }
+    }
+    await speichereEinstellungenSofort();
+  });
+  document.getElementById('perpustakaan-modus-abgleichen').addEventListener('click', () => perpustakaanModusAktion(api.perpustakaanModus.jetztAbgleichen));
+  document.getElementById('perpustakaan-modus-erneut').addEventListener('click', () => perpustakaanModusAktion(api.perpustakaanModus.erneutVersuchen));
+  document.getElementById('perpustakaan-modus-uebernehmen').addEventListener('click', () => {
+    if (!confirm('Den Stand aus Perpustakaan übernehmen?\n\nÄnderungen in INGA, die noch nicht in Perpustakaan stehen, werden dabei verworfen. Der aktuelle INGA-Stand wird vorher automatisch gesichert (Einstellungen → Datensicherung).')) return;
+    perpustakaanModusAktion(api.perpustakaanModus.perpustakaanUebernehmen);
+  });
+  document.getElementById('perpustakaan-modus-komplett').addEventListener('click', () => {
+    if (!confirm('INGAs kompletten Stand in Perpustakaan schreiben?\n\nWo sich Perpustakaan und INGA unterscheiden, gilt danach der INGA-Stand – auch bei Änderungen, die zwischenzeitlich in Perpustakaan gemacht wurden. Die Perpustakaan-Datenbank wird vorher automatisch gesichert.')) return;
+    perpustakaanModusAktion(api.perpustakaanModus.ingaKomplettSchreiben);
+  });
+
   document.getElementById('perpustakaan-live-reparieren').addEventListener('click', async () => {
     const btn = document.getElementById('perpustakaan-live-reparieren');
     const textVorher = btn.textContent;
@@ -2736,6 +2782,93 @@ async function aktualisierePerpustakaanLiveStatus() {
 /** Stößt eine FRISCHE Sicherung+Prüfung an (siehe main.js perpustakaanLiveBereitPruefen) – für den Moment, in dem gerade Pfad/Aktivierung geändert wurden und die Anzeige sonst bis zum nächsten Neustart veraltet bliebe. */
 async function erzwingeNeuePerpustakaanLivePruefung() {
   zeichnePerpustakaanLiveStatus(await api.perpustakaanLive.jetztPruefen());
+}
+
+/** Knopf im Perpustakaan-Modus: alle Knöpfe sperren, solange der Vorgang läuft, Ergebnis anzeigen. */
+async function perpustakaanModusAktion(aufruf) {
+  const knoepfe = document.querySelectorAll('#perpustakaan-modus-knoepfe button');
+  for (const b of knoepfe) b.disabled = true;
+  try {
+    const status = await aufruf();
+    zeichnePerpustakaanModusStatus(status);
+    if (status?.zustand === 'synchron') toast(status.text || 'Mit Perpustakaan abgeglichen.');
+  } catch (err) {
+    toast(err.message || String(err), 'error');
+  } finally {
+    for (const b of knoepfe) b.disabled = false;
+  }
+}
+
+/**
+ * Status des Perpustakaan-Modus: kleiner Hinweis in der Titelleiste (nur
+ * wenn der Modus an ist) und ausführlich in den Einstellungen, dort je nach
+ * Lage mit den passenden Knöpfen (bei einem Konflikt entscheidet die Person).
+ */
+function zeichnePerpustakaanModusStatus(s) {
+  if (!s) return;
+  const chip = document.getElementById('perp-status');
+  const zeile = document.getElementById('perpustakaan-modus-status');
+  const knoepfe = document.getElementById('perpustakaan-modus-knoepfe');
+  const altKnoepfe = document.getElementById('perpustakaan-live-knoepfe');
+  const aktiv = Boolean(s.aktiv) && s.zustand !== 'aus';
+  if (altKnoepfe) altKnoepfe.hidden = aktiv; // im Modus übernimmt der Abgleich das Lesen/Schreiben
+  if (knoepfe) knoepfe.hidden = !aktiv;
+  const offen = s.ausstehend ? ` · ${s.ausstehend} Änderung${s.ausstehend === 1 ? '' : 'en'} ausstehend` : '';
+  const uhrzeit = s.letzterAbgleich ? new Date(s.letzterAbgleich).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+  const chipTexte = {
+    verbinde: ['⏳ Perpustakaan …', 'warten'],
+    schreibt: ['⏳ Perpustakaan …', 'warten'],
+    synchron: ['✓ Perpustakaan', 'ok'],
+    gesperrt: [`⏸ Perpustakaan geöffnet${s.ausstehend ? ` (${s.ausstehend})` : ''}`, 'warten'],
+    konflikt: ['⚠️ Perpustakaan: Konflikt', 'problem'],
+    fehler: ['⚠️ Perpustakaan: Fehler', 'problem'],
+  };
+  if (chip) {
+    const [text, klasse] = chipTexte[s.zustand] || ['', ''];
+    chip.hidden = !aktiv || !text;
+    chip.textContent = text;
+    chip.className = `perp-status ${klasse}`;
+    chip.title = `${s.text || ''}${uhrzeit ? ` (zuletzt abgeglichen ${uhrzeit} Uhr)` : ''} – Klick für Details`;
+  }
+  if (zeile) {
+    if (!aktiv) zeile.textContent = 'Perpustakaan-Modus ist ausgeschaltet.';
+    else if (s.zustand === 'synchron') zeile.textContent = `✓ ${s.text || 'Mit Perpustakaan abgeglichen.'}${uhrzeit ? ` Zuletzt um ${uhrzeit} Uhr.` : ''}`;
+    else if (s.zustand === 'konflikt') zeile.textContent = `⚠️ Konflikt: ${s.text} – bitte unten entscheiden, welcher Stand gelten soll.${offen}`;
+    else if (s.zustand === 'fehler') zeile.textContent = `⚠️ ${s.text}${offen}`;
+    else zeile.textContent = `${s.text || ''}${offen}`;
+  }
+  const problem = s.zustand === 'konflikt' || s.zustand === 'fehler';
+  document.getElementById('perpustakaan-modus-erneut').hidden = s.zustand !== 'fehler';
+  document.getElementById('perpustakaan-modus-uebernehmen').hidden = !problem;
+  document.getElementById('perpustakaan-modus-komplett').hidden = !problem;
+  const reparierenZeile = document.getElementById('perpustakaan-live-reparieren-zeile');
+  if (reparierenZeile && s.laufzeitFehlt) reparierenZeile.hidden = false;
+}
+
+/**
+ * Perpustakaan-Modus hat einen neuen Stand aus Perpustakaan eingelesen:
+ * Stammdaten, Filter, Zähler und die gerade sichtbare Liste neu laden. Nicht,
+ * solange ein Bearbeiten-Fenster offen ist oder gerade ausgeliehen wird (dort
+ * würde ein Neuaufbau mitten in die Eingabe fahren) – dann beim nächsten Mal.
+ */
+async function datenAusPerpustakaanNeuLaden() {
+  state.stammdaten = await api.stammdaten.get();
+  await refreshKennzahlen().catch(() => {});
+  if (!document.getElementById('sheet-backdrop').hidden) return;
+  await fuelleAlleFilter().catch(() => {});
+  const laden = {
+    katalog: loadKatalog,
+    leser: loadLeser,
+    rueckgabe: loadRueckgabe,
+    mahnungen: loadMahnungen,
+    umlauf: loadUmlauf,
+    papierkorb: loadPapierkorb,
+    statistik: loadStatistik,
+    dashboard: loadDashboard,
+  }[state.view];
+  // Rückgabe: angehakte Zeilen (Sammel-Rückgabe) nicht durch ein Neuladen verlieren.
+  if (state.view === 'rueckgabe' && document.querySelector('#rueckgabe-tbody input[type="checkbox"]:checked')) return;
+  if (laden) await laden();
 }
 
 function zeichnePerpustakaanLiveStatus(s) {
@@ -3161,6 +3294,7 @@ async function loadEinstellungen() {
   // EXPERIMENTELL, siehe perpustakaan-live.js
   document.getElementById('set-perpustakaanLiveAktiv').checked = Boolean(s.perpustakaanLiveAktiv);
   document.getElementById('perpustakaan-live-pfad').value = s.perpustakaanLiveDbPfad || '';
+  document.getElementById('set-perpustakaanModus').checked = Boolean(s.perpustakaanModus);
   aktualisierePerpustakaanLiveStatus();
 }
 
@@ -3630,6 +3764,7 @@ async function speichereEinstellungenSofort() {
     // EXPERIMENTELL, siehe perpustakaan-live.js
     perpustakaanLiveAktiv: document.getElementById('set-perpustakaanLiveAktiv').checked,
     perpustakaanLiveDbPfad: document.getElementById('perpustakaan-live-pfad').value,
+    perpustakaanModus: document.getElementById('set-perpustakaanModus').checked,
   };
   state.settings = await api.settings.save(patch);
 }

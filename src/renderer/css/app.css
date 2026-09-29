@@ -56,6 +56,23 @@ button { cursor: pointer; }
 .brand .spruch:hover { color: var(--titlebar-fg, var(--text)); }
 .brand .spruch:active { transform: translateY(1px); }
 .titlebar .spacer { flex: 1; }
+/* Perpustakaan-Modus: kleiner Statushinweis in der Titelleiste (siehe app.js zeichnePerpustakaanModusStatus). */
+.perp-status {
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--titlebar-fg-soft, var(--text-soft));
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 2px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.perp-status:hover { color: var(--titlebar-fg, var(--text)); }
+.perp-status.ok { color: var(--ok); border-color: currentColor; }
+.perp-status.warten { color: var(--warn); border-color: currentColor; }
+.perp-status.problem { color: var(--danger); border-color: currentColor; font-weight: 600; }
 .caption-space { -webkit-app-region: no-drag; }
 
 /* Digitaluhr oben rechts (mit Sekunden) – wechselt kurz vor einer festen

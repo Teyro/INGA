@@ -30,9 +30,10 @@ const ferien = require('./ferien');
 const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
 const { heuteISO, addTage } = require('./date-utils');
-const { importZip, exportZip } = require('./csvio');
+const { importZip, exportZip, exportTabellen } = require('./csvio');
 const { sichereDatenbankSync, backupHeuteVorhanden, listeBackups, sicherePerpustakaanZipSync, perpustakaanBackupHeuteVorhanden, sichereOriginalPerpustakaanDbSync, sichereVorUpdateSync } = require('./backup');
 const perpustakaanLive = require('./perpustakaan-live'); // EXPERIMENTELL, siehe dort
+const { erstellePerpustakaanModus, komplettAbgleichen, schnappschuss } = require('./perpustakaan-modus');
 const { formatiereReleaseNotes } = require('./release-notes');
 const derbyRuntimeSetup = require('./derby-runtime-setup'); // EXPERIMENTELL: Assistent "Java-Laufzeit reparieren", siehe dort
 const { alsExcelCsv } = require('./export');
@@ -86,6 +87,10 @@ let heruntergeladeneVersion = null;
 // Aufruf zusätzlich frisch, ob die Datenbank in diesem Moment frei ist
 // (Perpustakaan könnte zwischenzeitlich geöffnet worden sein).
 let perpustakaanLiveStatus = { aktiv: false };
+// Perpustakaan-Modus (siehe perpustakaan-modus.js): Perpustakaan ist die
+// Hauptdatenbank, jede Änderung wird sofort dorthin geschrieben. null, bis
+// die Datenbank geöffnet ist.
+let perpustakaanModus = null;
 let laufzeitReparaturLaeuft = false; // EXPERIMENTELL: verhindert doppelten Download bei Doppelklick auf "Java-Laufzeit reparieren"
 
 function settings() {
@@ -179,6 +184,73 @@ async function perpustakaanLiveZugriffPruefenOderFehler(dbPfad) {
     : { ok: false, fehler: zugriff.fehler || 'unbekannter Fehler' };
 }
 
+/* ------------------------------------------------------------------
+ * Perpustakaan-Modus (Echtzeit-Abgleich), siehe perpustakaan-modus.js
+ * ------------------------------------------------------------------ */
+
+/** Die Brücke, wie perpustakaan-modus.js sie erwartet – immer über den langlebigen Java-Prozess. */
+const perpustakaanBruecke = {
+  dump: (dbPfad, zip) => perpustakaanLive.dumpUeberDienst(dbPfad, TABLES, zip),
+  apply: (dbPfad, bloecke) => perpustakaanLive.wendeAenderungenAn(dbPfad, bloecke),
+};
+
+function erstellePerpustakaanModusFuerApp() {
+  return erstellePerpustakaanModus({
+    holeDb: () => db,
+    holeEinstellungen: () => settings(),
+    exportTabellen,
+    importZip,
+    bridge: perpustakaanBruecke,
+    sichereIngaDb: () => Boolean(sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-perpustakaan-modus' })),
+    sicherePerpustakaanDb: (dbPfad) => Boolean(sichereOriginalPerpustakaanDbSync(dbPfad, backupDir)),
+    basisDatei: path.join(app.getPath('userData'), 'perpustakaan-abgleich.json'),
+    tmpDir: os.tmpdir(),
+    meldeStatus: (status) => mainWindow?.webContents.send('perpustakaan-modus:status', status),
+    meldeDatenNeu: () => mainWindow?.webContents.send('perpustakaan-modus:daten-neu'),
+  });
+}
+
+function perpustakaanModusGewuenscht(s = settings()) {
+  return Boolean(s.perpustakaanLiveAktiv && s.perpustakaanModus && s.perpustakaanLiveDbPfad);
+}
+
+/** Modus passend zu den Einstellungen ein-/ausschalten (Start, geänderte Einstellungen). */
+function perpustakaanModusAnpassen() {
+  if (!perpustakaanModus) return;
+  const s = settings();
+  if (perpustakaanModusGewuenscht(s)) {
+    perpustakaanModus.starte(s.perpustakaanLiveDbPfad);
+  } else if (perpustakaanModus.istAktiv()) {
+    perpustakaanModus.stoppe();
+  }
+}
+
+/**
+ * Der gewählte Ordner muss die Derby-Datenbank selbst sein (mit
+ * "service.properties"). Wählt jemand den übergeordneten Ordner (bei
+ * Perpustakaan z. B. "Bücherei 2026" statt "Bücherei 2026\\perpustakaan"),
+ * wird ein passender Unterordner automatisch genommen.
+ */
+function findeDerbyOrdner(ordner) {
+  const fsSync = require('node:fs');
+  if (fsSync.existsSync(path.join(ordner, 'service.properties'))) return ordner;
+  try {
+    for (const eintrag of fsSync.readdirSync(ordner, { withFileTypes: true })) {
+      if (eintrag.isDirectory() && fsSync.existsSync(path.join(ordner, eintrag.name, 'service.properties'))) {
+        return path.join(ordner, eintrag.name);
+      }
+    }
+  } catch { /* nicht lesbar – dann eben der gewählte Ordner, die Prüfung meldet den Fehler */ }
+  return ordner;
+}
+
+/** Lehnt Vorgänge ab, die im Perpustakaan-Modus den Stand in Perpustakaan unbemerkt überschreiben würden. */
+function nichtImPerpustakaanModus(was) {
+  if (perpustakaanModus?.istAktiv()) {
+    throw new Error(`${was} ist im Perpustakaan-Modus nicht möglich – INGA arbeitet dann direkt mit der Perpustakaan-Datenbank. Bitte den Modus unter Einstellungen → Perpustakaan zuerst ausschalten.`);
+  }
+}
+
 function isDark() {
   const mode = settings().theme;
   if (mode === 'light') return false;
@@ -206,6 +278,9 @@ function speichereSettingsPatch(patch) {
   const background = isDark() ? '#12151c' : '#e8ecf3';
   if (mainWindow) platform.applyWindowMaterial(mainWindow, { settings: next, style: activeStyle, background, dark: isDark(), kind: 'main' });
   mainWindow?.webContents.send('settings:updated', next);
+  if (['perpustakaanLiveAktiv', 'perpustakaanModus', 'perpustakaanLiveDbPfad'].some((k) => Object.hasOwn(merged, k))) {
+    perpustakaanModusAnpassen();
+  }
   return next;
 }
 
@@ -694,6 +769,12 @@ async function bereiteBeendenVor() {
   // sich dann gar nicht mehr schließen, der mit Abstand schlimmere Fehler
   // gegenüber einem einmal ausgefallenen Backup.
   try {
+    if (perpustakaanModus?.istAktiv()) {
+      // Noch nicht Geschriebenes nachtragen (höchstens 15 s) – was dann noch
+      // fehlt, bleibt gemerkt und wird beim nächsten Start nachgetragen.
+      await Promise.race([perpustakaanModus.abschliessen(), new Promise((r) => setTimeout(r, 15000))]).catch(() => {});
+    }
+    perpustakaanLive.beendeDienst();
     const s = settings();
     const brauchtTagesBackup = Boolean(db && dbFile && backupDir) && s.autoBackupAktiv !== false && !backupHeuteVorhanden(backupDir, 'ende');
     // Eigenständig geprüft (nicht einfach an brauchtTagesBackup gehängt):
@@ -1009,6 +1090,20 @@ async function einspielenUndNeustarten(quelle, { vorNeustart } = {}) {
 }
 
 function registerIpc() {
+  // Perpustakaan-Modus: nach JEDEM Vorgang aus der Oberfläche prüfen, ob sich
+  // in der Datenbank etwas geändert hat, und es dann sofort nach Perpustakaan
+  // schreiben – ohne jeden einzelnen Handler unten anfassen zu müssen (und
+  // ohne dass ein künftig neu hinzukommender Handler es vergessen kann).
+  // Kostet nichts, wenn sich nichts geändert hat (siehe nachVorgang()).
+  const handle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (kanal, fn) => handle(kanal, async (...args) => {
+    try {
+      return await fn(...args);
+    } finally {
+      perpustakaanModus?.nachVorgang();
+    }
+  });
+
   ipcMain.handle('bootstrap', () => bootstrapPayload());
 
   ipcMain.handle('settings:set', (_e, patch) => speichereSettingsPatch(patch));
@@ -1403,6 +1498,7 @@ function registerIpc() {
   ipcMain.handle('kennzahlen:get', () => repo.kennzahlen(db));
 
   ipcMain.handle('bestand:import', sicher(async () => {
+    nichtImPerpustakaanModus('Ein Bestand-Import');
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Bestand importieren',
       properties: ['openFile'],
@@ -1443,6 +1539,7 @@ function registerIpc() {
    * genau wie bei jedem normalen Programmstart.
    */
   ipcMain.handle('backup:einspielen', sicher(async (_e, dateiname) => {
+    nichtImPerpustakaanModus('Das Einspielen einer INGA-Sicherung');
     const quelle = path.join(backupDir, path.basename(String(dateiname || '')));
     if (path.dirname(quelle) !== backupDir) throw new Error('Ungültige Sicherungsdatei.');
     await fs.access(quelle).catch(() => {
@@ -1452,6 +1549,7 @@ function registerIpc() {
   }));
 
   ipcMain.handle('backup:einspielen-datei', sicher(async () => {
+    nichtImPerpustakaanModus('Das Einspielen einer INGA-Sicherung');
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Sicherung einspielen',
       properties: ['openFile'],
@@ -1489,6 +1587,7 @@ function registerIpc() {
    * Sicherung) ersetzt und neu gestartet.
    */
   ipcMain.handle('inga-db:einbinden', sicher(async () => {
+    nichtImPerpustakaanModus('Das Einbinden einer anderen INGA-Datenbank');
     const auswahl = await dialog.showOpenDialog(mainWindow, {
       title: 'INGA-Datenbank einbinden',
       properties: ['openFile'],
@@ -1540,7 +1639,15 @@ function registerIpc() {
 
   /* ------------------------------------------- EXPERIMENTELL: Perpustakaan-Direktzugriff (siehe perpustakaan-live.js) */
 
-  ipcMain.handle('perpustakaan-live:status', () => perpustakaanLiveStatus);
+  ipcMain.handle('perpustakaan-live:status', () => {
+    // Im Perpustakaan-Modus gibt es keine separate Einmal-Prüfung – der
+    // Zustand des Modus sagt dasselbe aus.
+    if (perpustakaanModus?.istAktiv()) {
+      const m = perpustakaanModus.status();
+      return { aktiv: true, bereit: m.zustand === 'synchron', gesperrt: m.zustand === 'gesperrt', grund: m.text, laufzeitFehlt: Boolean(m.laufzeitFehlt) };
+    }
+    return perpustakaanLiveStatus;
+  });
 
   /**
    * Erneute Prüfung AUF ANFRAGE (Ordner gerade gewählt, Zugriff gerade
@@ -1556,11 +1663,15 @@ function registerIpc() {
       message: 'Der Ordner mit service.properties/log/seg0 der echten Apache-Derby-Datenbank (NICHT der Perpustakaan-Programmordner selbst).',
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    return result.filePaths[0];
+    return findeDerbyOrdner(result.filePaths[0]);
   }));
 
   /** Live aus Perpustakaan lesen: exakt derselbe Import-Weg wie eine hochgeladene Sicherung (csvio.importZip) – der Java-Bridge-Export liefert nur dieselbe Zip-Form. */
   ipcMain.handle('perpustakaan-live:jetzt-lesen', sicher(async () => {
+    if (perpustakaanModus?.istAktiv()) {
+      const status = await perpustakaanModus.aktualisiere({ erzwingen: true });
+      return status.zustand === 'synchron' ? { ok: true, kennzahlen: repo.kennzahlen(db) } : { ok: false, gesperrt: status.zustand === 'gesperrt', fehler: status.text };
+    }
     const s = settings();
     if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
     const fehler = await perpustakaanLiveZugriffPruefenOderFehler(s.perpustakaanLiveDbPfad);
@@ -1599,6 +1710,10 @@ function registerIpc() {
    * Einstellung oder fehlgeschlagene Sicherung grundsätzlich ab.
    */
   ipcMain.handle('perpustakaan-live:jetzt-schreiben', sicher(async () => {
+    if (perpustakaanModus?.istAktiv()) {
+      const status = await perpustakaanModus.ingaKomplettSchreiben();
+      return status.zustand === 'synchron' ? { ok: true } : { ok: false, gesperrt: status.zustand === 'gesperrt', fehler: status.text };
+    }
     const s = settings();
     if (!s.perpustakaanLiveAktiv || !s.perpustakaanLiveDbPfad) throw new Error('Der experimentelle Direktzugriff ist nicht aktiv.');
     const fehler = await perpustakaanLiveZugriffPruefenOderFehler(s.perpustakaanLiveDbPfad);
@@ -1606,14 +1721,18 @@ function registerIpc() {
     if (!sichereOriginalPerpustakaanDbSync(s.perpustakaanLiveDbPfad, backupDir)) {
       return { ok: false, fehler: 'Sicherung der Original-Perpustakaan-Datenbank fehlgeschlagen – aus Sicherheitsgründen abgebrochen, es wurde nichts geschrieben.' };
     }
-    const quellZip = path.join(os.tmpdir(), `inga-perpustakaan-schreiben-${Date.now()}.zip`);
-    try {
-      exportZip(db, quellZip);
-      return await perpustakaanLive.ladeAusZip(s.perpustakaanLiveDbPfad, quellZip);
-    } finally {
-      fs.unlink(quellZip).catch(() => {});
-    }
+    // Abgleich gegen den tatsächlichen Perpustakaan-Stand statt "alles
+    // löschen und neu befüllen" – sonst gingen Daten verloren, die INGA
+    // nicht kennt (Cover-Bilder, Schülerfotos), siehe komplettAbgleichen().
+    const stand = schnappschuss(exportTabellen(db, { einstellungen: s }));
+    return komplettAbgleichen({ bridge: perpustakaanBruecke, dbPfad: s.perpustakaanLiveDbPfad, stand, tmpDir: os.tmpdir() });
   }));
+
+  ipcMain.handle('perpustakaan-modus:status', () => perpustakaanModus?.status() ?? { aktiv: false, zustand: 'aus' });
+  ipcMain.handle('perpustakaan-modus:jetzt-abgleichen', sicher(() => perpustakaanModus.aktualisiere({ erzwingen: true })));
+  ipcMain.handle('perpustakaan-modus:erneut-versuchen', sicher(() => perpustakaanModus.erneutVersuchen()));
+  ipcMain.handle('perpustakaan-modus:perpustakaan-uebernehmen', sicher(() => perpustakaanModus.perpustakaanUebernehmen()));
+  ipcMain.handle('perpustakaan-modus:inga-komplett-schreiben', sicher(() => perpustakaanModus.ingaKomplettSchreiben()));
 
   /**
    * Assistent "Java-Laufzeit reparieren": lädt die fehlende Java-Laufzeit +
@@ -1751,7 +1870,11 @@ if (!gotLock) {
     // überhaupt geprüft wird, ob sie gerade zugreifbar ist. Schlägt schon
     // diese Sicherung fehl, bleibt der Live-Zugriff für diesen Start
     // gesperrt (perpustakaanLiveStatusAktualisieren() -> perpustakaanLiveBereitPruefen()).
-    await perpustakaanLiveStatusAktualisieren();
+    // Im Perpustakaan-Modus übernimmt der Modus selbst Sicherung und
+    // Verbindung – und zwar erst NACH dem Öffnen des Fensters (unten), damit
+    // der Start nicht auf Perpustakaan warten muss.
+    if (!perpustakaanModusGewuenscht()) await perpustakaanLiveStatusAktualisieren();
+    perpustakaanModus = erstellePerpustakaanModusFuerApp();
 
     registerIpc();
     wireAutoUpdater();
@@ -1768,6 +1891,27 @@ if (!gotLock) {
     // Woche nicht mehr gelaufen – das automatische Cover-Nachladen. Das
     // tägliche Backup läuft NICHT mehr hier, sondern beim Beenden (siehe
     // bereiteBeendenVor()).
+    // Perpustakaan-Modus: gleich nach dem Öffnen des Fensters abgleichen,
+    // danach bei jedem Wechsel zurück ins INGA-Fenster und regelmäßig.
+    setTimeout(() => perpustakaanModusAnpassen(), 1500);
+    let letzterFokusAbgleich = 0;
+    app.on('browser-window-focus', (_e, fenster) => {
+      if (fenster !== mainWindow || !perpustakaanModus?.istAktiv()) return;
+      if (Date.now() - letzterFokusAbgleich < 5000) return;
+      letzterFokusAbgleich = Date.now();
+      perpustakaanModus.aktualisiere();
+    });
+    setInterval(() => {
+      if (!perpustakaanModus?.istAktiv()) return;
+      const zustand = perpustakaanModus.status().zustand;
+      if (zustand === 'konflikt' || zustand === 'fehler') return; // wartet auf eine Entscheidung in den Einstellungen
+      // Im Vordergrund: Neues aus Perpustakaan holen. Im Hintergrund nur
+      // Ausstehendes nachtragen – dann wird vermutlich gerade Perpustakaan
+      // selbst benutzt, INGA soll die Datenbank dann nicht unnötig belegen.
+      if (mainWindow?.isFocused() || zustand === 'gesperrt') perpustakaanModus.aktualisiere();
+      else perpustakaanModus.nachVorgang();
+    }, 60 * 1000);
+
     setTimeout(() => {
       if (settings().autoUpdateAktiv) autoUpdatePruefen();
       coverAutoNachladenFallsFaellig().catch((err) => console.error('[wartung] Cover-Nachladen fehlgeschlagen:', err.message));

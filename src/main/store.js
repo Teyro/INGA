@@ -245,6 +245,11 @@ const DEFAULT_SETTINGS = {
   // Ordner der echten Apache-Derby-Datenbank (z. B. "…\Perpustakaan\db"),
   // per Dateidialog gewählt – kein Freitextfeld, um Tippfehler zu vermeiden.
   perpustakaanLiveDbPfad: '',
+  // Perpustakaan-Modus (siehe src/main/perpustakaan-modus.js): Perpustakaan
+  // ist die Hauptdatenbank, jede Änderung in INGA wird sofort dorthin
+  // geschrieben, INGAs eigene Datenbank ist nur noch Kopie/Sicherung.
+  // Setzt den direkten Zugriff (perpustakaanLiveAktiv + Ordner) voraus.
+  perpustakaanModus: false,
 };
 
 function defaultSettingsFor(style, accent) {

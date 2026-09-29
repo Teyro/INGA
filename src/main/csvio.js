@@ -53,6 +53,56 @@ function serializeCsv(header, rows) {
 /* ------------------------------------------------------------- Import */
 
 /**
+ * Bisherige interne ids der Tabellen mit eigener id-Spalte (Ausleihe,
+ * Mahnung, Vormerkung, Papierkörbe), damit ein erneuter Import desselben
+ * Datensatzes dieselbe id behält. Wichtig für den Perpustakaan-Modus, der
+ * im Hintergrund regelmäßig neu einliest: eine Liste, die gerade offen ist
+ * ("Rückgabe" bei Ausleihe id 17), muss danach noch auf denselben Datensatz
+ * zeigen – mit neuen ids liefe der Klick ins Leere.
+ * Liefert eine Funktion schluessel → id (jede id höchstens einmal).
+ */
+function idVorrat(db, table, schluessel) {
+  const vorrat = new Map();
+  for (const row of db.prepare(`SELECT * FROM ${quoteIdent(table)} ORDER BY id`).all()) {
+    const k = schluessel(row);
+    if (!vorrat.has(k)) vorrat.set(k, []);
+    vorrat.get(k).push(row.id);
+  }
+  return (row) => vorrat.get(schluessel(row))?.shift() ?? null;
+}
+
+/**
+ * INGA-eigene Zusatzspalten an Perpustakaan-Tabellen (Leser.IngaGesperrt,
+ * Leser.IngaGesperrtBis, Mahnung.IngaStufe – siehe Migrationen in db.js).
+ * Perpustakaan kennt sie nicht, ein Import brachte sie deshalb nie mit und
+ * löschte sie bis 1.10.2 still mit: nach jedem Import (und im Perpustakaan-
+ * Modus nach jedem Einlesen) wären Ausleihsperren aufgehoben und die
+ * Mahnstufen vergessen gewesen. merkeZusatzspalten() hebt sie vor dem Leeren
+ * der Tabelle auf, die zurückgegebene Funktion setzt sie danach wieder ein –
+ * über den Primärschlüssel bzw. die (beim Import erhaltene) id.
+ */
+function merkeZusatzspalten(db, table, schluesselSpalte) {
+  const bekannt = new Set(TABLES[table]);
+  const zusatz = db.prepare(`PRAGMA table_info(${quoteIdent(table)})`).all().map((c) => c.name).filter((c) => c !== 'id' && !bekannt.has(c));
+  if (!zusatz.length) return () => {};
+  const gemerkt = db
+    .prepare(`SELECT ${quoteIdent(schluesselSpalte)} AS schluessel, ${zusatz.map(quoteIdent).join(', ')} FROM ${quoteIdent(table)}`)
+    .all()
+    .filter((r) => zusatz.some((c) => r[c] !== null && r[c] !== undefined));
+  return () => {
+    const setzen = db.prepare(
+      `UPDATE ${quoteIdent(table)} SET ${zusatz.map((c) => `${quoteIdent(c)} = ?`).join(', ')} WHERE ${quoteIdent(schluesselSpalte)} = ?`
+    );
+    for (const r of gemerkt) setzen.run(...zusatz.map((c) => r[c]), alsNiWert(r.schluessel));
+  };
+}
+
+/** Vergleichsschlüssel einer Zeile über die angegebenen Spalten – Zahlen und Text gleich behandelt ('5' = 5). */
+function zeilenSchluessel(cols) {
+  return (row) => cols.map((c) => (row[c] === null || row[c] === undefined ? '' : String(row[c]))).join('\u0001');
+}
+
+/**
  * Ausleihe + AuslHist zusammengeführt statt wie die übrigen Tabellen 1:1
  * spaltenweise übernommen. Im Original (Perpustakaan) führt "Ausleihe" NUR
  * die gerade laufenden Ausleihen – "Rueckgabe" trägt dort die FÄLLIGKEIT,
@@ -73,10 +123,14 @@ function serializeCsv(header, rows) {
 function importAusleiheUndHistorie(db, ausleiheEntry, auslHistEntry) {
   if (!ausleiheEntry && !auslHistEntry) return;
   const cols = TABLES.Ausleihe; // AuslHist hat exakt dieselben Spalten
+  // Eine Ausleihe ist über Exemplar, Nutzer, Ausleihdatum und offen/zurück wiederzuerkennen.
+  const alteId = idVorrat(db, 'Ausleihe', zeilenSchluessel(['MedienNi', 'LeserNi', 'AuslDatum', 'Rueckgabe']));
+  const zusatzWiederherstellen = merkeZusatzspalten(db, 'Ausleihe', 'id');
   db.prepare(`DELETE FROM "Ausleihe"`).run();
-  const stmt = db.prepare(
-    `INSERT INTO "Ausleihe" (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
+  const insert = db.prepare(
+    `INSERT INTO "Ausleihe" (id, ${cols.map(quoteIdent).join(', ')}) VALUES (@id, ${cols.map((c) => `@${c}`).join(', ')})`
   );
+  const stmt = { run: (params) => insert.run({ ...params, id: alteId(params) }) };
   if (ausleiheEntry) {
     const { rows } = parseCsv(ausleiheEntry.getData().toString('utf8'));
     for (const row of rows) {
@@ -93,6 +147,7 @@ function importAusleiheUndHistorie(db, ausleiheEntry, auslHistEntry) {
       stmt.run(params);
     }
   }
+  zusatzWiederherstellen();
 }
 
 /**
@@ -136,21 +191,25 @@ function importZip(db, filePath, { onProgress } = {}) {
       if (!header.length) continue;
 
       if (ID_BASIERTE_TABELLEN.has(table)) {
-        db.prepare(`DELETE FROM ${quoteIdent(table)}`).run();
         const cols = TABLES[table];
+        const alteId = idVorrat(db, table, zeilenSchluessel(cols));
+        const zusatzWiederherstellen = merkeZusatzspalten(db, table, 'id');
+        db.prepare(`DELETE FROM ${quoteIdent(table)}`).run();
         const stmt = db.prepare(
-          `INSERT INTO ${quoteIdent(table)} (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
+          `INSERT INTO ${quoteIdent(table)} (id, ${cols.map(quoteIdent).join(', ')}) VALUES (@id, ${cols.map((c) => `@${c}`).join(', ')})`
         );
         for (const row of rows) {
           const params = {};
           for (const c of cols) params[c] = zellwert(c, row[c]);
-          stmt.run(params);
+          stmt.run({ ...params, id: alteId(params) });
         }
+        zusatzWiederherstellen();
         continue;
       }
 
       if (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table)) {
         const cols = TABLES[table];
+        const zusatzWiederherstellen = merkeZusatzspalten(db, table, NATIVE_TABLES[table]);
         db.prepare(`DELETE FROM ${quoteIdent(table)}`).run();
         const stmt = db.prepare(
           `INSERT INTO ${quoteIdent(table)} (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
@@ -160,6 +219,7 @@ function importZip(db, filePath, { onProgress } = {}) {
           for (const c of cols) params[c] = zellwert(c, row[c]);
           stmt.run(params);
         }
+        zusatzWiederherstellen();
         // "verbergen" kennt das echte Perpustakaan nicht (kommt aus einer
         // Sicherung fast immer leer) – ohne diesen Schritt stünden nach jedem
         // Import wieder alle Medienarten in der Katalog-Auswahl, egal was in
@@ -245,24 +305,50 @@ function identCntMitIngaNummern(db, header, rows) {
   return ergebnis;
 }
 
-function exportZip(db, filePath) {
-  const zip = new AdmZip();
+/**
+ * Fälligkeit je offener Ausleihe (id → "YYYY-MM-DD 00:00:00.000") mit
+ * derselben zentralen, ferienbewussten Berechnung wie überall sonst in INGA.
+ * Perpustakaan führt die Fälligkeit in "Ausleihe"."Rueckgabe" – ohne sie
+ * zeigte Perpustakaan für eine in INGA verliehene Ausleihe kein Rückgabedatum.
+ * Nur mit Einstellungen berechenbar (Leihfristen), sonst bleibt das Feld leer.
+ */
+function faelligkeitenOffenerAusleihen(db, einstellungen) {
+  if (!einstellungen) return new Map();
+  const repo = require('./repo');
+  const ferien = require('./ferien');
+  const ferienListe = ferien.listeFerien(db);
+  const ergebnis = new Map();
+  for (const a of repo.alleOffenenAusleihen(db)) {
+    if (!a.AuslDatum) continue;
+    const { datum } = repo.berechneRueckgabedatumAusRow(a, einstellungen, ferienListe);
+    if (datum) ergebnis.set(a.id, `${datum} 00:00:00.000`);
+  }
+  return ergebnis;
+}
 
+/**
+ * Alle 65 Perpustakaan-Tabellen so, wie sie exportiert werden: je Tabelle
+ * Kopfzeile + Zeilen (Objekte Spalte → Wert). Gemeinsame Grundlage für
+ * exportZip() und den Echtzeit-Abgleich im Perpustakaan-Modus
+ * (perpustakaan-modus.js), damit beide exakt dasselbe schreiben.
+ */
+function exportTabellen(db, { einstellungen } = {}) {
+  const faelligkeiten = faelligkeitenOffenerAusleihen(db, einstellungen);
+  const ergebnis = [];
   for (const table of Object.keys(TABLES)) {
     let header = TABLES[table];
     let rows;
 
     // Gegenstück zu importAusleiheUndHistorie: offene Ausleihen (Rueckgabe
-    // NULL) gehen zurück nach "Ausleihe.csv" – ihre Fälligkeit kennt das
-    // Perpustakaan-Format dort, INGA speichert aber keine feste Fälligkeit
-    // (wird bei jeder Anzeige neu berechnet), das Feld bleibt deshalb leer,
-    // statt eine möglicherweise falsche zu raten. Abgeschlossene Ausleihen
-    // (Rueckgabe gesetzt) gehen nach "AuslHist.csv", mit dem tatsächlichen
-    // Rückgabedatum.
+    // NULL) gehen zurück nach "Ausleihe.csv" – dort steht in "Rueckgabe" die
+    // Fälligkeit (siehe faelligkeitenOffenerAusleihen). Abgeschlossene
+    // Ausleihen (Rueckgabe gesetzt) gehen nach "AuslHist.csv", mit dem
+    // tatsächlichen Rückgabedatum.
     if (table === 'Ausleihe') {
-      rows = db.prepare(`SELECT "MedienNi", "LeserNi", "AuslDatum", NULL AS "Rueckgabe", "AnzVerl", "ErfassAnw" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL`).all();
+      rows = db.prepare(`SELECT "id", "MedienNi", "LeserNi", "AuslDatum", "AnzVerl", "ErfassAnw" FROM "Ausleihe" WHERE "Rueckgabe" IS NULL ORDER BY "id"`).all()
+        .map(({ id, ...r }) => ({ ...r, Rueckgabe: faelligkeiten.get(id) ?? null }));
     } else if (table === 'AuslHist') {
-      rows = db.prepare(`SELECT * FROM "Ausleihe" WHERE "Rueckgabe" IS NOT NULL`).all();
+      rows = db.prepare(`SELECT * FROM "Ausleihe" WHERE "Rueckgabe" IS NOT NULL ORDER BY "id"`).all();
     } else if (ID_BASIERTE_TABELLEN.has(table) || (NATIVE_TABLES[table] !== undefined && !DERIVED_TABLES.has(table))) {
       rows = db.prepare(`SELECT * FROM ${quoteIdent(table)}`).all();
     } else if (DERIVED_TABLES.has(table)) {
@@ -276,11 +362,17 @@ function exportZip(db, filePath) {
         .map((r) => JSON.parse(r.data));
       if (table === 'IdentCnt') rows = identCntMitIngaNummern(db, header, rows);
     }
+    ergebnis.push({ table, header, rows });
+  }
+  return ergebnis;
+}
 
+function exportZip(db, filePath, optionen = {}) {
+  const zip = new AdmZip();
+  for (const { table, header, rows } of exportTabellen(db, optionen)) {
     zip.addFile(`${table}.csv`, Buffer.from(serializeCsv(header, rows), 'utf8'));
   }
-
   zip.writeZip(filePath);
 }
 
-module.exports = { importZip, exportZip, parseCsv, serializeCsv };
+module.exports = { importZip, exportZip, exportTabellen, parseCsv, serializeCsv };

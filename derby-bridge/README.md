@@ -29,19 +29,35 @@ Dateien mit committen.
 
 ## Protokoll
 
+Einmal-Aufrufe (eine JSON-Zeile auf stdout, dann Ende):
+
 ```
 check <dbPfad>                          -> {"ok":true} | {"ok":false,"gesperrt":true} | {"ok":false,"fehler":"…"}
-dump  <dbPfad> <schemaDatei> <zipZiel>  -> {"ok":true,"tabellen":N} | …
-load  <dbPfad> <zipQuelle>              -> {"ok":true,"tabellen":N} | …
+dump  <dbPfad> <schemaDatei> <zipZiel>  -> {"ok":true,"tabellen":N,"hash":"…","fehlend":[…]} | …
+load  <dbPfad> <zipQuelle>              -> {"ok":true,"tabellen":N} | …   (nur noch Altweg, INGA nutzt apply)
 ```
 
-`<schemaDatei>`: eine Zeile je Tabelle, `Tabellenname<TAB>Spalte1,Spalte2,…`
-– von `perpustakaan-live.js` aus derselben `schema/perpustakaan-tables.json`
-erzeugt, die auch `csvio.js` nutzt (eine Quelle der Wahrheit). `dump`
-erzeugt/`load` erwartet exakt dasselbe Perpustakaan-CSV-Zip-Format wie
-`csvio.js` (`;`-getrennt, CRLF, UTF-8, kein Quoting) – dadurch braucht es
-**keine eigene Import-/Export-Logik**: `perpustakaan-live.js` reicht das
-Ergebnis einfach an `csvio.importZip()`/`csvio.exportZip()` weiter.
+Dauerbetrieb (Perpustakaan-Modus): `serve` liest Aufträge zeilenweise von
+stdin (`<id>\t<befehl>\t<arg>…`, UTF-8) und antwortet je Auftrag mit einer
+JSON-Zeile samt `"id"`. Befehle: `open <dbPfad> <leerlaufMs>`, `check`,
+`dump`, `apply <aenderungsDatei>`, `load`, `close`, `quit`. Die Datenbank
+bleibt zwischen dicht aufeinanderfolgenden Aufträgen offen und wird nach
+`leerlaufMs` wieder freigegeben (Derby lässt nur EINE JVM hinein).
+
+`apply`: Einzeländerungen (Format siehe Kommentar an `Sitzung.apply()`),
+alles in einer Transaktion. Tabellen mit Primärschlüssel: UPDATE nur der
+geänderten Spalten, DELETE/INSERT über den Schlüssel, INSERT auf einen schon
+vergebenen Schlüssel = `{"konflikt":true}`. Ohne Primärschlüssel (AuslHist):
+Zeilen über alle vergleichbaren Spalten (keine CLOB/BLOB).
+
+**Echte Perpustakaan-Datenbank**: Tabellen/Spalten UNQUOTIERT angelegt, also
+in GROSSBUCHSTABEN im Schema `DEFAULT`; Datum = DATE, Wahrheitswerte =
+BOOLEAN, lange Texte = CLOB, Bilder = BLOB (Katalog.BILDEIGEN,
+Leser.PASSBDATEN – INGA kennt sie nicht und fasst sie nie an). Die Brücke
+löst Namen deshalb über die Datenbank-Metadaten ohne Beachtung der
+Groß-/Kleinschreibung auf und liest/schreibt jeden Wert passend zum echten
+Spaltentyp; `dump` liefert exakt das Format von Perpustakaans eigenem
+CSV-Export (Datum `2026-06-18 00:00:00.000`, Dezimal `0.0`, `true`/`false`).
 
 ## Was echt geprüft wurde (gegen eine synthetische Test-Derby-Datenbank, KEINE echten Daten)
 
@@ -120,17 +136,30 @@ nicht nur überlegt (JDK 21 + Derby 10.17.1.0 lokal, siehe Kommentare oben):
   dieselbe Testdatenbank erneut geprüft: funktioniert jetzt korrekt,
   Rollback bei einem echten (nicht auflösbaren) Fehler weiterhin intakt.
 
+## Gegen eine echte Perpustakaan-Datenbank geprüft (Stand 1.11.0-beta.1)
+
+Mit einer KOPIE einer echten Perpustakaan-Datenbank (Derby 10.16.1.1,
+1829 Titel, 311 Nutzer, 43 offene Ausleihen), lokal in der Entwicklungs-
+umgebung: `dump` stimmt spaltengenau mit Perpustakaans eigenem CSV-Export
+überein; Neuanlage Nutzer (mit Zeilenumbruch/Semikolon in Notizen), Ausleihe
+mit Fälligkeit, Rückgabe (AUSLEIHE → AUSLHIST), Verlängerung, Titeländerung
+und Nummernzähler (IDENTCNT) kommen korrekt an; Sperre durch eine zweite JVM
+(Derby 10.16, wie Perpustakaan) wird erkannt und Ausstehendes danach
+nachgetragen; die Datenbank öffnet sich nach INGAs Zugriffen (Derby 10.17,
+Soft-Upgrade) weiterhin mit Derby 10.16. Frühere, unten stehende Befunde
+stammen aus synthetischen Testdatenbanken.
+
 ## Offene Risiken / was noch NICHT gegen echte Daten geprüft ist
 
-- **Nie gegen die echte, mit dem realen Perpustakaan angelegte Datenbank
-  getestet.** Die synthetischen Testdatenbanken oben wurden selbst mit
-  quotierten Spaltennamen angelegt, in der Annahme, dass das echte
-  Perpustakaan-Schema genauso vorgeht (plausibel, aber unverifiziert) –
-  ein `dump`/`load` gegen die echte Datenbank kann trotz der Typ- und
-  Fremdschlüssel-Prüfungen oben an einer abweichenden Spaltenreihenfolge/
-  -benennung oder an Trigger-Constraints scheitern, die die
-  Fremdschlüssel-Warteschlange nicht abdeckt (die reagiert gezielt nur
-  auf SQLState 23503).
+- **Nur gegen eine Kopie getestet, nicht im laufenden Schulbetrieb** –
+  und nicht gegen Perpustakaan selbst, das nach INGAs Änderungen die
+  Datenbank öffnet (geprüft ist nur, dass Derby 10.16 sie lesen kann und
+  die Werte stimmen). Perpustakaan-interne Zusammenhänge, die nicht in der
+  Datenbank stehen (Caches, eigene Plausibilitätsregeln), sind unbekannt.
+- **Leihfristen**: INGA schreibt für offene Ausleihen die Fälligkeit nach
+  SEINEN Leihfrist-Einstellungen nach Perpustakaan (bei jeder Änderung
+  einer Ausleihe) – weichen die Fristen in Perpustakaan ab, gilt danach
+  INGAs Datum.
 - **Windows/macOS nicht getestet** – nur unter Linux entwickelt/geprüft
   (diese Umgebung). `scripts/setup-derby-runtime.js` lädt plattform-
   passende Temurin-JREs, aber ob der Bridge-Aufruf (Pfade, Berechtigungen,
@@ -140,11 +169,10 @@ nicht nur überlegt (JDK 21 + Derby 10.17.1.0 lokal, siehe Kommentare oben):
   (die des CI-Runners). Ein x64-Build auf einem arm64-Runner bekäme
   aktuell die falsche JRE gebündelt – noch zu beheben (z. B. beide
   Architekturen laden und pro Zielarchitektur einbinden).
-- **Nebenläufigkeit innerhalb EINER INGA-Sitzung**: zwei gleichzeitige
-  Aufrufe von "Jetzt lesen"/"Jetzt schreiben" (z. B. Doppelklick) sind
-  nicht explizit verhindert – jeder startet einen eigenen Bridge-Prozess,
-  der zweite würde vermutlich (nicht getestet) mit `gesperrt:true`
-  scheitern, weil der erste die Datenbank noch offen hält.
+- **Nebenläufigkeit innerhalb EINER INGA-Sitzung**: im Perpustakaan-Modus
+  laufen alle Zugriffe nacheinander über EINEN Dauerprozess. Die alten
+  Einmal-Aufrufe (ohne Modus) werden, solange der Dauerprozess läuft,
+  ebenfalls über ihn geleitet.
 
 **Vor dem ersten Einsatz mit echten Daten**: unbedingt zuerst gegen eine
 **Kopie** der echten Perpustakaan-Datenbank ausprobieren (Ordner kopieren,

@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress', 'window:state', 'update:status']);
+const EVENTS = new Set(['menu:action', 'print:data', 'settings:updated', 'cover:progress', 'window:state', 'update:status', 'perpustakaan-modus:status', 'perpustakaan-modus:daten-neu']);
 
 contextBridge.exposeInMainWorld('inga', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
@@ -152,6 +152,15 @@ contextBridge.exposeInMainWorld('inga', {
     jetztLesen: () => ipcRenderer.invoke('perpustakaan-live:jetzt-lesen'),
     jetztSchreiben: () => ipcRenderer.invoke('perpustakaan-live:jetzt-schreiben'),
     laufzeitHerunterladen: () => ipcRenderer.invoke('perpustakaan-live:laufzeit-herunterladen'),
+  },
+
+  // Perpustakaan-Modus (Echtzeit-Abgleich), siehe src/main/perpustakaan-modus.js
+  perpustakaanModus: {
+    status: () => ipcRenderer.invoke('perpustakaan-modus:status'),
+    jetztAbgleichen: () => ipcRenderer.invoke('perpustakaan-modus:jetzt-abgleichen'),
+    erneutVersuchen: () => ipcRenderer.invoke('perpustakaan-modus:erneut-versuchen'),
+    perpustakaanUebernehmen: () => ipcRenderer.invoke('perpustakaan-modus:perpustakaan-uebernehmen'),
+    ingaKomplettSchreiben: () => ipcRenderer.invoke('perpustakaan-modus:inga-komplett-schreiben'),
   },
 
   update: {

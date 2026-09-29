@@ -788,7 +788,13 @@ function ausleihen(db, { medienNi: medienNiRoh, leserNi: leserNiRoh, benutzer, e
 }
 
 function zurueckgeben(db, ausleiheId) {
-  db.prepare(`UPDATE "Ausleihe" SET "Rueckgabe" = ? WHERE id = ? AND "Rueckgabe" IS NULL`).run(todayStr(), ausleiheId);
+  const info = db.prepare(`UPDATE "Ausleihe" SET "Rueckgabe" = ? WHERE id = ? AND "Rueckgabe" IS NULL`).run(todayStr(), ausleiheId);
+  // Schon zurückgegeben: nichts zu tun (Doppelklick). Gar nicht (mehr)
+  // vorhanden – z. B. inzwischen in Perpustakaan zurückgebucht – nicht
+  // stillschweigend "erledigt" melden.
+  if (!info.changes && !db.prepare(`SELECT 1 FROM "Ausleihe" WHERE id = ?`).get(ausleiheId)) {
+    throw new Error('Diese Ausleihe gibt es nicht mehr – vermutlich wurde sie inzwischen in Perpustakaan zurückgebucht. Bitte die Liste neu laden.');
+  }
 }
 
 /**
@@ -1029,6 +1035,20 @@ function vorschauFristenMitFerien(db, einstellungen) {
 
 /** `stufe` ist 1 (Erinnerung) oder 2 (Mahnung) – siehe letzteMahnungFuer/rueckstandsliste. */
 function mahnungEintragen(db, { medienNi, leserNi, auslDatum, gebuehr, stufe }) {
+  // Dieselbe Ausleihe am selben Tag ein zweites Mal gemahnt (z. B. Brief
+  // erneut gedruckt, oder Erinnerung und Mahnung am selben Tag): den
+  // vorhandenen Eintrag aktualisieren statt einen zweiten anzulegen –
+  // Perpustakaan erlaubt je Ausleihe und Mahndatum nur einen Eintrag
+  // (Primärschlüssel), ein Duplikat ließe sich nicht mehr übertragen.
+  const heute = todayStr();
+  const vorhanden = db
+    .prepare(`SELECT id, "IngaStufe" FROM "Mahnung" WHERE "MedienNi" = ? AND "LeserNi" = ? AND "AuslDatum" = ? AND substr("Mahndatum", 1, 10) = ?`)
+    .get(ni(medienNi), ni(leserNi), auslDatum, heute.slice(0, 10));
+  if (vorhanden) {
+    const hoechsteStufe = Math.max(Number(vorhanden.IngaStufe) || 0, Number(stufe) || 0) || null;
+    db.prepare(`UPDATE "Mahnung" SET "MaGebuehr" = ?, "IngaStufe" = ? WHERE id = ?`).run(gebuehr, hoechsteStufe, vorhanden.id);
+    return;
+  }
   db.prepare(
     `INSERT INTO "Mahnung" ("MedienNi","LeserNi","Mahndatum","MaGebuehr","AuslDatum","Rueckgabe","IngaStufe")
      VALUES (?, ?, ?, ?, ?, NULL, ?)`
@@ -1299,6 +1319,16 @@ function verschiebeInPapierkorb(db, abgTable, row, benutzer) {
   for (const spalte of spalten) {
     const wert = Object.hasOwn(row, spalte) ? row[spalte] : null;
     eintrag[spalte] = istNiSpalte(spalte) ? ni(wert) : wert;
+  }
+  // Perpustakaan führt je Person bzw. Exemplar nur EINEN Papierkorb-Eintrag
+  // (Primärschlüssel LeserNi bzw. KatalogNi+MedienNi). Wurde dieselbe Person
+  // schon einmal gelöscht und wiederhergestellt, ersetzt die neue
+  // Momentaufnahme die alte – sonst ließe sich der Stand nicht mehr nach
+  // Perpustakaan übertragen (doppelter Schlüssel).
+  if (abgTable === 'LeserAbg') {
+    db.prepare(`DELETE FROM "LeserAbg" WHERE "LeserNi" = ?`).run(eintrag.LeserNi);
+  } else if (abgTable === 'MedienAbg') {
+    db.prepare(`DELETE FROM "MedienAbg" WHERE "KatalogNi" = ? AND "MedienNi" = ?`).run(eintrag.KatalogNi, eintrag.MedienNi);
   }
   db.prepare(
     `INSERT INTO ${quoteIdent(abgTable)} (${cols.map(quoteIdent).join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`
