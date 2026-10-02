@@ -26,6 +26,7 @@ const platform = require('./platform');
 const { Store, DEFAULT_SETTINGS, defaultSettingsFor, sanitizeSettings } = require('./store');
 const { openDatabase, TABLES } = require('./db');
 const repo = require('./repo');
+const erw = require('./erweiterungen'); // INGA 2.0
 const ferien = require('./ferien');
 const { parseIcs } = require('./ics');
 const { ferienAbrufen } = require('./ferien-api');
@@ -242,6 +243,13 @@ function findeDerbyOrdner(ordner) {
     }
   } catch { /* nicht lesbar – dann eben der gewählte Ordner, die Prüfung meldet den Fehler */ }
   return ordner;
+}
+
+/** Große Umbauten (Schuljahreswechsel) im Perpustakaan-Modus nur, wenn nichts mehr aussteht – sonst kämen sie durcheinander. */
+function nichtImPerpustakaanModusOhneVerbindung() {
+  if (perpustakaanModus?.istAktiv() && perpustakaanModus.status().zustand !== 'synchron') {
+    throw new Error('Im Perpustakaan-Modus bitte erst abgleichen (Perpustakaan schließen, dann in INGA „Jetzt abgleichen“), bevor der Schuljahreswechsel läuft.');
+  }
 }
 
 /** Lehnt Vorgänge ab, die im Perpustakaan-Modus den Stand in Perpustakaan unbemerkt überschreiben würden. */
@@ -978,6 +986,7 @@ const DRUCKFENSTER = {
   mahnung: { datei: 'print.html', titel: 'Mahnungen', breite: 900 },
   umlauf: { datei: 'umlauf-print.html', titel: 'Im Umlauf', breite: 1100 },
   etiketten: { datei: 'etiketten-print.html', titel: 'Etiketten', breite: 900 },
+  dokument: { datei: 'dokument-print.html', titel: 'Dokument', breite: 1000 },
 };
 const offeneDruckfenster = new Map();
 
@@ -1167,7 +1176,11 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
-  ipcMain.handle('ausleihe:zurueckgeben', sicher((_e, id) => repo.zurueckgeben(db, id)));
+  // Liefert zusätzlich, ob jemand auf dieses Buch wartet (Vormerkzettel, INGA 2.0).
+  ipcMain.handle('ausleihe:zurueckgeben', sicher((_e, id) => {
+    repo.zurueckgeben(db, id);
+    return { vormerkung: erw.vormerkungNachRueckgabe(db, id) };
+  }));
   ipcMain.handle('ausleihe:verlaengern', (_e, id) => {
     try {
       return { ok: true, ...repo.verlaengern(db, id, settings()) };
@@ -1182,6 +1195,52 @@ function registerIpc() {
     oeffneDruckfenster('umlauf', payload);
     return { ok: true };
   });
+
+  /* ------------------------------------------------------------- INGA 2.0 */
+  ipcMain.handle('dokument:drucken', async (_e, payload) => {
+    oeffneDruckfenster('dokument', payload);
+    return { ok: true };
+  });
+  ipcMain.handle('v2:klassen', () => erw.klassenListe(db));
+  ipcMain.handle('v2:schaden-erfassen', sicher((_e, daten) => erw.schadenErfassen(db, daten)));
+  ipcMain.handle('v2:schaeden-katalog', (_e, katalogNi) => erw.schaedenFuerKatalog(db, katalogNi));
+  ipcMain.handle('v2:schaden-erledigt', sicher((_e, id, erledigt) => erw.schadenErledigt(db, id, erledigt)));
+  ipcMain.handle('v2:bald-faellig', (_e, tage) => erw.baldFaellig(db, settings(), tage ?? settings().erinnerungTageVorher));
+  ipcMain.handle('v2:rueckstand-pro-klasse', (_e, schwelle) => erw.rueckstandProKlasse(db, settings(), schwelle));
+  ipcMain.handle('v2:lesepass', (_e, filter) => erw.lesepass(db, { ...(filter || {}), stufen: settings().lesepassStufen }));
+  ipcMain.handle('v2:antolin', (_e, stufe) => erw.antolinBuecher(db, stufe));
+  ipcMain.handle('v2:neuerwerbungen', (_e, tage) => erw.neuerwerbungen(db, tage ?? settings().neuerwerbungenTage));
+  ipcMain.handle('v2:empfehlungen', (_e, katalogNi) => erw.empfehlungen(db, katalogNi));
+  ipcMain.handle('v2:lesetipps', (_e, leserNi) => erw.lesetippsFuerLeser(db, leserNi));
+  ipcMain.handle('v2:anschaffungen', (_e, filter) => erw.anschaffungen(db, filter));
+  ipcMain.handle('v2:anschaffung-speichern', sicher((_e, row) => erw.anschaffungSpeichern(db, row)));
+  ipcMain.handle('v2:anschaffung-loeschen', sicher((_e, id) => erw.anschaffungLoeschen(db, id)));
+  ipcMain.handle('v2:budget', (_e, schuljahr) => erw.budget(db, schuljahr));
+  ipcMain.handle('v2:budget-setzen', sicher((_e, schuljahr, betrag) => erw.budgetSetzen(db, schuljahr, betrag)));
+  ipcMain.handle('v2:inventur-stand', () => erw.inventurStand(db));
+  ipcMain.handle('v2:inventur-starten', sicher((_e, optionen) => erw.inventurStarten(db, optionen)));
+  ipcMain.handle('v2:inventur-scan', sicher((_e, etikett) => erw.inventurScan(db, etikett)));
+  ipcMain.handle('v2:inventur-abschliessen', sicher((_e, optionen) => erw.inventurAbschliessen(db, optionen)));
+  ipcMain.handle('v2:inventur-abbrechen', sicher(() => erw.inventurAbbrechen(db)));
+  ipcMain.handle('v2:ausweise', (_e, filter) => erw.ausweisDaten(db, filter));
+  ipcMain.handle('v2:schuljahr-plan', (_e, optionen) => erw.schuljahreswechselPlan(db, settings(), optionen));
+  ipcMain.handle('v2:schuljahr-ausfuehren', sicher(async (_e, optionen) => {
+    nichtImPerpustakaanModusOhneVerbindung();
+    // Vorher IMMER sichern – über Einstellungen → Datensicherung zurückholbar.
+    if (!sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-schuljahreswechsel' })) {
+      throw new Error('Die Sicherung vor dem Schuljahreswechsel ist fehlgeschlagen – aus Sicherheitsgründen wurde nichts geändert.');
+    }
+    return erw.schuljahreswechselAusfuehren(db, settings(), optionen);
+  }));
+  ipcMain.handle('v2:jahresbericht', (_e, schuljahr) => erw.jahresbericht(db, settings(), schuljahr));
+  ipcMain.handle('v2:historie-vorschau', (_e, monate) => erw.historieVorschau(db, monate ?? settings().historieLoeschenMonate));
+  ipcMain.handle('v2:historie-bereinigen', sicher(() => {
+    const monate = settings().historieLoeschenMonate;
+    if (!monate) throw new Error('Bitte zuerst einstellen, nach wie vielen Monaten gelöscht werden soll.');
+    sichereDatenbankSync(db, dbFile, backupDir, { grund: 'vor-datenschutz-bereinigung' });
+    return erw.historieBereinigen(db, monate);
+  }));
+  ipcMain.handle('v2:auskunft', sicher((_e, leserNi) => erw.auskunft(db, leserNi)));
 
   ipcMain.handle('etiketten:drucken', async (_e, payload) => {
     oeffneDruckfenster('etiketten', payload);
@@ -1911,6 +1970,19 @@ if (!gotLock) {
       if (mainWindow?.isFocused() || zustand === 'gesperrt') perpustakaanModus.aktualisiere();
       else perpustakaanModus.nachVorgang();
     }, 60 * 1000);
+
+    // Datenschutz (INGA 2.0): alte Ausleihhistorie automatisch löschen, höchstens einmal am Tag.
+    setTimeout(() => {
+      try {
+        const monate = settings().historieLoeschenMonate;
+        const zuletzt = db.prepare(`SELECT value FROM inga_meta WHERE key = 'letzte_bereinigung'`).get()?.value || '';
+        if (monate > 0 && zuletzt.slice(0, 10) !== heuteISO()) {
+          const r = erw.historieBereinigen(db, monate);
+          if (r.ausleihen) startProtokoll(`Datenschutz: ${r.ausleihen} alte Ausleihen gelöscht`);
+          perpustakaanModus?.nachVorgang();
+        }
+      } catch (err) { console.error('[datenschutz]', err.message); }
+    }, 20000);
 
     setTimeout(() => {
       if (settings().autoUpdateAktiv) autoUpdatePruefen();

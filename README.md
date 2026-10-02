@@ -332,6 +332,15 @@ Dialoge:
   Fensterknöpfe farblich an. Dazu **Automatische Klassenerkennung**
   (siehe Nutzerverwaltung)
 
+### Neu in 2.0 (Seitenleiste „Mehr“)
+
+Schuljahreswechsel-Assistent, Inventur-Modus, Leseausweise, Ausleihgrenze je
+Klassenstufe, Schäden bei der Rückgabe, Vormerkung-fertig-Zettel,
+Rückstandsliste pro Klasse, Erinnerung vor Fälligkeit, Lesepass & Urkunde,
+Antolin- und „Neu in der Bücherei“-Aushang, Empfehlungen, Anschaffungen &
+Budget, Jahresbericht als PDF sowie Datenschutz (Historie automatisch löschen,
+Auskunft je Kind). Details siehe `CHANGELOG.md`.
+
 ### Papierkorb
 
 Gelöschte Nutzer:innen und Exemplare landen zunächst im Papierkorb statt

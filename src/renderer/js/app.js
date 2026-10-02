@@ -218,6 +218,7 @@ function showView(name) {
   else if (name === 'statistik') loadStatistik();
   else if (name === 'einstellungen') loadEinstellungen();
   else if (name === 'dashboard') loadDashboard();
+  window.v2Ansicht?.(name); // INGA 2.0 (v2.js)
   // Scanner tippen einfach "blind" los – ohne Fokus im Eingabefeld ging
   // der erste Scan nach dem Wechsel in die Ansicht ins Leere.
   if (name === 'ausleihe') document.getElementById('ausleihe-etikett').focus();
@@ -927,7 +928,7 @@ function wireIsbnAutofill() {
  * zeigeBuchDetail()/baueBuchDetailInhalt() – dort gibt es einen
  * "Bearbeiten"-Knopf, der genau hierher führt.
  */
-function openKatalogSheet(row) {
+function openKatalogSheet(row, vorgabe = null) {
   const fields = [
     { name: 'Titel', label: 'Titel' },
     { name: 'UntTitel', label: 'Untertitel' },
@@ -945,7 +946,7 @@ function openKatalogSheet(row) {
   openSheet({
     title: row ? row.Titel || 'Titel bearbeiten' : 'Neuer Titel',
     fields,
-    values: row || {},
+    values: row || vorgabe || {},
     before: buildCoverPanel(row),
     wide: true,
     onSave: async (values) => {
@@ -1067,10 +1068,11 @@ async function zeigeBuchDetail(row) {
  * zuletzt ein ruhigerer zweiter Block mit den reinen Katalogdaten.
  */
 async function baueBuchDetailInhalt(row) {
-  const [exemplare, vormerkungen, statistik] = await Promise.all([
+  const [exemplare, vormerkungen, statistik, v2Extras] = await Promise.all([
     api.katalog.exemplareMitAusleihe(row.KatalogNi),
     api.vormerkung.liste(row.KatalogNi),
     api.katalog.ausleihStatistik(row.KatalogNi),
+    v2BuchDetailExtras(row).catch(() => null), // INGA 2.0: Schäden, Empfehlungen
   ]);
 
   const neuLaden = async () => { await zeigeBuchDetail(await api.katalog.get(row.KatalogNi)); };
@@ -1160,6 +1162,7 @@ async function baueBuchDetailInhalt(row) {
       }, ['+ Vormerken']),
     ]),
 
+    v2Extras,
     el('div', { class: 'section-title' }, ['Katalogdaten']),
     katalogdaten,
     el('p', { class: 'hint' }, [`Insgesamt ${statistik.gesamt}× ausgeliehen.`]),
@@ -1427,8 +1430,10 @@ async function openLeserSheet(row) {
             }, [`Für ${sperreDauer} Tage sperren`]),
           ]),
     ]);
+    const v2Extras = await v2LeserExtras(row).catch(() => null); // INGA 2.0
     historyBox = el('div', {}, [
       sperreBox,
+      v2Extras,
       offen.length
         ? el('div', {}, [
             el('div', { class: 'section-title' }, ['Offene Ausleihen']),
@@ -1663,7 +1668,7 @@ function wireRueckgabe() {
     await loadRueckgabe();
     if (rueckgabeAktuelleTreffer.length !== 1) return;
     const row = rueckgabeAktuelleTreffer[0];
-    await api.ausleihe.zurueckgeben(row.id);
+    await zurueckgebenMitHinweis(row.id);
     e.target.value = '';
     toast('Zurückgegeben.');
     await loadRueckgabe();
@@ -1704,8 +1709,10 @@ function wireRueckgabe() {
     const ids = [...document.querySelectorAll('#rueckgabe-tbody input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.id));
     if (!ids.length) { toast('Nichts ausgewählt.', 'error'); return; }
     if (!confirm(`${ids.length} Ausleihe(n) wirklich als zurückgegeben verbuchen?`)) return;
-    for (const id of ids) await api.ausleihe.zurueckgeben(id);
+    const vorgemerkt = [];
+    for (const id of ids) await zurueckgebenMitHinweis(id, { sammeln: vorgemerkt });
     toast(`${ids.length} Ausleihe(n) zurückgegeben.`);
+    vormerkungMelden(vorgemerkt);
     await loadRueckgabe();
     await refreshKennzahlen();
   });
@@ -1787,7 +1794,9 @@ async function loadRueckgabe() {
             },
           }, ['Verlängern']),
           ' ',
-          el('button', { class: 'button small primary', onclick: async () => { await api.ausleihe.zurueckgeben(row.id); await loadRueckgabe(); await refreshKennzahlen(); toast('Zurückgegeben.'); } }, ['Zurückgeben']),
+          el('button', { class: 'button small ghost', title: 'Schaden am Buch erfassen', onclick: () => schadenDialog({ medienNi: row.MedienNi, leserNi: row.LeserNi, titel: row.Titel, etikett: row.MedienEtik, ausleiheId: row.id }) }, ['Schaden']),
+          ' ',
+          el('button', { class: 'button small primary', onclick: async () => { await zurueckgebenMitHinweis(row.id); await loadRueckgabe(); await refreshKennzahlen(); toast('Zurückgegeben.'); } }, ['Zurückgeben']),
         ]),
       ])
     );

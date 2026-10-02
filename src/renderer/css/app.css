@@ -669,3 +669,24 @@ tr.katalog-row-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent)
 .suggest-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest-sub { color: var(--text-faint); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+
+/* ------------------------------------------------------------ INGA 2.0 (js/v2.js) */
+.v2-kartentitel { font-weight: 700; font-size: 1.02rem; margin-bottom: 8px; }
+.v2-reiter { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--fill); margin-bottom: 14px; }
+.v2-reiter-knopf { border: 0; background: transparent; font: inherit; font-weight: 600; padding: 7px 16px; border-radius: 999px; cursor: pointer; color: var(--text-soft); }
+.v2-reiter-knopf.aktiv { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.v2-sterne { color: #c8961e; letter-spacing: 1px; white-space: nowrap; }
+.badge.v2-stufe-gold { background: #f6e7b8; color: #6b4e00; }
+.badge.v2-stufe-silber { background: #e3e7ec; color: #3d4652; }
+.badge.v2-stufe-bronze { background: #f1dccb; color: #6a3a17; }
+.v2-zahl { display: flex; flex-direction: column; }
+.v2-zahl b { font-size: 1.15rem; }
+.v2-meter { height: 10px; border-radius: 5px; background: rgb(var(--accent-rgb) / 0.15); overflow: hidden; margin: 12px 0; }
+.v2-meter-fuellung { height: 100%; border-radius: 5px; background: var(--accent); transition: width 0.25s ease; }
+.v2-meter-fuellung.warn { background: var(--warn); }
+.v2-meter-fuellung.danger { background: var(--danger); }
+.v2-scanfeld { width: 100%; font-size: 1.3rem; padding: 12px 14px; margin: 6px 0; }
+.v2-protokoll { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.v2-tipps { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.v2-tipp { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
+.v2-tipp-titel { font-weight: 600; }

@@ -1,0 +1,114 @@
+/* Druckfenster für die Dokumente aus INGA 2.0 (siehe js/dokument-print.js). */
+
+#paper { background: var(--window); }
+.blatt {
+  background: #fff; color: #111; box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+  font-family: var(--font); box-sizing: border-box; position: relative; overflow: hidden;
+}
+.blatt.hoch { width: 210mm; min-height: 297mm; }
+.blatt.quer { width: 297mm; min-height: 210mm; }
+.blatt.fest.hoch { height: 297mm; }
+.blatt.fest.quer { height: 210mm; }
+.blatt.fluss { padding: 16mm 16mm 14mm; }
+
+@media print {
+  .print-bar { display: none !important; }
+  html, body { background: #fff; height: auto; }
+  #paper { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; }
+  .blatt { box-shadow: none; margin: 0; break-after: page; page-break-after: always; }
+  .blatt:last-child { break-after: auto; page-break-after: auto; }
+}
+
+/* Kopf auf Listen-Blättern */
+.dok-kopf { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; margin-bottom: 12px; }
+.dok-kopf img { height: 14mm; }
+.dok-kopf h1 { font-size: 18pt; margin: 0; color: #1e3a5f; }
+.dok-kopf .unter { font-size: 10pt; color: #555; }
+.dok-kopf .rechts { margin-left: auto; text-align: right; font-size: 9pt; color: #555; }
+.dok-tabelle { width: 100%; border-collapse: collapse; font-size: 9.5pt; font-variant-numeric: tabular-nums; }
+.dok-tabelle th { text-align: left; font-size: 8.5pt; color: #555; border-bottom: 1px solid #999; padding: 4px 5px; }
+.dok-tabelle td { border-bottom: 1px solid #e1e0d9; padding: 5px; vertical-align: top; }
+.dok-tabelle .num { text-align: right; }
+.dok-hinweis { font-size: 9pt; color: #555; margin-top: 10px; }
+.dok-abschnitt { font-size: 12pt; font-weight: 700; color: #1e3a5f; margin: 14px 0 6px; }
+
+/* Leseausweise: 2 × 5 im Scheckkartenformat */
+.ausweise { display: grid; grid-template-columns: repeat(2, 85.6mm); grid-auto-rows: 54mm; gap: 3mm 6mm; justify-content: center; padding: 10mm 0; }
+.ausweis { border: 0.3mm dashed #bbb; border-radius: 3mm; overflow: hidden; display: flex; flex-direction: column; }
+.ausweis .band { background: #1e3a5f; color: #fff; padding: 2mm 3.5mm; display: flex; align-items: center; gap: 2mm; }
+.ausweis .band b { font-size: 9pt; letter-spacing: 0.08em; }
+.ausweis .band span { font-size: 7pt; opacity: 0.85; margin-left: auto; text-align: right; }
+.ausweis .band img { height: 6mm; background: #fff; border-radius: 1mm; padding: 0.5mm; }
+.ausweis .name { font-size: 13pt; font-weight: 700; padding: 2.5mm 3.5mm 0; line-height: 1.15; }
+.ausweis .klasse { font-size: 9pt; color: #444; padding: 0 3.5mm; }
+.ausweis .code { margin-top: auto; padding: 0 3.5mm 2.5mm; display: flex; flex-direction: column; align-items: center; }
+.ausweis .code svg { height: 11mm; width: 60mm; }
+.ausweis .code div { font-size: 8pt; letter-spacing: 0.1em; }
+
+/* Zettel: Vormerkung (2 × 2) und Erinnerung (2 × 4) */
+.zettel-raster { display: grid; grid-template-columns: repeat(2, 105mm); height: 297mm; }
+.zettel-raster.vier { grid-template-rows: repeat(2, 148.5mm); }
+.zettel-raster.acht { grid-template-rows: repeat(4, 74.25mm); }
+.zettel { border: 0.2mm dashed #ccc; box-sizing: border-box; padding: 8mm; display: flex; flex-direction: column; }
+.zettel .gross { font-size: 22pt; font-weight: 800; color: #1e3a5f; line-height: 1.1; }
+.zettel .label { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-top: 4mm; }
+.zettel .titel { font-size: 13pt; font-weight: 700; margin-top: 1mm; }
+.zettel .klein { font-size: 9pt; color: #555; margin-top: auto; }
+.erinnerung { padding: 6mm 7mm; }
+.erinnerung .hallo { font-size: 14pt; font-weight: 800; color: #1e3a5f; }
+.erinnerung p { font-size: 10.5pt; margin: 2mm 0 0; line-height: 1.35; }
+.erinnerung .datum { font-weight: 800; }
+
+/* Lesepass: zwei je Blatt */
+.paesse { display: grid; grid-template-rows: repeat(2, 148.5mm); height: 297mm; }
+.pass { padding: 10mm 14mm; border-bottom: 0.2mm dashed #ccc; box-sizing: border-box; display: flex; flex-direction: column; }
+.pass .kopf { display: flex; align-items: baseline; gap: 4mm; }
+.pass .kopf h2 { margin: 0; font-size: 20pt; color: #1e3a5f; }
+.pass .kopf .wer { font-size: 12pt; font-weight: 700; }
+.pass .kopf .sj { margin-left: auto; font-size: 9pt; color: #666; }
+.stempel { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3mm; margin-top: 5mm; }
+.stempel div { height: 19mm; border: 0.4mm solid #9ec5f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 6.5pt; padding: 1.5mm; box-sizing: border-box; color: #333; position: relative; }
+.stempel div.voll { background: #e7f0fc; border-color: #2a78d6; }
+.stempel div.voll::before { content: "★"; position: absolute; top: 0.6mm; font-size: 9pt; color: #2a78d6; }
+.stempel div .nr { position: absolute; bottom: 0.8mm; font-size: 6pt; color: #999; }
+.stempel div.stufe { border-width: 0.8mm; }
+.pass .stufen { margin-top: auto; font-size: 9pt; color: #444; display: flex; gap: 6mm; }
+
+/* Urkunde (quer) */
+.urkunde { height: 210mm; padding: 12mm; box-sizing: border-box; }
+.urkunde .rahmen { height: 100%; border: 3mm double #1e3a5f; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 10mm; }
+.urkunde h1 { font-size: 44pt; letter-spacing: 0.12em; color: #1e3a5f; margin: 0; }
+.urkunde .fuer { font-size: 14pt; color: #555; margin-top: 4mm; }
+.urkunde .name { font-size: 32pt; font-weight: 800; margin: 3mm 0; }
+.urkunde .text { font-size: 15pt; max-width: 200mm; line-height: 1.4; }
+.urkunde .medaille { width: 34mm; height: 34mm; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: 800; color: #fff; margin: 6mm 0; box-shadow: inset 0 0 0 2mm rgb(255 255 255 / 0.35); }
+.urkunde .unterschrift { display: flex; gap: 40mm; margin-top: 8mm; font-size: 10pt; color: #444; }
+.urkunde .unterschrift div { border-top: 0.3mm solid #444; padding-top: 1.5mm; min-width: 60mm; }
+
+/* Aushang mit Covern */
+.aushang { padding: 14mm 14mm 10mm; height: 297mm; box-sizing: border-box; display: flex; flex-direction: column; }
+.aushang h1 { font-size: 32pt; margin: 0; color: #1e3a5f; text-align: center; }
+.aushang .unter { text-align: center; font-size: 12pt; color: #555; margin: 2mm 0 8mm; }
+.cover-raster { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm 8mm; }
+.cover-karte { text-align: center; }
+.cover-karte .bild { height: 52mm; display: flex; align-items: flex-end; justify-content: center; }
+.cover-karte img { max-height: 52mm; max-width: 100%; box-shadow: 0 1mm 3mm rgb(0 0 0 / 0.25); }
+.cover-karte .platzhalter { width: 36mm; height: 50mm; background: #e7f0fc; border: 0.3mm solid #9ec5f4; display: flex; align-items: center; justify-content: center; padding: 3mm; box-sizing: border-box; font-size: 9pt; font-weight: 700; color: #1e3a5f; }
+.cover-karte .t { font-size: 10pt; font-weight: 700; margin-top: 2mm; line-height: 1.2; }
+.cover-karte .a { font-size: 8.5pt; color: #555; }
+.cover-karte .anto { display: inline-block; margin-top: 1mm; font-size: 7.5pt; border: 0.3mm solid #2a78d6; color: #1c5cab; border-radius: 2mm; padding: 0 1.5mm; }
+
+/* Jahresbericht */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+.kpi { border: 0.3mm solid #e1e0d9; border-radius: 2mm; padding: 2.5mm 3mm; }
+.kpi .l { font-size: 8pt; color: #52514e; }
+.kpi .w { font-size: 16pt; font-weight: 650; }
+.saeulen { display: grid; grid-template-columns: repeat(12, 1fr); align-items: end; height: 42mm; border-bottom: 0.3mm solid #c3c2b7; gap: 2mm; padding: 0 1mm; }
+.saeulen div { background: #2a78d6; border-radius: 1mm 1mm 0 0; min-height: 0.4mm; max-width: 9mm; justify-self: center; width: 100%; }
+.saeulen-achse { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2mm; padding: 0 1mm; font-size: 7.5pt; color: #52514e; text-align: center; }
+.saeulen-achse b { display: block; color: #111; font-variant-numeric: tabular-nums; }
+.balken-zeile { display: grid; grid-template-columns: 34mm 1fr 14mm; align-items: center; gap: 3mm; font-size: 9pt; margin: 1.2mm 0; }
+.balken-zeile .spur { height: 3.5mm; }
+.balken-zeile .spur div { height: 100%; background: #2a78d6; border-radius: 0 1mm 1mm 0; min-width: 0.4mm; }
+.balken-zeile .wert { text-align: right; font-variant-numeric: tabular-nums; }
+.zwei-spalten { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }

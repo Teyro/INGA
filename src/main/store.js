@@ -160,6 +160,14 @@ const DEFAULT_SETTINGS = {
   // Vergleich mit Jahrgang, z. B. "4" findet "4a"/"4b") – siehe
   // repo.abschlussMeldung/abschlussKinder. Leer = Meldung ist aus.
   abschlussKlassenstufe: '4',
+  // INGA 2.0
+  // Ausleihgrenze je Klassenstufe (0 = allgemeine Grenze gilt). Eine Grenze an
+  // der Nutzergruppe selbst (Perpustakaan "AusleihMax") geht vor.
+  ausleihLimitJeStufe: { 1: 0, 2: 0, 3: 0, 4: 0 },
+  erinnerungTageVorher: 3,           // "bald fällig": so viele Tage vor der Fälligkeit
+  lesepassStufen: [5, 10, 20],       // Bronze, Silber, Gold (gelesene Bücher im Schuljahr)
+  neuerwerbungenTage: 60,            // "Neu in der Bücherei": Zugänge der letzten … Tage
+  historieLoeschenMonate: 0,         // Datenschutz: zurückgegebene Ausleihen nach … Monaten löschen (0 = nie)
 
   // Mahnwesen: genau zwei Stufen (Abschnitt 5.1) – mahnstufen[0] ist immer
   // die Erinnerung, mahnstufen[1] immer die Mahnung. Vorgabe: unter 7 Tagen
@@ -286,6 +294,9 @@ const ZAHL_GRENZEN = {
   mahnGebuehrProTag: [0, 100],
   mahnGebuehrMax: [0, 1000],
   mahnKarenztage: [0, 365],
+  erinnerungTageVorher: [0, 30],
+  neuerwerbungenTage: [1, 730],
+  historieLoeschenMonate: [0, 120],
 };
 
 function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
@@ -297,6 +308,24 @@ function sanitizeSettings(next, current = DEFAULT_SETTINGS) {
     const value = next[key];
     const previous = Object.hasOwn(current, key) ? current[key] : fallback;
 
+    if (key === 'ausleihLimitJeStufe') {
+      // { "1": 2, "2": 3, … } – nur Klassenstufen 1–9, Werte 0–99.
+      const neu = {};
+      if (value && typeof value === 'object') {
+        for (const [stufe, wert] of Object.entries(value)) {
+          if (!/^[1-9]$/.test(String(stufe))) continue;
+          const n = Math.round(Number(wert));
+          neu[stufe] = Number.isFinite(n) ? clamp(n, 0, 99) : 0;
+        }
+      }
+      clean[key] = neu;
+      continue;
+    }
+    if (key === 'lesepassStufen') {
+      const liste = Array.isArray(value) ? value.map((v) => Math.round(Number(v))).filter((v) => Number.isFinite(v) && v > 0 && v < 1000) : [];
+      clean[key] = liste.length ? [...new Set(liste)].sort((x, y) => x - y).slice(0, 3) : previous;
+      continue;
+    }
     if (key === 'mahnstufen') {
       // Genau zwei Stufen (Abschnitt 5.1: Erinnerung, Mahnung) – Index 0 ist
       // immer die Erinnerung, Index 1 immer die Mahnung, auch beim Fallback.

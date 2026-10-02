@@ -242,7 +242,7 @@ function uebernehmeLegacyAltdaten(db, table, columns, insertSql) {
   db.prepare(`DELETE FROM inga_meta WHERE key = ?`).run(`legacy_header:${table}`);
 }
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 const MIGRATIONS = [
   {
     version: 2,
@@ -412,6 +412,25 @@ const MIGRATIONS = [
           ).run();
         }
       }
+    },
+  },
+  {
+    version: 11,
+    beschreibung: 'INGA 2.0: Schäden, Anschaffungen, Budget, Inventur',
+    up(db) {
+      // Rein INGA-intern (kein Perpustakaan-Gegenstück) – der Perpustakaan-
+      // Abgleich und -Export kennen nur die Tabellen aus perpustakaan-tables.json.
+      db.exec(`CREATE TABLE IF NOT EXISTS inga_schaeden (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, "MedienNi" INTEGER, "LeserNi" INTEGER,
+        datum TEXT, beschreibung TEXT, schwere TEXT, erledigt INTEGER DEFAULT 0)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS inga_anschaffungen (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, titel TEXT, autor TEXT, isbn TEXT, wunsch_von TEXT, notiz TEXT,
+        status TEXT DEFAULT 'wunsch', preis REAL, anzahl INTEGER DEFAULT 1, erstellt TEXT, bestellt_am TEXT, geliefert_am TEXT)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS inga_budget (schuljahr TEXT PRIMARY KEY, betrag REAL)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS inga_inventur (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, gestartet TEXT, abgeschlossen TEXT, standort INTEGER, notiz TEXT)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS inga_inventur_scan (
+        inventur_id INTEGER, "MedienNi" INTEGER, zeit TEXT, PRIMARY KEY (inventur_id, "MedienNi"))`);
     },
   },
 ];

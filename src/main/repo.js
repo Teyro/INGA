@@ -6,6 +6,7 @@ const { upsert, nextId, quoteIdent, istNiSpalte, alsNiWert, TABLES } = require('
 const { heuteISO, heuteStamp, jetztStamp, addTage, tageDifferenz, parseKalenderdatum } = require('./date-utils');
 const ferien = require('./ferien');
 const suche = require('./suche');
+const { klasseVon, mitKlassen } = require('./klassen');
 
 // Nummern (KatalogNi, MedienNi, LeserNi, …) als Parameter immer als Zahl
 // binden – kommen aus der Oberfläche teils als Text (Formularfelder,
@@ -750,11 +751,11 @@ function ausleihen(db, { medienNi: medienNiRoh, leserNi: leserNiRoh, benutzer, e
   const sperre = leserGesperrt(db, leserNi);
   if (sperre.gesperrt) throw new Error(`Ausleihe nicht möglich: ${sperre.grund}.`);
 
-  const ausleihLimit = Number(einstellungen?.ausleihLimit) || 0;
+  const { grenze: ausleihLimit, grund: grenzGrund } = ausleihGrenzeFuer(db, leserNi, einstellungen);
   if (ausleihLimit > 0) {
     const offeneAnzahl = db.prepare(`SELECT COUNT(*) AS n FROM "Ausleihe" WHERE "LeserNi" = ? AND "Rueckgabe" IS NULL`).get(leserNi).n;
     if (offeneAnzahl >= ausleihLimit) {
-      throw new Error(`Ausleihe nicht möglich: Diese Person hat bereits ${offeneAnzahl} von maximal ${ausleihLimit} Medien gleichzeitig ausgeliehen.`);
+      throw new Error(`Ausleihe nicht möglich: Diese Person hat bereits ${offeneAnzahl} von maximal ${ausleihLimit} Medien gleichzeitig ausgeliehen (${grenzGrund}).`);
     }
   }
 
@@ -785,6 +786,24 @@ function ausleihen(db, { medienNi: medienNiRoh, leserNi: leserNiRoh, benutzer, e
       ? `Achtung: ${vormerkungenAndere.length} weitere Vormerkung${vormerkungenAndere.length === 1 ? '' : 'en'} für diesen Titel (${vormerkungenAndere.map((v) => `${v.Nachname}, ${v.Vorname}`).join('; ')}).`
       : null,
   };
+}
+
+/**
+ * Wie viele Medien darf diese Person gleichzeitig haben? Reihenfolge: eigene
+ * Grenze ihrer Nutzergruppe (Perpustakaan-Feld "AusleihMax"), dann die Grenze
+ * ihrer Klassenstufe (Einstellungen), zuletzt die allgemeine Grenze. 0 = keine.
+ */
+function ausleihGrenzeFuer(db, leserNi, einstellungen = {}) {
+  const leser = getLeser(db, ni(leserNi));
+  if (!leser) return { grenze: 0, grund: '' };
+  const gruppe = leser.LeserGruNi ? db.prepare(`SELECT "LeserGruBz", "AusleihMax" FROM "LeserGrupp" WHERE "LeserGruNi" = ?`).get(ni(leser.LeserGruNi)) : null;
+  const gruppenGrenze = Number(gruppe?.AusleihMax) || 0;
+  if (gruppenGrenze > 0) return { grenze: gruppenGrenze, grund: `Grenze der Gruppe „${gruppe.LeserGruBz}“` };
+  const klasse = klasseVon(leser, gruppe?.LeserGruBz);
+  const stufenGrenze = klasse ? Number(einstellungen.ausleihLimitJeStufe?.[String(klasse.stufe)]) || 0 : 0;
+  if (stufenGrenze > 0) return { grenze: stufenGrenze, grund: `Grenze für Klassenstufe ${klasse.stufe}` };
+  const allgemein = Number(einstellungen.ausleihLimit) || 0;
+  return { grenze: allgemein, grund: 'allgemeine Grenze' };
 }
 
 function zurueckgeben(db, ausleiheId) {
@@ -1243,9 +1262,14 @@ function distinctJahrgaenge(db) {
  * nicht mehr in "Leser" und tauchen hier folgerichtig nicht mehr auf.
  */
 function abschlussKinder(db, klassenstufe) {
-  const stufe = String(klassenstufe ?? '').trim();
+  const stufe = Number(String(klassenstufe ?? '').trim());
   if (!stufe) return [];
-  return db.prepare(`SELECT * FROM "Leser" WHERE "Jahrgang" LIKE ? ORDER BY "Jahrgang", "Nachname", "Vorname"`).all(`${stufe}%`);
+  // Klasse aus Jahrgang, Nutzergruppe oder Vorname (siehe klassen.js) – in echten
+  // Perpustakaan-Beständen ist "Jahrgang" meist leer.
+  return mitKlassen(db, db.prepare(`SELECT * FROM "Leser" ORDER BY "Nachname", "Vorname"`).all())
+    .filter((l) => l.klasse && l.klasse.stufe >= stufe)
+    .map((l) => ({ ...l, Jahrgang: l.Jahrgang || l.klasse.kuerzel }))
+    .sort((a, b) => String(a.Jahrgang).localeCompare(String(b.Jahrgang)) || String(a.Nachname).localeCompare(String(b.Nachname)));
 }
 
 /**
@@ -1474,6 +1498,7 @@ module.exports = {
   stammdaten,
   distinctJahrgaenge,
   abschlussKinder,
+  ausleihGrenzeFuer,
   naechsteSommerferien,
   abschlussMeldung,
   kinderInPapierkorbVerschieben,

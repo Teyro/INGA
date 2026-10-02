@@ -6,6 +6,53 @@ Blick auf das, was für den Bibliotheksalltag praktisch relevant ist.
 
 ## Unveröffentlicht
 
+## 2.0.0-beta.1 – 2026-10-02
+
+Großes Funktions-Update. Neue Seitenleisten-Gruppe **„Mehr“** mit
+Leseförderung, Anschaffungen, Inventur, Schuljahreswechsel sowie Berichte &
+Datenschutz. Alle neuen Daten liegen in eigenen INGA-Tabellen und werden im
+Perpustakaan-Modus nicht nach Perpustakaan geschrieben.
+
+### Neu
+- **Schuljahreswechsel-Assistent:** Vorschau, welche Klassen aufrücken
+  (Gruppennamen +1, Schuljahr wird weitergezählt, Lehrkraft bleibt), wer die
+  Schule verlässt und wer keiner Klasse zugeordnet ist. Abgänger ohne offene
+  Ausleihen kommen in den Papierkorb, mit offenen Ausleihen bleiben sie als
+  „Abgang“ erhalten. Vor dem Ausführen wird automatisch gesichert.
+- **Inventur-Modus:** Regal für Regal scannen, INGA zeigt Fehlendes,
+  Doppeltes, Ausgeliehenes und Wiedergefundenes. Beim Abschluss können
+  fehlende Exemplare als „Vermisst (Inventur)“ markiert werden; Liste druckbar.
+- **Leseausweise drucken:** Scheckkartengröße, 10 je Blatt, mit Strichcode –
+  für einzelne Kinder oder ganze Klassen.
+- **Ausleihgrenze je Klassenstufe** (Einstellungen → Klassen, Leseförderung &
+  Datenschutz). Reihenfolge: Grenze der Gruppe → Grenze der Klassenstufe →
+  allgemeine Grenze.
+- **Schäden bei der Rückgabe erfassen** (Knopf „Schaden“), wahlweise
+  Exemplar als „Beschädigt“ sperren; Schadensverlauf im Buchdetail.
+- **Vormerkung-fertig-Zettel:** Wird ein vorgemerktes Buch zurückgegeben,
+  meldet INGA das und bietet einen Zettel zum Einlegen an.
+- **Rückstandsliste pro Klasse** für die Lehrkräfte (Mahnungen → „Pro Klasse
+  drucken“).
+- **Freundliche Erinnerung vor Fälligkeit** als Zettel (Mahnungen → „Bald
+  fällig …“), Vorlauf einstellbar.
+- **Lesepass und Urkunde:** gelesene Bücher je Schuljahr, Stufen
+  Bronze/Silber/Gold (einstellbar), Urkunden zum Ausdrucken.
+- **Antolin-Filter und Aushang** mit Covern, nach Klassenstufe.
+- **„Neu in der Bücherei“-Aushang** mit den Neuerwerbungen.
+- **Empfehlungen** im Buchdetail („Wer das gelesen hat, las auch …“) und
+  Lesetipps in der Nutzerakte.
+- **Anschaffungen & Budget:** Wunsch → bestellt → geliefert, Budget je
+  Schuljahr mit Anzeige von ausgegeben/geplant/frei.
+- **Jahresbericht als PDF:** Kennzahlen, Ausleihen je Monat, Top 10, Klassen,
+  Lesepass und Budget.
+- **Datenschutz:** Ausleih-Historie automatisch nach einstellbarer Zeit
+  löschen (Standard: aus, vorher wird gesichert) und **Auskunft** über alle
+  gespeicherten Daten eines Kindes drucken.
+
+### Hinweis
+- Die Klasse wird aus Jahrgang, Gruppenname („1c Fr. Brücker 26/27“) oder dem
+  Ende des Vornamens („Glenn 4c“) erkannt.
+
 ## 1.11.0-beta.1 – 2026-09-29
 
 ### Neu
